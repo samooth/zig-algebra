@@ -1,0 +1,19 @@
+.{
+    .name = .zig_rng,
+    .version = "0.1.0",
+    .fingerprint = 0x3d2eb4cc5332d7eb,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_algebra_traits = .{
+            .path = "../algebra-traits",
+        },
+        .zig_hash = .{
+            .path = "../hash",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

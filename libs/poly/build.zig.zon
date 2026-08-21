@@ -1,0 +1,16 @@
+.{
+    .name = .zig_poly,
+    .version = "0.1.0",
+    .fingerprint = 0x210bfd4d32e3ee4c,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_algebra_traits = .{
+            .path = "../algebra-traits",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

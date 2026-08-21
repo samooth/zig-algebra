@@ -1,0 +1,19 @@
+.{
+    .name = .zig_field,
+    .version = "0.1.0",
+    .fingerprint = 0x623e9c790cbee216,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_bigint = .{
+            .path = "../bigint",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+        "AGENTS.md",
+        "src",
+        "tests",
+    },
+}

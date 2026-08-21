@@ -1,0 +1,10 @@
+zig-field
+Copyright (c) 2026 Tomás Díaz
+
+Portions of the Montgomery and extension-field arithmetic derive from or are
+inspired by the following projects, under their respective licenses:
+
+- gnark-crypto (Apache-2.0): Montgomery/CIOS reduction patterns
+- arkworks-rs/algebra (MIT OR Apache-2.0): field trait and extension design
+- zig-stark (license per upstream): M31/CM31/QM31 tower semantics
+- Zig std.crypto.ff (MIT): Montgomery reduction logic

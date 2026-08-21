@@ -1,0 +1,19 @@
+.{
+    .name = .zig_curve,
+    .version = "0.1.0",
+    .fingerprint = 0x6e5284968358663b,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_field = .{
+            .path = "../field",
+        },
+        .zig_hash = .{
+            .path = "../hash",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
