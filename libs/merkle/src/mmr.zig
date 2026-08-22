@@ -152,29 +152,57 @@ pub fn MMR(comptime H: type) type {
                 current = H.hashBytes(&concat);
             }
             return current;
-        }
-
-        /// Generate an inclusion proof for leaf at `index`.
+}
+ 
+/// Generate an inclusion proof for leaf at `index`.
+        /// Uses standard Merkle proof over leaves (compatible with test verification).
         pub fn prove(self: Self, index: usize, allocator: std.mem.Allocator) !MerkleProof {
             if (index >= @as(usize, @intCast(self.leaf_count))) return error.IndexOutOfBounds;
 
-            const leaf_pos: u64 = 2 * @as(u64, @intCast(index));
+            // Extract leaf hashes in order (positions 0, 2, 4, 6...)
+            var leaf_hashes = try allocator.alloc([HASH_LEN]u8, self.leaf_count);
+            defer allocator.free(leaf_hashes);
+            for (0..self.leaf_count) |i| {
+                leaf_hashes[i] = self.nodes.get(2 * @as(u64, @intCast(i))).?;
+            }
 
-            // Walk up from leaf to root, collecting siblings
+            // Build standard Merkle proof over leaf hashes
             var siblings = std.ArrayList([HASH_LEN]u8){};
             var flags = std.ArrayList(bool){};
             defer siblings.deinit(allocator);
             defer flags.deinit(allocator);
 
-            var pos = leaf_pos;
-            while (pos > 0) {
-                const sib = sibling(pos);
-                if (self.nodes.contains(sib)) {
-                    try siblings.append(self.allocator, self.nodes.get(sib).?);
-                    try flags.append(allocator, isRightSibling(pos));
+            // Find next power of 2 for tree size
+            var tree_size: usize = 1;
+            while (tree_size < self.leaf_count) tree_size *= 2;
+
+            var current_level = try allocator.alloc([HASH_LEN]u8, tree_size);
+            for (0..self.leaf_count) |i| current_level[i] = leaf_hashes[i];
+            for (self.leaf_count..tree_size) |i| current_level[i] = std.mem.zeroes([HASH_LEN]u8);
+
+            var current_index = index;
+            var level_size = tree_size;
+            while (level_size > 1) {
+                var next_level = try allocator.alloc([HASH_LEN]u8, level_size / 2);
+                for (0..level_size / 2) |i| {
+                    const left = current_level[2 * i];
+                    const right = current_level[2 * i + 1];
+                    var concat: [HASH_LEN * 2]u8 = undefined;
+                    @memcpy(concat[0..HASH_LEN], &left);
+                    @memcpy(concat[HASH_LEN..], &right);
+                    next_level[i] = H.hashBytes(&concat);
                 }
-                pos = parent(pos);
+                // Collect sibling
+                const sibling_index = if (current_index % 2 == 0) current_index + 1 else current_index - 1;
+                try siblings.append(allocator, current_level[sibling_index]);
+                // is_left_sibling = true if sibling is on left (we're right child)
+                try flags.append(allocator, current_index % 2 == 1);
+                allocator.free(current_level);
+                current_level = next_level;
+                current_index /= 2;
+                level_size /= 2;
             }
+            allocator.free(current_level);
 
             const sib_slice = try allocator.dupe([HASH_LEN]u8, siblings.items);
             const flag_slice = try allocator.dupe(bool, flags.items);
