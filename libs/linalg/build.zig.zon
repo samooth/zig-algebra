@@ -1,0 +1,19 @@
+.{
+    .name = .zig_linalg,
+    .version = "0.1.0",
+    .fingerprint = 0x9ef4514e780f2af7,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_algebra_traits = .{
+            .path = "../algebra-traits",
+        },
+        .zig_field = .{
+            .path = "../field",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
