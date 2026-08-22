@@ -10,12 +10,19 @@ pub fn build(b: *std.Build) void {
     });
     const traits_mod = traits_dep.module("zig-algebra-traits");
 
+    const field_dep = b.dependency("zig_field", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const field_mod = field_dep.module("zig-field");
+
     const ntt_mod = b.addModule("zig-ntt", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
     ntt_mod.addImport("zig-algebra-traits", traits_mod);
+    ntt_mod.addImport("zig-field", field_mod);
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -23,6 +30,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     test_module.addImport("zig-algebra-traits", traits_mod);
+    test_module.addImport("zig-field", field_mod);
     const tests = b.addTest(.{
         .root_module = test_module,
     });

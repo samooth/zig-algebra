@@ -172,12 +172,14 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     ntt_mod.addImport("zig-algebra-traits", traits_mod);
+    ntt_mod.addImport("zig-field", field_mod);
     const ntt_test_module = b.createModule(.{
         .root_source_file = b.path("libs/ntt/src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
     ntt_test_module.addImport("zig-algebra-traits", traits_mod);
+    ntt_test_module.addImport("zig-field", field_mod);
     const ntt_tests = b.addTest(.{
         .name = "zig-ntt-tests",
         .root_module = ntt_test_module,
