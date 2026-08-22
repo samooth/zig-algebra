@@ -84,19 +84,19 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
         }
 
         /// Add round constants.
-        fn addConstants(state: *[t]F, r: usize) void {
+        fn addConstants(self: Self, state: *[t]F, r: usize) void {
             for (0..t) |i| {
-                state[i] = F.add(state[i], Self.round_constants[r][i]);
+                state[i] = F.add(state[i], self.round_constants[r][i]);
             }
         }
 
         /// MDS matrix multiplication: state = MDS * state
-        fn applyMds(state: *[t]F) void {
+        fn applyMds(self: Self, state: *[t]F) void {
             var new_state: [t]F = undefined;
             for (0..t) |i| {
                 var sum = F.zero();
                 for (0..t) |j| {
-                    sum = F.add(sum, F.mul(Self.mds_matrix[i][j], state[j]));
+                    sum = F.add(sum, F.mul(self.mds_matrix[i][j], state[j]));
                 }
                 new_state[i] = sum;
             }
@@ -104,35 +104,34 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
         }
 
         /// Single permutation round.
-        fn round(state: *[t]F, r: usize, is_full: bool) void {
-            addConstants(state, r);
+        fn round(self: Self, state: *[t]F, r: usize, is_full: bool) void {
+            self.addConstants(state, r);
             if (is_full) {
                 fullSbox(state);
             } else {
                 partialSbox(state);
             }
-            applyMds(state);
+            self.applyMds(state);
         }
 
         /// Full permutation.
         pub fn permute(self: Self, state: *[t]F) void {
-            _ = self;
             const rp_begin = full_rounds / 2;
             const rp_end = rp_begin + partial_rounds;
 
             // First full rounds
             for (0..rp_begin) |r| {
-                round(state, r, true);
+                self.round(state, r, true);
             }
 
             // Partial rounds
             for (rp_begin..rp_end) |r| {
-                round(state, r, false);
+                self.round(state, r, false);
             }
 
             // Last full rounds
             for (rp_end..total_rounds) |r| {
-                round(state, r, true);
+                self.round(state, r, true);
             }
         }
 

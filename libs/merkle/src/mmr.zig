@@ -38,7 +38,7 @@ fn rightChild(pos: u64) u64 {
 
 fn sibling(pos: u64) u64 {
     const h = @ctz(pos + 1);
-    const dist = @as(u64, 1) << h;
+    const dist = @as(u64, 1) << @intCast(h);
     if ((pos + 1) & (dist << 1) != 0) {
         return pos - dist; // sibling is left
     } else {
@@ -48,13 +48,13 @@ fn sibling(pos: u64) u64 {
 
 fn parent(pos: u64) u64 {
     const h = @ctz(pos + 1);
-    const dist = @as(u64, 1) << h;
+    const dist = @as(u64, 1) << @intCast(h);
     return pos + dist;
 }
 
 fn isRightSibling(pos: u64) bool {
     const h = @ctz(pos + 1);
-    return (pos + 1) & (@as(u64, 1) << (h + 1)) == 0;
+    return (pos + 1) & (@as(u64, 1) << @intCast(h + 1)) == 0;
 }
 
 /// Merkle Mountain Range.
@@ -131,15 +131,15 @@ pub fn MMR(comptime H: type) type {
             if (self.leaf_count == 0) return error.EmptyMMR;
 
             // Find all peaks
-            var peaks = std.ArrayList(u64).init(self.allocator);
-            defer peaks.deinit();
+            var peaks = std.ArrayList(u64){};
+            defer peaks.deinit(self.allocator);
 
             var pos: u64 = 2 * self.leaf_count - 1;
             while (pos > 0) {
-                const height = @ctz(pos + 1);
-                const size = (@as(u64, 1) << (height + 1)) - 1;
+                const height = @as(u7, @ctz(pos + 1));
+                const size = (@as(u64, 1) << @intCast(height + 1)) - 1;
                 if (pos + 1 >= size) {
-                    try peaks.append(pos);
+                    try peaks.append(self.allocator, pos);
                     pos -= size;
                 } else {
                     pos -= 1;
@@ -153,7 +153,7 @@ pub fn MMR(comptime H: type) type {
                 var concat: [HASH_LEN * 2]u8 = undefined;
                 @memcpy(concat[0..HASH_LEN], &peak);
                 @memcpy(concat[HASH_LEN..], &current);
-                current = H.hash(&concat);
+                current = H.hashBytes(&concat);
             }
             return current;
         }
@@ -164,16 +164,16 @@ pub fn MMR(comptime H: type) type {
 
             const leaf_pos: u64 = 2 * @as(u64, @intCast(index));
             var pos = leaf_pos;
-            var siblings = std.ArrayList([HASH_LEN]u8).init(allocator);
-            var flags = std.ArrayList(bool).init(allocator);
-            defer siblings.deinit();
-            defer flags.deinit();
+            var siblings = std.ArrayList([HASH_LEN]u8){};
+            var flags = std.ArrayList(bool){};
+            defer siblings.deinit(allocator);
+            defer flags.deinit(allocator);
 
             while (pos > 0) {
                 const sib = sibling(pos);
                 if (self.nodes.contains(sib)) {
-                    try siblings.append(self.nodes.get(sib).?);
-                    try flags.append(isRightSibling(pos));
+                    try siblings.append(self.allocator, self.nodes.get(sib).?);
+                    try flags.append(allocator, isRightSibling(pos));
                 }
                 pos = parent(pos);
             }

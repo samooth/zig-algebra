@@ -218,13 +218,13 @@ test "streaming SHA3-256" {
 
 test "Blake3 long message" {
     const msg = "a" ** 10000;
-    const out = blake3.hashBytes(&msg);
-    const out2 = blake3.hashBytes(&msg);
+    const out = blake3.hash(msg[0..]);
+    const out2 = blake3.hash(msg[0..]);
     try std.testing.expectEqualSlices(u8, &out, &out2);
 }
 
 test "Blake3 empty message" {
-    const out = blake3.hashBytes("");
-    const out2 = blake3.hashBytes("");
+    const out = blake3.hash("");
+    const out2 = blake3.hash("");
     try std.testing.expectEqualSlices(u8, &out, &out2);
 }

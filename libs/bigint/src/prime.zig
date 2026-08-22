@@ -98,7 +98,7 @@ pub fn PrimalityTest(comptime max_limbs: usize) type {
                 const a = Big.fromU64(bases[i]);
                 if (a.cmp(mag) >= 0) continue;
 
-                var x = try ModExp.modExpU64(a, d, mag);
+                var x = try ModExp.modExp(a, d, mag);
                 if (x.isOne() or x.eql(try mag.sub(Big.one()))) continue;
 
                 var composite = true;

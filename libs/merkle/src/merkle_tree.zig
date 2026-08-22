@@ -128,7 +128,7 @@ pub fn MerkleTree(comptime H: type) type {
         pub fn initFromHashes(allocator: std.mem.Allocator, leaf_hashes: []const [HASH_LEN]u8) !Self {
             if (leaf_hashes.len == 0) return error.EmptyLeaves;
 
-            const leaf_count = std.math.ceilPowerOfTwo(usize, leaf_hashes.len);
+            const leaf_count = try std.math.ceilPowerOfTwo(usize, leaf_hashes.len);
             const total_nodes = 2 * leaf_count;
 
             const nodes = try allocator.alloc([HASH_LEN]u8, total_nodes);

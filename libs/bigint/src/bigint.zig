@@ -371,7 +371,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             q.len = self.len;
             q.negative = self.negative;
             q.normalize();
-            return .{ .q = q, .r = @truncate(rem) };
+            return .{ .q = q, .r = @truncate(remainder) };
         }
 
         /// Long division: `self / other`. Returns `(quotient, remainder)`.
@@ -457,7 +457,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             q.normalize();
             remainder.negative = self.negative;
             remainder.normalize();
-            return .{ .q = q, .r = rem };
+            return .{ .q = q, .r = remainder };
         }
 
         /// Integer division (quotient only).
@@ -492,7 +492,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
         pub fn shl(self: Self, shift: usize) !Self {
             if (self.isZero() or shift == 0) return self;
             const limb_shift = shift / limb.LimbBits;
-            const bit_shift = shift % limb.LimbBits;
+            const bit_shift = @as(usize, shift % limb.LimbBits);
 
             if (self.len + limb_shift > max_limbs) return error.Overflow;
 
@@ -500,8 +500,8 @@ pub fn BigInt(comptime max_limbs: usize) type {
             var carry: Limb = 0;
             for (0..self.len) |i| {
                 const val = self.limbs[i];
-                r.limbs[i + limb_shift] = (val << bit_shift) | carry;
-                carry = if (bit_shift == 0) 0 else val >> (limb.LimbBits - bit_shift);
+                r.limbs[i + limb_shift] = (val << @intCast(bit_shift)) | carry;
+                carry = if (bit_shift == 0) 0 else val >> @intCast(limb.LimbBits - bit_shift);
             }
             if (carry != 0) {
                 if (self.len + limb_shift >= max_limbs) return error.Overflow;
@@ -519,7 +519,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
         pub fn shr(self: Self, shift: usize) Self {
             if (self.isZero() or shift == 0) return self;
             const limb_shift = shift / limb.LimbBits;
-            const bit_shift = shift % limb.LimbBits;
+            const bit_shift = @as(usize, shift % limb.LimbBits);
 
             if (limb_shift >= self.len) return Self.zero();
 
@@ -529,8 +529,8 @@ pub fn BigInt(comptime max_limbs: usize) type {
             while (i > limb_shift) {
                 i -= 1;
                 const val = self.limbs[i];
-                r.limbs[i - limb_shift] = (val >> bit_shift) | borrow;
-                borrow = if (bit_shift == 0) 0 else val << (limb.LimbBits - bit_shift);
+                r.limbs[i - limb_shift] = (val >> @intCast(bit_shift)) | borrow;
+                borrow = if (bit_shift == 0) 0 else val << @intCast(limb.LimbBits - bit_shift);
             }
             r.len = self.len - limb_shift;
             r.negative = self.negative;
@@ -647,12 +647,12 @@ pub fn BigInt(comptime max_limbs: usize) type {
                 return s;
             }
             var mag = self.abs();
-            var digits = std.ArrayList(u8).init(allocator);
-            defer digits.deinit();
+            var digits = std.ArrayList(u8){};
+            defer digits.deinit(allocator);
 
             while (!mag.isZero()) {
                 const dr = try mag.divRemU64(10);
-                try digits.append(@intCast(dr.r + '0'));
+                try digits.append(allocator, @intCast(dr.r + '0'));
                 mag = dr.q;
             }
 

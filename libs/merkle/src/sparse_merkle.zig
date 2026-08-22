@@ -30,15 +30,17 @@ const HASH_LEN = 32;
 pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
     if (DEPTH > 256) @compileError("SparseMerkleTree: DEPTH must be <= 256");
 
+    const CacheKey = struct { level: u8, index: u256 };
+
     return struct {
         const Self = @This();
 
         /// Default hashes for each level: default_hash[level] = hash(default_hash[level+1], default_hash[level+1]).
         default_hashes: [DEPTH + 1][HASH_LEN]u8,
         /// Map from leaf index (u256) to leaf hash.
-        leaves: std.AutoHashMap(u256, [HASH_LEN]u8),
+        leaves: std.hash_map.AutoHashMapUnmanaged(u256, [HASH_LEN]u8),
+        cache: std.hash_map.AutoHashMapUnmanaged(CacheKey, [HASH_LEN]u8),
         /// Map from (level, node_index) to cached hash.
-        cache: std.AutoHashMap(struct { level: u8, index: u256 }, [HASH_LEN]u8),
         allocator: std.mem.Allocator,
 
         pub fn init(allocator: std.mem.Allocator) !Self {
@@ -55,23 +57,26 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
                 default_hashes[level] = H.hashBytes(&concat);
             }
 
-            return .{
+            const smt: Self = .{
                 .default_hashes = default_hashes,
-                .leaves = std.AutoHashMap(u256, [HASH_LEN]u8).init(allocator),
-                .cache = std.AutoHashMap(struct { level: u8, index: u256 }, [HASH_LEN]u8).init(allocator),
+                .leaves = std.hash_map.AutoHashMapUnmanaged(u256, [HASH_LEN]u8){},
+                .cache = std.hash_map.AutoHashMapUnmanaged(CacheKey, [HASH_LEN]u8){},
                 .allocator = allocator,
             };
+            
+            
+            return smt;
         }
 
         pub fn deinit(self: *Self) void {
-            self.leaves.deinit();
-            self.cache.deinit();
+            self.leaves.deinit(self.allocator);
+            self.cache.deinit(self.allocator);
         }
 
         /// Update a leaf at `index` with `value`.
         pub fn update(self: *Self, index: u256, value: []const u8) !void {
-            const leaf_hash = H.hash(value);
-            try self.leaves.put(index, leaf_hash);
+            const leaf_hash = H.hashBytes(value);
+            try self.leaves.put(self.allocator, index, leaf_hash);
 
             // Recompute path from leaf to root
             var current_hash = leaf_hash;
@@ -91,10 +96,10 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
                     @memcpy(concat[0..HASH_LEN], &sibling_hash);
                     @memcpy(concat[HASH_LEN..], &current_hash);
                 }
-                current_hash = H.hash(&concat);
+                current_hash = H.hashBytes(&concat);
                 current_index >>= 1;
 
-                try self.cache.put(.{ .level = level, .index = current_index }, current_hash);
+                try self.cache.put(self.allocator, .{ .level = level, .index = current_index }, current_hash);
             }
         }
 
@@ -133,7 +138,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
 
         /// Verify a proof against a root.
         pub fn verify(root_hash: [HASH_LEN]u8, index: u256, value: []const u8, proof: MerkleProof) bool {
-            var current = H.hash(value);
+            var current = H.hashBytes(value);
             var current_index = index;
 
             for (0..DEPTH) |i| {
@@ -145,7 +150,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
                     @memcpy(concat[0..HASH_LEN], &current);
                     @memcpy(concat[HASH_LEN..], &proof.siblings[i]);
                 }
-                current = H.hash(&concat);
+                current = H.hashBytes(&concat);
                 current_index >>= 1;
             }
 
