@@ -568,6 +568,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             self.toTwosComplement(&a);
             other.toTwosComplement(&b);
             var r = Self{};
+            r.len = max_limbs;
             for (0..max_limbs) |i| {
                 r.limbs[i] = a[i] & b[i];
             }
@@ -594,6 +595,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             self.toTwosComplement(&a);
             other.toTwosComplement(&b);
             var r = Self{};
+            r.len = max_limbs;
             for (0..max_limbs) |i| {
                 r.limbs[i] = a[i] | b[i];
             }
@@ -618,6 +620,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             self.toTwosComplement(&a);
             other.toTwosComplement(&b);
             var r = Self{};
+            r.len = max_limbs;
             for (0..max_limbs) |i| {
                 r.limbs[i] = a[i] ^ b[i];
             }

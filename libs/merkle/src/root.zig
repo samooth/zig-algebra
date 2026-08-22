@@ -160,12 +160,11 @@ test "MMR prove and verify" {
 
     const root = try m.root();
 
-    // Verify all leaves
+    // Verify all leaves using standard Merkle proof verification
     for (0..4) |i| {
         const proof = try m.prove(i, allocator);
         defer proof.deinit(allocator);
 
-        // Reconstruct leaf hash
         const leaf = switch (i) {
             0 => "a",
             1 => "b",

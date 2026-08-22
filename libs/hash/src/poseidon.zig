@@ -52,14 +52,27 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
 
             // Generate MDS matrix (Cauchy matrix for invertibility)
             // M[i][j] = 1 / (x_i + y_j) where x_i and y_j are distinct
+            // Ensure x_i + y_j != 0 by retrying if we get zero
             for (0..t) |i| {
                 for (0..t) |j| {
-                    const xi = fieldFromCounter(F, seed, counter);
-                    counter += 1;
-                    const yj = fieldFromCounter(F, seed, counter);
-                    counter += 1;
-                    const sum = F.add(xi, yj);
-                    mds[i][j] = F.inv(sum);
+                    var attempt: u64 = 0;
+                    while (true) : (attempt += 1) {
+                        const xi = fieldFromCounter(F, seed, counter);
+                        counter += 1;
+                        const yj = fieldFromCounter(F, seed, counter);
+                        counter += 1;
+                        const sum = F.add(xi, yj);
+                        if (!sum.isZero()) {
+                            mds[i][j] = F.inv(sum);
+                            break;
+                        }
+                        // If sum is zero, try again (max 10 attempts to avoid infinite loop)
+                        if (attempt >= 10) {
+                            // Fallback: use a simple non-zero value
+                            mds[i][j] = F.one();
+                            break;
+                        }
+                    }
                 }
             }
 

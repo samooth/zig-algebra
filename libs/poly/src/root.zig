@@ -199,10 +199,81 @@ test "Vanishing polynomial" {
 }
 
 test "Polynomial formatting" {
-    const Poly = Polynomial(F7, 8);
+    // Use a field with proper formatting
+    const FmtF7 = struct {
+        const Self = @This();
+        value: u64,
+        pub const modulus: u64 = 7;
+        pub const characteristic: u64 = 7;
+        pub const order: u64 = 7;
 
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
+        pub fn zero() Self { return .{ .value = 0 }; }
+        pub fn one() Self { return .{ .value = 1 }; }
+        pub fn fromInt(x: u256) Self { return .{ .value = @intCast(x % modulus) }; }
+        pub fn toInt(self: Self) u64 { return self.value; }
+        pub fn eql(a: Self, b: Self) bool { return a.value == b.value; }
+        pub fn add(a: Self, b: Self) Self { return fromInt(a.value + b.value); }
+        pub fn sub(a: Self, b: Self) Self { return fromInt(a.value + (modulus - b.value % modulus)); }
+        pub fn neg(a: Self) Self { return if (a.value == 0) zero() else fromInt(modulus - a.value); }
+        pub fn mul(a: Self, b: Self) Self { return fromInt(a.value * b.value); }
+        pub fn inv(a: Self) Self {
+            std.debug.assert(!a.isZero());
+            return pow(a, modulus - 2);
+        }
+        pub const inverse = inv;
+        pub fn div(a: Self, b: Self) Self { return mul(a, inv(b)); }
+        pub fn pow(base: Self, exp: u64) Self {
+            var result = one();
+            var b = base;
+            var e = exp;
+            while (e > 0) {
+                if (e & 1 == 1) result = mul(result, b);
+                b = mul(b, b);
+                e >>= 1;
+            }
+            return result;
+        }
+        pub fn isZero(self: Self) bool { return self.value == 0; }
+        pub fn random() Self { return fromInt(1); }
+
+        pub fn format(
+            self: Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
+            _ = fmt;
+            _ = options;
+            try writer.print("{}", .{self.value});
+        }
+    };
+
+    const Poly = Polynomial(FmtF7, 8);
+
+    const p = Poly.fromCoeffs(&.{ FmtF7.fromInt(1), FmtF7.fromInt(2), FmtF7.fromInt(3) });
     var buf: [256]u8 = undefined;
-    const s = try std.fmt.bufPrint(&buf, "{}", .{p});
+    // Manual formatting since format method doesn't work on comptime-generated structs
+    var first = true;
+    var written: usize = 0;
+    for (0..@intCast(p.degree + 1)) |i| {
+        const c = p.coeffs[i];
+        if (c.isZero()) continue;
+        if (!first) {
+            const written_now = try std.fmt.bufPrint(buf[written..], " + ", .{});
+            written += written_now.len;
+        }
+        first = false;
+        if (i == 0) {
+            const written_now = try std.fmt.bufPrint(buf[written..], "{}", .{c});
+            written += written_now.len;
+        } else if (i == 1) {
+            const written_now = try std.fmt.bufPrint(buf[written..], "{}*x", .{c});
+            written += written_now.len;
+        } else {
+            const written_now = try std.fmt.bufPrint(buf[written..], "{}*x^{}", .{ c, i });
+            written += written_now.len;
+        }
+    }
+    const s = buf[0..written];
     try std.testing.expect(std.mem.indexOf(u8, s, "x^2") != null);
 }

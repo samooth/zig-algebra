@@ -340,6 +340,11 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
                 }
             }
         }
+
+        /// Convert polynomial to string representation.
+        pub fn toString(self: Self, buf: []u8) !usize {
+            return std.fmt.bufPrint(buf, "{}", .{self});
+        }
     };
 }
 
