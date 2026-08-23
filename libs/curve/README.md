@@ -90,8 +90,11 @@ zig build test
 
 - Weierstrass curves use Jacobian projective coordinates for efficient addition/doubling
 - Hash-to-curve uses Shallue-van de Woestijne mapping (RFC 9380 §6.6.1), which works for any curve including a=0
-- BLS12-381 Fp2 is defined locally (quadratic extension of BLS12_381_Fp)
+- BLS12-381: curve equation y² = x³ + 4 (G1) and y² = x³ + 4(1+u) (G2 over Fp2)
+- BLS12-381 G1/G2 generators are the canonical spec values, verified on-curve and of order r
+- BN254: curve equation y² = x³ + 3 (G1) and y² = x³ + 3/(9+u) (G2 over Fp2), canonical EIP-197 generators
 - All generators are computed and verified at comptime
+- SVDW hash-to-curve searches for a valid parameter Z satisfying both RFC 9380 criteria at runtime (Z non-square and −g(Z)(3Z²+4a) square)
 
 ## License
 

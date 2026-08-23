@@ -56,7 +56,7 @@ algebra-traits (no deps)
 | [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 58+ |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 53 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 83 |
-| [pairing](libs/pairing/) | Bilinear pairings: Fp2/Fp6/Fp12 towers, Miller loop, final exponentiation | 6 |
+| [pairing](libs/pairing/) | Bilinear pairings: Fp2/Fp6/Fp12 towers, Miller loop, final exponentiation (BLS12-381 verified bilinear) | 14 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | 10 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 11 |
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 12 |
