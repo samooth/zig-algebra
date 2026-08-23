@@ -216,4 +216,21 @@ pub fn build(b: *std.Build) void {
             .{ "zig-curve", curve_mod },
         },
     );
+
+    // Benchmark step (always ReleaseFast regardless of -Doptimize)
+    const bench_step = b.step("bench", "Run benchmarks (ReleaseFast)");
+    const bench_optimize = .ReleaseFast;
+    const bench_module = b.createModule(.{
+        .root_source_file = b.path("libs/pairing/src/bench.zig"),
+        .target = target,
+        .optimize = bench_optimize,
+    });
+    bench_module.addImport("zig-field", field_mod);
+    bench_module.addImport("zig-curve", curve_mod);
+    const bench_exe = b.addExecutable(.{
+        .name = "pairing-bench",
+        .root_module = bench_module,
+    });
+    const run_bench = b.addRunArtifact(bench_exe);
+    bench_step.dependOn(&run_bench.step);
 }
