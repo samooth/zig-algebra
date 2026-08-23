@@ -143,6 +143,49 @@ fn additionCoefficients(t: G2Point, q: G2Point, px: Fp, py: Fp) struct { A: Fp2,
 }
 
 // ---------------------------------------------------------------------------
+// Miller loop
+// ---------------------------------------------------------------------------
+
+/// Optimal-ate Miller loop computing f_{x,Q}(P).
+///
+/// Walks the bits of |x| (the seed parameter, verified x ≡ p¹ mod r) from
+/// MSB−1 down to LSB. Vertical-line factors are omitted: they lie in the
+/// base field Fp, which the final exponentiation annihilates. For negative
+/// x the result is conjugated.
+pub fn millerLoop(p: G1Point, q: G2Point) Fp12 {
+    std.debug.assert(!q.infinity);
+    if (p.infinity) return Fp12.one();
+
+    var f = Fp12.one();
+    var t = q;
+
+    const abs_n: u128 = @intCast(@abs(X_PARAM));
+    // Find MSB position
+    var msb: u7 = 63;
+    while (msb > 0 and (abs_n >> @intCast(msb)) & 1 == 0) : (msb -= 1) {}
+
+    var i: u7 = msb - 1;
+    while (true) : (i -= 1) {
+        // Doubling step: f ← f² · ℓ_{t,t}(P);  t ← 2t
+        const dc = doublingCoefficients(t, p.x, p.y);
+        f = sparseMul023(f.sqr(), dc.A, dc.B, dc.C);
+        t = t.dbl();
+
+        // Addition step
+        if ((abs_n >> @intCast(i)) & 1 == 1) {
+            const ac = additionCoefficients(t, q, p.x, p.y);
+            f = sparseMul023(f, ac.A, ac.B, ac.C);
+            t = t.add(q);
+        }
+
+        if (i == 0) break;
+    }
+
+    // n < 0 for BLS12-381: f ↦ conj(f)
+    return f.conjugate();
+}
+
+// ---------------------------------------------------------------------------
 // Final exponentiation
 // ---------------------------------------------------------------------------
 
@@ -164,11 +207,11 @@ fn bitLen(x: comptime_int) usize {
     return n;
 }
 
-/// N = (p¹² − 1)/r, expanded once at compile time into an MSB-first bit
-/// slice. The full exponentiation avoids Frobenius maps entirely (correctness
-/// first); documented optimization path: split into (p⁶−1)(p²+1) via
-/// conjugation/Frobenius tables plus a cyclotomic x-adic chain for the hard
-/// part, cutting the operation count ~6×.
+/// Final exponentiation exponent N = (p¹² − 1)/r as MSB-first bits.
+/// Production path: full square-and-multiply (~4570 squarings).
+/// Documented optimisation: decompose into easy part (p⁶−1)(p²+1) via
+/// Frobenius maps plus hard part (p⁴−p²+1)/r via cyclotomic x-adic chain,
+/// reducing work ~6×.
 const n_bits = blk: {
     @setEvalBranchQuota(10_000_000);
     const p: comptime_int = Fp.MODULUS;
@@ -188,7 +231,6 @@ const n_bits = blk: {
     break :blk bits;
 };
 
-/// Final exponentiation: raise the Miller loop output to (p¹² − 1)/r.
 fn finalExp(f: Fp12) Fp12 {
     var acc = Fp12.one();
     for (n_bits) |bit| {
@@ -196,47 +238,6 @@ fn finalExp(f: Fp12) Fp12 {
         if (bit) acc = acc.mul(f);
     }
     return acc;
-}
-
-// ---------------------------------------------------------------------------
-// Miller loop + pairing
-// ---------------------------------------------------------------------------
-
-/// Generic Miller loop computing f_{n,Q}(P) over the bits of |n|.
-///
-/// Vertical-line factors are omitted: they lie in the base field Fp, which
-/// the final exponentiation annihilates ((p⁶−1) kills every element of Fp).
-/// For negative n the result is conjugated (f_{−n,Q} = conj(f_{n,Q}) up to
-/// those same Fp-factors).
-pub fn millerLoop(p: G1Point, q: G2Point) Fp12 {
-    std.debug.assert(!q.infinity);
-    if (p.infinity) return Fp12.one();
-
-    var f = Fp12.one();
-    var t = q;
-
-    // Walk the bits of |n| from MSB−1 down to LSB (MSB handled by t=q).
-    var i: usize = MILLER_BIT_LEN - 2;
-    while (true) : (i -= 1) {
-        const bit = (ABS_MILLER_N >> @intCast(i)) & 1;
-
-        // Doubling step: f ← f² · ℓ_{t,t}(P);  t ← 2t
-        const dc = doublingCoefficients(t, p.x, p.y);
-        f = sparseMul023(f.sqr(), dc.A, dc.B, dc.C);
-        t = t.dbl();
-
-        // Addition step
-        if (bit == 1) {
-            const ac = additionCoefficients(t, q, p.x, p.y);
-            f = sparseMul023(f, ac.A, ac.B, ac.C);
-            t = t.add(q);
-        }
-
-        if (i == 0) break;
-    }
-
-    // n < 0 for BLS12-381: f ↦ conj(f), equal to f⁻¹ on the target subgroup.
-    return f.conjugate();
 }
 
 /// Full optimal ate pairing e(P, Q) = Miller loop followed by the final
@@ -304,6 +305,27 @@ fn ipowRuntime(base: u512, exp: u512) u512 {
     }
     return result;
 }
+
+test "frobenius matches explicit p-power" {
+    // Identity and ξ-subfield elements
+    try testing.expect(Fp12.one().frobenius().eql(Fp12.one()));
+
+    // ξ ∈ Fp2: frob(ξ) = conj(ξ) = 1−u
+    const xi12 = Fp12.fromFp6(Fp6.fromFp2(XI));
+    const xi_p = xi12.powFast(@as(u512, Fp.MODULUS));
+    const xi_conj = xi12.frobenius();
+    try testing.expect(xi_p.eql(xi_conj));
+
+    // General element from G₂ coordinates
+    const g2 = zc.bls12_381.G2_generator;
+    const sample = Fp12.fromFp6(Fp6.new(g2.x, g2.y, Fp2.zero()));
+    try testing.expect(sample.frobenius().eql(sample.powFast(@as(u512, Fp.MODULUS))));
+
+    // frob² = frob ∘ frob
+    const once = sample.frobenius();
+    try testing.expect(sample.frobenius2().eql(once.frobenius()));
+}
+
 
 test "pairing is non-degenerate" {
     const g1 = zc.bls12_381.G1_generator;

@@ -127,15 +127,20 @@ pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
             return .{ .c0 = a.c0.mul(s), .c1 = a.c1.mul(s), .c2 = a.c2.mul(s) };
         }
 
-        /// Frobenius^k (k = 1 or 2). Uses γ_k = ξ^{(p^k−1)/3} ∈ Fp2 and the
-        /// Fp2 Frobenius (conjugation).
-        pub fn frobenius(a: Self, comptime k: usize) Self {
-            const gammas = comptime gammaTable(Fp2, xi, k);
+        /// Frobenius (single application). Uses γ = ξ^{(p−1)/3} ∈ Fp2 and
+        /// the Fp2 Frobenius (conjugation).
+        pub fn frobenius(a: Self) Self {
+            const gamma = comptime gammaOnce(Fp2, xi);
             return .{
                 .c0 = a.c0.frobenius(),
-                .c1 = a.c1.frobenius().mul(gammas[0]),
-                .c2 = a.c2.frobenius().mul(gammas[1]),
+                .c1 = a.c1.frobenius().mul(gamma),
+                .c2 = a.c2.frobenius().mul(gamma.sqr()),
             };
+        }
+
+        /// Frobenius² (two applications).
+        pub fn frobenius2(a: Self) Self {
+            return a.frobenius().frobenius();
         }
 
         /// Fast exponentiation (exponent is public).
@@ -158,18 +163,17 @@ pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
     };
 }
 
-/// γ-table entry for Frobenius^k: returns [γ, γ²] with γ = ξ^{(p^k−1)/3}.
-fn gammaTable(
+/// γ = ξ^{(p−1)/3} ∈ Fp2 — single-application Frobenius coefficient on Fp6.
+fn gammaOnce(
     comptime Fp2: type,
     comptime xi: Fp2,
-    comptime k: usize,
-) [2]Fp2 {
+) Fp2 {
     const p = @as(comptime_int, Fp2.MODULUS);
     comptime {
-        // Exponentiation over a 381-bit modulus needs a generous budget.
         @setEvalBranchQuota(200_000_000);
-        const num = ipow(p, k) - 1;
-        return [2]Fp2{ xi.powFast(num / 3), xi.powFast(num / 3).sqr() };
+        const num = p - 1;
+        std.debug.assert(num % 3 == 0);
+        return xi.powFast(num / 3);
     }
 }
 
@@ -293,6 +297,24 @@ pub fn Fp12(comptime Base6: type) type {
             return .{ .c0 = a.c0, .c1 = a.c1.neg() };
         }
 
+        /// Frobenius (single application).
+        ///
+        /// Because p ≡ 1 (mod 6) for pairing-friendly primes used here,
+        /// w^p = w·ξ^{(p−1)/6} = w·η with η ∈ Base6.
+        /// Frobenius² = frobenius ∘ frobenius (compose two calls).
+        pub fn frobenius(a: Self) Self {
+            const eta = comptime etaOnce(Base6);
+            return .{
+                .c0 = a.c0.frobenius(),
+                .c1 = a.c1.frobenius().mulFp2(eta),
+            };
+        }
+
+        /// Apply Frobenius twice (= Frobenius²).
+        pub fn frobenius2(a: Self) Self {
+            return a.frobenius().frobenius();
+        }
+
         /// Fast exponentiation (public exponent).
         pub fn powFast(a: Self, exp: anytype) Self {
             var result = Self.one();
@@ -305,6 +327,20 @@ pub fn Fp12(comptime Base6: type) type {
             return result;
         }
     };
+}
+
+/// η = ξ^{(p−1)/6} ∈ Fp2 — single-application Frobenius coefficient on Fp12.
+fn etaOnce(comptime Base6: type) @TypeOf(Base6.zero().c0) {
+    const Fp2t = @TypeOf(Base6.zero().c0);
+    const p = @as(comptime_int, Fp2t.MODULUS);
+    comptime {
+        // Verify p ≡ 1 mod 6 (required for this formula).
+        std.debug.assert(@mod(p, 6) == 1);
+        @setEvalBranchQuota(200_000_000);
+        const num = p - 1;
+        std.debug.assert(num % 6 == 0);
+        return Base6.XI.powFast(num / 6);
+    }
 }
 
 
