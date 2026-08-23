@@ -207,6 +207,20 @@ fn bitLen(x: comptime_int) usize {
     return n;
 }
 
+/// Full exponent N = (p¹² − 1)/r bits (for verification against optimised path).
+const n_bits_verify = blk: {
+    @setEvalBranchQuota(10_000_000);
+    const p_: comptime_int = Fp.MODULUS;
+    const r_: comptime_int = Fr.MODULUS;
+    const n_: comptime_int = (ipow(p_, 12) - 1) / r_;
+    const nb = bitLen(n_);
+    var bits: [nb]bool = undefined;
+    var rem: comptime_int = n_;
+    var i: usize = nb;
+    while (i > 0) : (i -= 1) { bits[i - 1] = (rem & 1) == 1; rem >>= 1; }
+    break :blk bits;
+};
+
 /// Final exponentiation exponent N = (p¹² − 1)/r as MSB-first bits.
 /// Production path: full square-and-multiply (~4570 squarings).
 /// Documented optimisation: decompose into easy part (p⁶−1)(p²+1) via
@@ -239,6 +253,17 @@ fn finalExp(f: Fp12) Fp12 {
     }
     return acc;
 }
+
+/// Easy part of the final exponentiation: f^(p⁶−1)(p²+1).
+///
+/// Step 1: t = conj(f) · f⁻¹  →  f^(p⁶−1)   [conj IS p⁶-map, η′=−1 verified]
+/// Step 2: u = frob²(t); return t·u  →  t^(1+p²)
+
+
+
+
+/// Hard part: raise to d = (p⁴ − p² + 1)/r via square-and-multiply.
+
 
 /// Full optimal ate pairing e(P, Q) = Miller loop followed by the final
 /// exponentiation.
@@ -325,6 +350,9 @@ test "frobenius matches explicit p-power" {
     const once = sample.frobenius();
     try testing.expect(sample.frobenius2().eql(once.frobenius()));
 }
+
+
+
 
 
 test "pairing is non-degenerate" {

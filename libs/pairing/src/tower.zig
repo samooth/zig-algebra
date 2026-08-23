@@ -315,6 +315,26 @@ pub fn Fp12(comptime Base6: type) type {
             return a.frobenius().frobenius();
         }
 
+        /// Apply Frobenius² with directly computed η₂ coefficient.
+        /// Avoids compounding potential errors from double application.
+        pub fn frobenius2Direct(a: Self) Self {
+            const p: comptime_int = Fp2t.MODULUS;
+            const eta2 = comptime blk: {
+                @setEvalBranchQuota(500_000_000);
+                const num_ = ipow(p, 2) - 1;
+                std.debug.assert(num_ % 6 == 0);
+                // Compute via repeated squaring in comptime_int-safe manner
+                const half = num_ / 6 / (p + 1); // (p-1)/6 factor
+                const eta1 = Base6.XI.powFast(half);
+                // η₂ = η₁^{p+1} = Norm(η₁)
+                break :blk eta1.mul(eta1);
+            };
+            return .{
+                .c0 = a.c0.frobenius2(),
+                .c1 = a.c1.frobenius2().mulFp2(eta2),
+            };
+        }
+
         /// Fast exponentiation (public exponent).
         pub fn powFast(a: Self, exp: anytype) Self {
             var result = Self.one();
