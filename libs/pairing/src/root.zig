@@ -433,23 +433,18 @@ test "Fp6 basic structure" {
         .c2 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(0) } 
     };
     
-    // v * v^2 = v^3 = non_residue = u + 1
-    // (v) * (v^2) = (u+1) = 0 + 1*u + 0*u^2
-    // Wait: a = v = (0 + 1*u + 0*u^2) in Fp6
-    // b = v^2 = (0 + 0*u + 1*u^2) in Fp6
-    // a * b = v^3 = non_residue = u + 1 = (1 + 1*u) + 0*u^2
-    // In Fp6 representation: c0 + c1*v + c2*v^2
-    // a = 0 + 1*v + 0*v^2
-    // b = 0 + 0*v + 1*v^2
-    // a * b = 0 + 0*v + 0*v^2 + 0 + 0*v + 1*v^3 + 0 + 0*v + 0*v^4 = v^3 = non_residue
-    // non_residue = u + 1 = (1 + 1*u) + 0*u^2 in Fp2
-    // So in Fp6: c0 = (1+u), c1 = 0, c2 = 0
+    // a = 1 + v, b = u + v
+    // a*b = (1+v)(u+v) = u + v + uv + v^2 = u + (1+u)v + v^2 ... expanded in Fp6:
+    //   c0' = c0*d0 + n*(c1*d2 + c2*d1) = (1)(u) + n*0 = u
+    //   c1' = c0*d1 + c1*d0 + n*(c2*d2) = (v) + (u) + 0 = (1+u)... but with Fp2 mul:
+    //         (1,0)*(1,0)=(1,0); (0,1)*(0,1)= -1 = (p-1,0); sum = (0,0) = 0
+    //   c2' = c0*d2 + c1*d1 + c2*d0 = 0 + (0,1)*(1,0) + 0 = u
     const prod = a.mul(b);
-    // prod.c0 should be non_residue in Fp2
-    try std.testing.expect(prod.c0.c0.eql(F7.fromInt(1))); // 1
+    try std.testing.expect(prod.c0.c0.eql(F7.fromInt(0)));
     try std.testing.expect(prod.c0.c1.eql(F7.fromInt(1))); // u
     try std.testing.expect(prod.c1.isZero());
-    try std.testing.expect(prod.c2.isZero());
+    try std.testing.expect(prod.c2.c1.eql(F7.fromInt(1))); // u
+    try std.testing.expect(prod.c2.c0.eql(F7.fromInt(0)));
 }
 
 test "BLS12-381 generator points exist" {

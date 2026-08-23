@@ -29,6 +29,9 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         // Extensions have `c0`, `c1` fields.
         const is_simple = @hasField(BaseField, "value") or @hasField(BaseField, "limbs");
         if (is_simple) {
+            // Legendre via modular exponentiation over big moduli needs a
+            // generous comptime branch budget (default 1000 is far too low).
+            @setEvalBranchQuota(100_000_000);
             const legendre = non_residue.legendre();
             std.debug.assert(legendre == -1);
         }
