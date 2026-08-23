@@ -191,6 +191,7 @@ pub const BN254_G1 = zc.bn254.G1;
 pub const BN254_G2 = zc.bn254.G2;
 
 pub const bls12_381_pairing_impl = @import("bls12_381.zig");
+pub const bn254_pairing_impl = @import("bn254.zig");
 
 
 // ============================================================================
@@ -318,7 +319,11 @@ pub fn main() !void {
     const g1 = zc.bls12_381.G1_generator;
     const g2 = zc.bls12_381.G2_generator;
     const e = bls12_381_pairing_impl.pairing(g1, g2);
-    std.debug.print("BLS12-381 e(G1, G2) = {}\n", .{e.isZero()});
+    std.debug.print("BLS12-381 e(G1, G2) zero={}\n", .{e.isZero()});
+    const bn_g1 = zc.bn254.G1_generator;
+    const bn_g2 = zc.bn254.G2_generator;
+    const bn_e = bn254_pairing_impl.pairing(bn_g1, bn_g2);
+    std.debug.print("BN254 e(G1, G2) zero={}\n", .{bn_e.isZero()});
 }
 
 test {
