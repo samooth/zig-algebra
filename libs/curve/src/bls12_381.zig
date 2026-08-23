@@ -20,13 +20,15 @@ pub const Fp2 = zf.QuadraticExtension(
 
 /// BLS12-381 G1 curve constant a = 0.
 pub const G1_a = Fp.zero();
-/// BLS12-381 G1 curve constant b = 3.
-pub const G1_b = Fp.fromInt(3);
+/// BLS12-381 G1 curve constant b = 4.
+pub const G1_b = Fp.fromInt(4);
 
-/// G1 generator point.
+/// G1 generator point (canonical generator from the BLS12-381 specification).
 pub const G1_generator = weierstrass.AffinePoint(Fp, G1_a, G1_b).generator(
-    Fp.fromInt(1),
-    Fp.fromInt(2),
+    // x-coordinate
+    Fp.fromInt(0x17F1D3A73197D7942695638C4FA9AC0FC3688C4F9774B905A14E3A3F171BAC586C55E83FF97A1AEFB3AF00ADB22C6BB),
+    // y-coordinate
+    Fp.fromInt(0xB8E402C605224B3B063FBA901FB75A6C76A87DCA86B962D78C38ADCAD28EF4738DCCAC6575E8CC353F80ED4684717AF),
 );
 
 /// G1 point type.

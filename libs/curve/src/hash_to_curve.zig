@@ -78,15 +78,33 @@ pub fn hashToField(
 /// Works for ANY Weierstrass curve including a=0 curves.
 ///
 /// Precomputed constants Z, tv4_const, tv6_const are computed at comptime.
+pub fn CurvePoint(comptime F: type) type {
+    return struct { x: F, y: F };
+}
+
 pub fn mapToCurveSvdW(
     comptime F: type,
     comptime a: F,
     comptime b: F,
     u: F,
-) struct { x: F, y: F } {
-    // g(x) = x^3 + a*x + b
-    // Choose Z = 1 (satisfies criteria for most curves)
-    const Z = F.one();
+) (error{SqrtFailed}!CurvePoint(F)) {
+    // g(x) = x^3 + a*x + b. SVDW requires:
+    //   (1) Z non-square, and (2) −g(Z)·(3Z² + 4A) square.
+    // Search upward from 1; the first valid Z is found within a few tries.
+    var Z: F = F.one();
+    {
+        var zi: usize = 1;
+        while (zi < 64) : (zi += 1) {
+            const cand = F.fromInt(zi);
+            if (cand.legendre() != -1) continue;
+            const gz = cand.mul(cand).mul(cand).add(a.mul(cand)).add(b);
+            const tv4_arg = gz.neg().mul(cand.sqr().mulBy3().add(a.mulBy4()));
+            if (tv4_arg.legendre() == 1) {
+                Z = cand;
+                break;
+            }
+        }
+    }
     const Z2 = Z.mul(Z);
     const gZ = Z.mul(Z).mul(Z).add(a.mul(Z)).add(b); // g(Z) = Z^3 + a*Z + b
 
@@ -138,18 +156,18 @@ pub fn mapToCurveSvdW(
     // Step 12-14: Try x1, x2, x3 in order
     const gx1 = x1.mul(x1).mul(x1).add(a.mul(x1)).add(b);
     if (gx1.legendre() == 1) {
-        const y1 = gx1.sqrt() orelse unreachable;
+        const y1 = gx1.sqrt() orelse return error.SqrtFailed;
         return .{ .x = x1, .y = y1 };
     }
 
     const gx2 = x2.mul(x2).mul(x2).add(a.mul(x2)).add(b);
     if (gx2.legendre() == 1) {
-        const y2 = gx2.sqrt() orelse unreachable;
+        const y2 = gx2.sqrt() orelse return error.SqrtFailed;
         return .{ .x = x2, .y = y2 };
     }
 
     const gx3 = x3.mul(x3).mul(x3).add(a.mul(x3)).add(b);
-    const y3 = gx3.sqrt() orelse unreachable;
+    const y3 = gx3.sqrt() orelse return error.SqrtFailed;
     return .{ .x = x3, .y = y3 };
 }
 
@@ -165,11 +183,11 @@ pub fn hashToCurve(
     comptime b: F,
     msg: []const u8,
     dst: []const u8,
-) struct { x: F, y: F } {
+) (error{SqrtFailed}!CurvePoint(F)) {
     const us = hashToField(F, msg, dst, 2);
 
-    const p1 = mapToCurveSvdW(F, a, b, us[0]);
-    const p2 = mapToCurveSvdW(F, a, b, us[1]);
+    const p1 = try mapToCurveSvdW(F, a, b, us[0]);
+    const p2 = try mapToCurveSvdW(F, a, b, us[1]);
 
     const AffinePoint = @import("weierstrass.zig").AffinePoint(F, a, b);
     const ep1 = AffinePoint{ .x = p1.x, .y = p1.y, .infinity = false };

@@ -179,168 +179,19 @@ pub fn Fp12(comptime BaseFp6: type, comptime non_residue: BaseFp6) type {
 }
 
 // ============================================================================
-// BLS12-381 Parameters (using curve module types)
+// Curve parameter aliases
 // ============================================================================
 
-/// BLS12-381 base field
-pub const BLS12_381_Fp = zc.bls12_381.Fp;
+pub const BLS12_381_X = 0xD201000000010000; // x = −0xD201000000010000 (negative)
+pub const BN254_X = 0x44E992B44A6909F1;
 
-/// BLS12-381 Fp2 (quadratic extension)
-pub const BLS12_381_Fp2 = zc.bls12_381.Fp2;
-
-/// BLS12-381 Fp6 non-residue: u + 1
-fn bls12_381_fp6_nr() zc.bls12_381.Fp2 {
-    return .{ .c0 = zc.bls12_381.Fp.one(), .c1 = zc.bls12_381.Fp.one() };
-}
-
-/// BLS12-381 Fp6
-pub const BLS12_381_Fp6 = Fp6(zc.bls12_381.Fp2, bls12_381_fp6_nr());
-
-/// BLS12-381 Fp12 non-residue: v + 1 in Fp12 = Fp6[w]/(w^2 - (v+1))
-fn bls12_381_fp12_nr() Fp6(zc.bls12_381.Fp2, bls12_381_fp6_nr()) {
-    const nr_c0 = zc.bls12_381.Fp2{ .c0 = zc.bls12_381.Fp.one(), .c1 = zc.bls12_381.Fp.one() };
-    const nr = BLS12_381_Fp6{ .c0 = nr_c0, .c1 = zc.bls12_381.Fp2.zero(), .c2 = zc.bls12_381.Fp2.zero() };
-    return .{ .c0 = nr, .c1 = BLS12_381_Fp6.zero() };
-}
-
-/// BLS12-381 Fp12
-pub const BLS12_381_Fp12 = Fp12(
-    Fp6(zc.bls12_381.Fp2, bls12_381_fp6_nr()),
-    bls12_381_fp12_nr()
-);
-
-// BLS12-381 curve parameters
-pub const BLS12_381_X = 0xD201000000010000; // Parameter x = -0xD201000000010000
-pub const BLS12_381_X_NEG = true; // x is negative
-
-// ============================================================================
-// BN254 Parameters
-// ============================================================================
-
-/// BN254 base field
-pub const BN254_Fp = zc.bn254.Fp;
-
-/// BN254 Fp2 with u^2 + 1
-pub const BN254_Fp2 = zc.bn254.Fp2;
-
-/// BN254 Fp6 non-residue
-fn bn254_fp6_nr() zc.bn254.Fp2 {
-    return .{ .c0 = zc.bn254.Fp.one(), .c1 = zc.bn254.Fp.one() };
-}
-
-/// BN254 Fp6
-pub const BN254_Fp6 = Fp6(zc.bn254.Fp2, bn254_fp6_nr());
-
-/// BN254 Fp12 non-residue
-fn bn254_fp12_nr() Fp6(zc.bn254.Fp2, bn254_fp6_nr()) {
-    return .{ 
-        .c0 = zc.bn254.Fp2{ .c0 = zc.bn254.Fp.one(), .c1 = zc.bn254.Fp.zero() }, 
-        .c1 = Fp6(zc.bn254.Fp2, bn254_fp6_nr()).zero(), 
-        .c2 = Fp6(zc.bn254.Fp2, bn254_fp6_nr()).zero() 
-    };
-}
-
-/// BN254 Fp12
-pub const BN254_Fp12 = Fp12(Fp6(zc.bn254.Fp2, bn254_fp6_nr()), bn254_fp12_nr());
-
-// BN254 curve parameter
-pub const BN254_X = 0x44E992B44A6909F1; // x = 4965661367192848881
-
-// ============================================================================
-// G1, G2 Points for BLS12-381
-// ============================================================================
-
-/// G1 point on BLS12-381 (over Fp)
 pub const BLS12_381_G1 = zc.bls12_381.G1;
-
-/// G2 point on BLS12-381 (over Fp2)
 pub const BLS12_381_G2 = zc.bls12_381.G2;
-
-/// GT element (Fp12)
-pub const BLS12_381_GT = BLS12_381_Fp12;
-
-// BN254 G1, G2, GT
 pub const BN254_G1 = zc.bn254.G1;
 pub const BN254_G2 = zc.bn254.G2;
-pub const BN254_GT = BN254_Fp12;
 
-// ============================================================================
-// Miller Loop for BLS12-381
-// ============================================================================
+pub const bls12_381_pairing_impl = @import("bls12_381.zig");
 
-/// Compute line function for Miller loop
-fn bls12_381_line(R: zc.bls12_381.G2, _unused_Q: zc.bls12_381.G2) struct { zc.bls12_381.G2, zc.bls12_381.G2 } {
-    // Placeholder for line function computation
-    // Returns (new_R, line_coefficients)
-    _ = _unused_Q; // Suppress unused parameter warning
-    return .{ R, R };
-}
-
-/// Miller loop for BLS12-381 optimal ate pairing
-fn bls12_381_miller_loop(_unused_P: zc.bls12_381.G1, _unused_Q: zc.bls12_381.G2) BLS12_381_Fp12 {
-    // Optimal ate pairing for BLS12-381
-    // x = -0xD201000000010000
-    // Loop over bits of x
-    
-    _ = BLS12_381_Fp12.one(); // Placeholder
-    _ = _unused_P; // Suppress unused parameter warning
-    _ = _unused_Q; // Suppress unused parameter warning
-    
-    // x in binary: 1101001000000001000000000001000000000000000000000000000000000000
-    // Process from MSB to LSB
-    const x_bits = @as(u64, 0xD201000000010000);
-    _ = x_bits; // Suppress unused constant warning
-    
-    // This is a simplified placeholder
-    // Full implementation would iterate over bits of x
-    // and compute line functions
-    
-    return BLS12_381_Fp12.one();
-}
-
-/// Final exponentiation for BLS12-381
-fn bls12_381_final_exp(f: BLS12_381_Fp12) BLS12_381_Fp12 {
-    // Final exponentiation: f^((p^12 - 1)/r)
-    // For BLS12-381: (p^12 - 1)/r
-    
-    // This is a complex multi-step process
-    // Simplified placeholder
-    return f;
-}
-
-/// Optimal ate pairing for BLS12-381
-pub fn bls12_381_pairing(P: zc.bls12_381.G1, Q: zc.bls12_381.G2) BLS12_381_GT {
-    const f = bls12_381_miller_loop(P, Q);
-    return bls12_381_final_exp(f);
-}
-
-// ============================================================================
-// BN254 Pairing
-// ============================================================================
-
-/// Miller loop for BN254
-fn bn254_miller_loop(_unused_P: zc.bn254.G1, _unused_Q: zc.bn254.G2) BN254_Fp12 {
-    // BN254 optimal ate pairing
-    _ = BN254_Fp12.one(); // Placeholder
-    _ = _unused_Q; // Suppress unused parameter warning
-    _ = _unused_P;
-    
-    // x = 0x44E992B44A6909F1
-    // Process bits of x
-    
-    return BN254_Fp12.one();
-}
-
-/// Final exponentiation for BN254
-fn bn254_final_exp(f: BN254_Fp12) BN254_Fp12 {
-    return f;
-}
-
-/// Optimal ate pairing for BN254
-pub fn bn254_pairing(P: zc.bn254.G1, Q: zc.bn254.G2) BN254_GT {
-    const f = bn254_miller_loop(P, Q);
-    return bn254_final_exp(f);
-}
 
 // ============================================================================
 // Tests
@@ -403,7 +254,7 @@ test "Fp2 basic operations" {
 
 test "BLS12-381 Fp2 construction" {
     // Test that BLS12-381 Fp2 can be constructed
-    const Fp2_381 = BLS12_381_Fp2;
+    const Fp2_381 = zc.bls12_381.Fp2;
     const a = Fp2_381{ .c0 = zc.bls12_381.Fp.fromInt(1), .c1 = zc.bls12_381.Fp.fromInt(2) };
     const b = Fp2_381{ .c0 = zc.bls12_381.Fp.fromInt(3), .c1 = zc.bls12_381.Fp.fromInt(4) };
     try std.testing.expect(a.add(b).c0.eql(zc.bls12_381.Fp.fromInt(4)));
@@ -411,7 +262,7 @@ test "BLS12-381 Fp2 construction" {
 }
 
 test "BN254 Fp2 construction" {
-    const Fp2_254 = BN254_Fp2;
+    const Fp2_254 = zc.bn254.Fp2;
     const a = Fp2_254{ .c0 = zc.bn254.Fp.fromInt(1), .c1 = zc.bn254.Fp.fromInt(2) };
     const b = Fp2_254{ .c0 = zc.bn254.Fp.fromInt(3), .c1 = zc.bn254.Fp.fromInt(4) };
     try std.testing.expect(a.add(b).c0.eql(zc.bn254.Fp.fromInt(4)));
@@ -464,29 +315,13 @@ test "BN254 generator points exist" {
 
 // Example program
 pub fn main() !void {
-    // BLS12-381 pairing
     const g1 = zc.bls12_381.G1_generator;
     const g2 = zc.bls12_381.G2_generator;
-    
-    const e = bls12_381_pairing(g1, g2);
-    std.debug.print("BLS12-381 pairing(G1, G2) = {}\n", .{e});
-    
-    // Bilinearity test: e(a*P, b*Q) = e(P, Q)^(a*b)
-    _ = zc.bls12_381.G1.scalarMul(2);
-    _ = zc.bls12_381.G2.scalarMul(3);
-    const e23 = bls12_381_pairing(zc.bls12_381.G1.scalarMul(2), zc.bls12_381.G2.scalarMul(3));
-    
-    const e1 = bls12_381_pairing(zc.bls12_381.G1_generator, zc.bls12_381.G2_generator);
-    const e1_6 = e1.pow(6);
-    
-    std.debug.print("BLS12-381 pairing(G1, G2) = {}\n", .{e});
-    std.debug.print("e(2P, 3Q) = {}\n", .{e23});
-    std.debug.print("e(P, Q)^6 = {}\n", .{e1_6});
-    std.debug.print("Bilinearity holds: {}\n", .{e23.eql(e1_6)});
-    
-    // BN254 pairing
-    const bn_g1 = zc.bn254.G1_generator;
-    const bn_g2 = zc.bn254.G2_generator;
-    const bn_e = bn254_pairing(bn_g1, bn_g2);
-    std.debug.print("BN254 pairing = {}\n", .{bn_e});
+    const e = bls12_381_pairing_impl.pairing(g1, g2);
+    std.debug.print("BLS12-381 e(G1, G2) = {}\n", .{e.isZero()});
+}
+
+test {
+    // Force analysis of imported modules so their inline tests are collected.
+    std.testing.refAllDecls(@This());
 }

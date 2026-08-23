@@ -1,0 +1,312 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+
+//! Sextic-twist tower for pairing-friendly curves: Fp12 = Fp6[w] / (w² − v),
+//! Fp6 = Fp2[v] / (v³ − ξ), built on top of the field library's
+//! QuadraticExtension Fp2.
+//!
+//! The cubic non-residue `xi` doubles as the sextic ratio `b/b'` between the
+//! curve and its twist, so the untwist map is simply
+//!   Ψ(x', y') = (x'/w², y'/w³),
+//! placing twisted G2 coordinates onto E(Fp12).
+//!
+//! Frobenius: because p ≡ 1 (mod 6), w^{p^k} = η_k·w with η_k = ξ^{(p^k−1)/6}
+//! ∈ Fp2, and v^{p^k} = γ_k·v with γ_k = ξ^{(p^k−1)/3} = η_k². All constants
+//! therefore live in Fp2 and are computed at compile time.
+
+const std = @import("std");
+
+/// Cubic extension of Fp2: elements a0 + a1·v + a2·v² with v³ = xi.
+pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
+    return struct {
+        const Self = @This();
+
+        /// Cubic non-residue (also the curve/twist ratio b/b').
+        pub const XI = xi;
+
+        c0: Fp2,
+        c1: Fp2,
+        c2: Fp2,
+
+        pub fn zero() Self {
+            return .{ .c0 = Fp2.zero(), .c1 = Fp2.zero(), .c2 = Fp2.zero() };
+        }
+
+        pub fn one() Self {
+            return .{ .c0 = Fp2.one(), .c1 = Fp2.zero(), .c2 = Fp2.zero() };
+        }
+
+        pub fn new(c0: Fp2, c1: Fp2, c2: Fp2) Self {
+            return .{ .c0 = c0, .c1 = c1, .c2 = c2 };
+        }
+
+        /// Embed an Fp2 element.
+        pub fn fromFp2(a: Fp2) Self {
+            return .{ .c0 = a, .c1 = Fp2.zero(), .c2 = Fp2.zero() };
+        }
+
+        pub fn eql(a: Self, b: Self) bool {
+            return a.c0.eql(b.c0) and a.c1.eql(b.c1) and a.c2.eql(b.c2);
+        }
+
+        pub fn isZero(self: Self) bool {
+            return self.c0.isZero() and self.c1.isZero() and self.c2.isZero();
+        }
+
+        pub fn add(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1), .c2 = a.c2.add(b.c2) };
+        }
+
+        pub fn sub(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.sub(b.c0), .c1 = a.c1.sub(b.c1), .c2 = a.c2.sub(b.c2) };
+        }
+
+        pub fn neg(a: Self) Self {
+            return .{ .c0 = a.c0.neg(), .c1 = a.c1.neg(), .c2 = a.c2.neg() };
+        }
+
+        pub fn dbl(a: Self) Self {
+            return a.add(a);
+        }
+
+        /// Schoolbook multiplication (15 Fp2 mults) with reduction by xi.
+        pub fn mul(a: Self, b: Self) Self {
+            const a0 = a.c0;
+            const a1 = a.c1;
+            const a2 = a.c2;
+            const b0 = b.c0;
+            const b1 = b.c1;
+            const b2 = b.c2;
+
+            const t00 = a0.mul(b0);
+            const t01 = a0.mul(b1);
+            const t02 = a0.mul(b2);
+            const t10 = a1.mul(b0);
+            const t11 = a1.mul(b1);
+            const t12 = a1.mul(b2);
+            const t20 = a2.mul(b0);
+            const t21 = a2.mul(b1);
+            const t22 = a2.mul(b2);
+
+            // Reduction with v³ = ξ, v⁴ = ξv:
+            //   v³ terms (t12, t21) fold into c0; the v⁴ term (t22) into c1.
+            return .{
+                .c0 = t00.add(t12.add(t21).mul(xi)),
+                .c1 = t01.add(t10).add(t22.mul(xi)),
+                .c2 = t02.add(t11).add(t20),
+            };
+        }
+
+        pub fn sqr(a: Self) Self {
+            return a.mul(a);
+        }
+
+        /// Closed-form inversion:
+        /// inv(a) = (a0² − a1a2ξ, a2²ξ − a0a1, a1² − a0a2) / N,
+        /// N = a0³ + a1³ξ + a2³ξ² − 3a0a1a2ξ.
+        pub fn inv(a: Self) Self {
+            std.debug.assert(!a.isZero());
+
+            const t0 = a.c0.mul(a.c0).sub(a.c1.mul(a.c2).mul(xi));
+            const t1 = a.c2.mul(a.c2).mul(xi).sub(a.c0.mul(a.c1));
+            const t2 = a.c1.mul(a.c1).sub(a.c0.mul(a.c2));
+
+            const n = a.c0.mul(t0)
+                .add(a.c1.mul(t1))
+                .add(a.c2.mul(t2).mul(xi));
+            const n_inv = n.inv();
+
+            return .{
+                .c0 = t0.mul(n_inv),
+                .c1 = t1.mul(n_inv),
+                .c2 = t2.mul(n_inv),
+            };
+        }
+
+        /// Multiply by an Fp2 scalar.
+        pub fn mulFp2(a: Self, s: Fp2) Self {
+            return .{ .c0 = a.c0.mul(s), .c1 = a.c1.mul(s), .c2 = a.c2.mul(s) };
+        }
+
+        /// Frobenius^k (k = 1 or 2). Uses γ_k = ξ^{(p^k−1)/3} ∈ Fp2 and the
+        /// Fp2 Frobenius (conjugation).
+        pub fn frobenius(a: Self, comptime k: usize) Self {
+            const gammas = comptime gammaTable(Fp2, xi, k);
+            return .{
+                .c0 = a.c0.frobenius(),
+                .c1 = a.c1.frobenius().mul(gammas[0]),
+                .c2 = a.c2.frobenius().mul(gammas[1]),
+            };
+        }
+
+        /// Fast exponentiation (exponent is public).
+        pub fn powFast(a: Self, exp: anytype) Self {
+            var result = Self.one();
+            var base = a;
+            var e = expValue(exp);
+            while (e > 0) : (e >>= 1) {
+                if (e & 1 == 1) result = result.mul(base);
+                base = base.sqr();
+            }
+            return result;
+        }
+
+        fn expValue(exp: anytype) u512 {
+            const T = @TypeOf(exp);
+            if (T == comptime_int) return @intCast(exp);
+            return @intCast(exp);
+        }
+    };
+}
+
+/// γ-table entry for Frobenius^k: returns [γ, γ²] with γ = ξ^{(p^k−1)/3}.
+fn gammaTable(
+    comptime Fp2: type,
+    comptime xi: Fp2,
+    comptime k: usize,
+) [2]Fp2 {
+    const p = @as(comptime_int, Fp2.MODULUS);
+    comptime {
+        // Exponentiation over a 381-bit modulus needs a generous budget.
+        @setEvalBranchQuota(200_000_000);
+        const num = ipow(p, k) - 1;
+        return [2]Fp2{ xi.powFast(num / 3), xi.powFast(num / 3).sqr() };
+    }
+}
+
+fn ipow(base: comptime_int, exp: usize) comptime_int {
+    var result: comptime_int = 1;
+    var b = base;
+    var e = exp;
+    while (e > 0) : (e >>= 1) {
+        if (e & 1 == 1) result *= b;
+        b *= b;
+    }
+    return result;
+}
+
+/// Quadratic extension of Fp6: elements c0 + c1·w with w² = nu (nu = v in
+/// practice, tying the two levels together).
+pub fn Fp12(comptime Base6: type) type {
+    // nu is Base6.one().c1 == v — i.e. w² = v, so w behaves like the sextic
+    // generator: w⁶ = v³ = xi.
+    const Fp2t = @TypeOf(Base6.zero().c0);
+    const NU_VALUE = comptime blk: {
+        var v = Base6.zero();
+        v.c1 = Fp2t.one();
+        break :blk v;
+    };
+
+    return struct {
+        const Self = @This();
+
+        pub const Base = Base6;
+        /// Quadratic non-residue: the Base6 element v.
+        pub const NU = NU_VALUE;
+
+        c0: Base6,
+        c1: Base6,
+
+        pub fn zero() Self {
+            return .{ .c0 = Base6.zero(), .c1 = Base6.zero() };
+        }
+
+        pub fn one() Self {
+            return .{ .c0 = Base6.one(), .c1 = Base6.zero() };
+        }
+
+        pub fn new(c0: Base6, c1: Base6) Self {
+            return .{ .c0 = c0, .c1 = c1 };
+        }
+
+        pub fn fromFp6(a: Base6) Self {
+            return .{ .c0 = a, .c1 = Base6.zero() };
+        }
+
+        pub fn eql(a: Self, b: Self) bool {
+            return a.c0.eql(b.c0) and a.c1.eql(b.c1);
+        }
+
+        pub fn isZero(self: Self) bool {
+            return self.c0.isZero() and self.c1.isZero();
+        }
+
+        pub fn add(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1) };
+        }
+
+        pub fn sub(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.sub(b.c0), .c1 = a.c1.sub(b.c1) };
+        }
+
+        pub fn neg(a: Self) Self {
+            return .{ .c0 = a.c0.neg(), .c1 = a.c1.neg() };
+        }
+
+        pub fn dbl(a: Self) Self {
+            return a.add(a);
+        }
+
+        /// Multiplication: (a0 + a1w)(b0 + b1w) = (a0b0 + ν a1b1) + (a0b1 + a1b0)w.
+        pub fn mul(a: Self, b: Self) Self {
+            const t0 = a.c0.mul(b.c0);
+            const t1 = a.c1.mul(b.c1);
+            const t2 = a.c0.mul(b.c1);
+            const t3 = a.c1.mul(b.c0);
+            // ν·t1: ν = v, so multiplying by v maps (d0,d1,d2) -> (0·?, ...) =
+            // (0, d0·1, 0)+... precisely v·(d0+d1v+d2v²) = d0v + d1v² + d2ξ.
+            const nu_t1 = mulByNu(t1);
+            return .{
+                .c0 = t0.add(nu_t1),
+                .c1 = t2.add(t3),
+            };
+        }
+
+        pub fn sqr(a: Self) Self {
+            return a.mul(a);
+        }
+
+        /// ν = v multiplication: v·(d0 + d1v + d2v²) = d2·ξ + d0·v + d1·v².
+        fn mulByNu(h: Base6) Base6 {
+            return .{
+                .c0 = h.c2.mul(Base6.XI),
+                .c1 = h.c0,
+                .c2 = h.c1,
+            };
+        }
+
+        /// Norm inversion: (c0 + c1w)^{-1} = (c0 − c1w) / (c0² − ν c1²).
+        pub fn inv(a: Self) Self {
+            std.debug.assert(!a.isZero());
+            const t0 = a.c0.sqr();
+            const t1 = a.c1.sqr();
+            const nu_t1 = mulByNu(t1);
+            const det = t0.sub(nu_t1);
+            const det_inv = det.inv();
+            return .{
+                .c0 = a.c0.mul(det_inv),
+                .c1 = a.c1.neg().mul(det_inv),
+            };
+        }
+
+        /// Conjugation (the p⁶-power map on Fp12/Base6).
+        pub fn conjugate(a: Self) Self {
+            return .{ .c0 = a.c0, .c1 = a.c1.neg() };
+        }
+
+        /// Fast exponentiation (public exponent).
+        pub fn powFast(a: Self, exp: anytype) Self {
+            var result = Self.one();
+            var base = a;
+            var e: u512 = if (@TypeOf(exp) == comptime_int) @intCast(exp) else @intCast(exp);
+            while (e > 0) : (e >>= 1) {
+                if (e & 1 == 1) result = result.mul(base);
+                base = base.sqr();
+            }
+            return result;
+        }
+    };
+}
+
+
+
+
