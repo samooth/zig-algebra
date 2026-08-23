@@ -19,10 +19,11 @@ Each library:
 | **Traits** | `algebra-traits` (Field, Group, Ring, VectorSpace...) |
 | **Foundation** | `bigint` (arbitrary-precision integers) · `hash` (Blake3, Keccak, Poseidon, MiMC) · `rng` (ChaCha20, SHAKE256) |
 | **Fields** | `field` (prime fields, Montgomery, tower extensions) · `binary-field` (GF(2^n), Binius) |
-| **Curves** | `curve` (Weierstrass, BN254, BLS12-381, Pasta) |
+| **Curves** | `curve` (Weierstrass, BN254, BLS12-381, Pasta) · `pairing` (optimal ate pairings, Fp2/Fp6/Fp12 towers) |
 | **Data Structures** | `merkle` (binary, MMR, sparse) |
 | **Transforms** | `ntt` (Cooley-Tukey, Circle FFT, mixed-radix, SIMD) |
 | **Polynomials** | `poly` (dense univariate, Lagrange, Karatsuba, GCD) |
+| **Linear Algebra** | `linalg` (vectors, matrices, LU decomposition, linear solving over fields) |
 | **Utilities** | `parallel` (fork-join thread pool) · `serialization` (generic wire encoding) |
 
 ## Dependency Graph
@@ -35,9 +36,11 @@ algebra-traits (no deps)
 ├── field             (→ bigint)
 ├── binary-field      (→ hash)
 ├── curve             (→ field, hash)
+├── pairing           (→ field, curve)
 ├── merkle            (→ hash)
 ├── ntt               (→ algebra-traits)
 ├── poly              (→ algebra-traits)
+├── linalg            (→ field)
 ├── parallel          (no deps)
 └── serialization     (no deps)
 ```
@@ -50,14 +53,19 @@ algebra-traits (no deps)
 | [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 15 |
 | [hash](libs/hash/) | Cryptographic hash functions (Blake3, Keccak, Poseidon, MiMC) | 15 |
 | [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256) | 12 |
-| [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | — |
+| [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 58+ |
+| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 53 |
+| [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 83 |
+| [pairing](libs/pairing/) | Bilinear pairings: Fp2/Fp6/Fp12 towers, Miller loop, final exponentiation | 6 |
+| [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | 10 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 11 |
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 12 |
-| [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 64 |
-| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 63 |
-| [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 43 |
+| [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 9 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 2 |
 | [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 4 |
+
+> Run everything from the repo root: `zig build test` executes every suite
+> above (189+ tests) and fails on any failure.
 
 ## Quick Start
 
