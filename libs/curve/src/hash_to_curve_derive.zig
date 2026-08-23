@@ -15,7 +15,8 @@ const std = @import("std");
 /// returning the first valid point. No discrete-log relation with standard
 /// generators is known.
 ///
-/// `Point` must support `fromCompressedSec1([33]u8) !Point`.
+/// `Point` must support `fromSec1([]const u8) !Point` accepting compressed
+/// SEC1 encodings (0x02/0x03 prefix).
 pub fn hashToPoint(Point: type, domain: []const u8) Point {
     var counter: u64 = 0;
     while (counter < 100_000) : (counter += 1) {
@@ -26,7 +27,7 @@ pub fn hashToPoint(Point: type, domain: []const u8) Point {
             var compressed: [33]u8 = undefined;
             compressed[0] = prefix;
             @memcpy(compressed[1..], &x);
-            if (Point.fromCompressedSec1(&compressed)) |p| {
+            if (Point.fromSec1(&compressed)) |p| {
                 return p;
             } else |_| {}
         }
@@ -92,7 +93,7 @@ test "generatorVector produces distinct generators" {
     // All should be distinct
     for (0..10) |i| {
         for (i + 1..10) |j| {
-            try testing.expect(!buf[i].eql(buf[j]));
+            try testing.expect(!buf[i].equivalent(buf[j]));
         }
     }
 }
@@ -102,5 +103,5 @@ test "hashToPoint is deterministic" {
 
     const p1 = hashToPoint(Secp256k1, "deterministic/test");
     const p2 = hashToPoint(Secp256k1, "deterministic/test");
-    try testing.expect(p1.eql(p2));
+    try testing.expect(p1.equivalent(p2));
 }

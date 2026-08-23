@@ -23,7 +23,7 @@ pub const p256 = std.crypto.ecc.P256;
 pub const p384 = std.crypto.ecc.P384;
 
 // Re-export Ed25519 signatures
-pub const ed25519 = std.crypto.ed25519;
+pub const ed25519 = std.crypto.sign.Ed25519;
 
 // ============================================================================
 // Custom curve implementations
@@ -68,3 +68,14 @@ pub const hash_to_curve_derive = @import("hash_to_curve_derive.zig");
 // ============================================================================
 
 pub const group_poly = @import("group_poly.zig");
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+test {
+    // Reference every public declaration so the `@import`s below are forced
+    // and `test` blocks declared inside imported modules (bn254.zig,
+    // bls12_381.zig, pasta.zig, ...) are collected by the test runner.
+    std.testing.refAllDecls(@This());
+}

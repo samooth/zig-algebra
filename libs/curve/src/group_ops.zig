@@ -3,18 +3,49 @@
 //! Generic elliptic curve group operations.
 //!
 //! Provides a uniform API over any curve point type that supports
-//! `add`, `neg`, `eql`, `identity`, `scalarMul`, `toCompressedSec1`, `fromSec1`.
+//! addition, negation, equality, an identity element, scalar
+//! multiplication and SEC1 (de)serialization. Adapts both our own
+//! Weierstrass points (`add`/`eql`/`scalarMul`) and stdlib pcurves
+//! (`add`/`equivalent`/`mul([32]u8, endian)`/`identityElement`).
 
 const std = @import("std");
+
+/// Return the identity element of a point type.
+pub fn identity(comptime Point: type) Point {
+    if (@hasDecl(Point, "identityElement")) return Point.identityElement;
+    if (@hasDecl(Point, "identity")) return Point.identity();
+    return Point.zero();
+}
+
+/// Equality of two points under either naming convention.
+pub fn eql(comptime Point: type, a: Point, b: Point) bool {
+    if (@hasDecl(Point, "equivalent")) return a.equivalent(b);
+    return a.eql(b);
+}
+
+/// Multiply `p` by a scalar (bytes or integer, per point type convention).
+pub fn scalarMul(p: anytype, scalar: anytype) @TypeOf(p) {
+    const P = @TypeOf(p);
+    if (@hasDecl(P, "scalarMul")) return p.scalarMul(scalar);
+    // stdlib pcurves: mul(self, [32]u8, endian)
+    return p.mul(scalar, .big) catch unreachable;
+}
+
+/// Identity element of a point type (any naming convention).
+fn file_identity(comptime Point: type) Point {
+    if (@hasDecl(Point, "identityElement")) return Point.identityElement;
+    if (@hasDecl(Point, "identity")) return Point.identity();
+    return Point.zero();
+}
 
 /// Generic group operations over a curve point type.
 ///
 /// `Point` must support:
 ///   - `add(a, b) Point`
 ///   - `neg(p) Point`
-///   - `eql(a, b) bool`
-///   - `identity() Point` (or `zero()`)
-///   - `scalarMul(p, scalar_bytes) !Point`
+///   - equality via `eql` or `equivalent`
+///   - identity via `identity()` / `zero()` / `identityElement`
+///   - scalar multiplication via `scalarMul` or `mul([32]u8, .big)`
 ///   - `toCompressedSec1() [33]u8`
 ///   - `fromSec1(bytes) !Point`
 pub fn GroupOps(comptime Point: type) type {
@@ -23,8 +54,7 @@ pub fn GroupOps(comptime Point: type) type {
 
         /// Point at infinity (identity element).
         pub fn identity() Point {
-            if (@hasDecl(Point, "identity")) return Point.identity();
-            return Point.zero();
+            return file_identity(Point);
         }
 
         /// Add two points.
@@ -43,25 +73,19 @@ pub fn GroupOps(comptime Point: type) type {
         }
 
         /// Scalar multiplication.
-        pub fn scalarMul(p: Point, scalar_bytes: anytype) !Point {
-            return p.scalarMul(scalar_bytes);
-        }
-
-        /// Scalar multiplication by the generator.
-        pub fn scalarBaseMul(scalar_bytes: anytype, generator: Point) !Point {
-            return generator.scalarMul(scalar_bytes);
+        pub fn mul(p: Point, scalar_bytes: anytype) Point {
+            return scalarMul(p, scalar_bytes);
         }
 
         /// Check if a point is the identity element.
         pub fn isIdentity(p: Point) bool {
-            if (@hasDecl(Point, "infinity")) return p.infinity;
-            if (@hasDecl(Point, "eql")) return p.eql(Self.identity());
-            return false;
+            if (@hasField(Point, "infinity")) return p.infinity;
+            return eql(Point, p, Self.identity());
         }
 
         /// Check if two points are equal.
-        pub fn eql(a: Point, b: Point) bool {
-            return a.eql(b);
+        pub fn eq(a: Point, b: Point) bool {
+            return eql(Point, a, b);
         }
 
         /// Serialize a point to compressed SEC1 format.
@@ -69,9 +93,9 @@ pub fn GroupOps(comptime Point: type) type {
             return p.toCompressedSec1();
         }
 
-        /// Deserialize a point from compressed SEC1 format.
-        pub fn deserialize(bytes: [33]u8) !Point {
-            return Point.fromSec1(&bytes);
+        /// Deserialize a point from SEC1 encoding.
+        pub fn deserialize(bytes: []const u8) !Point {
+            return Point.fromSec1(bytes);
         }
     };
 }
@@ -91,7 +115,7 @@ test "GroupOps with Secp256k1" {
 
     // identity + gen = gen
     const sum = G.add(id, gen);
-    try testing.expect(G.eql(sum, gen));
+    try testing.expect(G.eq(sum, gen));
 
     // gen + (-gen) = identity
     const neg_gen = G.negate(gen);
@@ -99,7 +123,7 @@ test "GroupOps with Secp256k1" {
     try testing.expect(G.isIdentity(diff));
 
     // Serialization round-trip
-    const bytes = G.serialize(gen) catch return error.TestFailed;
-    const deserialized = G.deserialize(bytes) catch return error.TestFailed;
-    try testing.expect(G.eql(gen, deserialized));
+    const bytes = try G.serialize(gen);
+    const deserialized = try G.deserialize(&bytes);
+    try testing.expect(G.eq(gen, deserialized));
 }

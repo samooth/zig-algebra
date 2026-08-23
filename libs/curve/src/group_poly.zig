@@ -8,6 +8,27 @@
 
 const std = @import("std");
 
+/// Equality under either `eql` (our points) or `equivalent` (stdlib pcurves).
+fn ptEql(comptime Point: type, a: Point, b: Point) bool {
+    if (@hasDecl(Point, "equivalent")) return a.equivalent(b);
+    return a.eql(b);
+}
+
+/// Identity under any naming convention.
+fn ptIdentity(comptime Point: type) Point {
+    if (@hasDecl(Point, "identityElement")) return Point.identityElement;
+    if (@hasDecl(Point, "identity")) return Point.identity();
+    return Point.zero();
+}
+
+/// Scalar multiplication under either convention.
+fn ptScalarMul(p: anytype, bytes: [32]u8) @TypeOf(p) {
+    const P = @TypeOf(p);
+    if (@hasDecl(P, "scalarMul")) return p.scalarMul(bytes);
+    // stdlib pcurves: mul(self, [32]u8, endian)
+    return p.mul(bytes, .big) catch unreachable;
+}
+
 /// Evaluate a group-element polynomial at scalar `x` using Horner's method.
 ///
 /// Given commitments `C_0, C_1, ..., C_n` and scalar `x`, computes:
@@ -16,14 +37,15 @@ const std = @import("std");
 /// This is the group analogue of scalar polynomial evaluation, where
 /// multiplication is scalar-point multiplication and addition is point addition.
 ///
-/// `Point` must support `add`, `scalarMul`. `Scalar` must support `toBytes(.big)`.
+/// `Point` must support `add` and scalar multiplication; `Scalar` is a
+/// stdlib-style scalar whose `toBytes(.big)` yields the 32-byte multiplier.
 pub fn evalGroupPoly(
     comptime Point: type,
     comptime Scalar: type,
     commitments: []const Point,
     x: Scalar,
 ) Point {
-    if (commitments.len == 0) return Point.identity();
+    if (commitments.len == 0) return ptIdentity(Point);
     if (commitments.len == 1) return commitments[0];
 
     // Horner's method: start from highest degree
@@ -32,7 +54,7 @@ pub fn evalGroupPoly(
     while (i > 0) {
         i -= 1;
         // result = C_i + x * result
-        const x_times_result = result.scalarMul(x.toBytes(.big));
+        const x_times_result = ptScalarMul(result, x.toBytes(.big));
         result = commitments[i].add(x_times_result);
     }
     return result;
@@ -47,7 +69,7 @@ pub fn evalGroupPolyVerify(
     expected: Point,
 ) bool {
     const result = evalGroupPoly(Point, Scalar, commitments, x);
-    return result.eql(expected);
+    return ptEql(Point, result, expected);
 }
 
 // ============================================================================
@@ -56,14 +78,22 @@ pub fn evalGroupPolyVerify(
 
 const testing = std.testing;
 
+/// Build a secp256k1 scalar from a u64 (big-endian encoding).
+fn scalarFromU64(v: u64) std.crypto.ecc.Secp256k1.scalar.Scalar {
+    const S = std.crypto.ecc.Secp256k1.scalar.Scalar;
+    var bytes: [32]u8 = [_]u8{0} ** 32;
+    std.mem.writeInt(u64, bytes[24..32], v, .big);
+    return S.fromBytes(bytes, .big) catch unreachable;
+}
+
 test "evalGroupPoly single element" {
     const Secp256k1 = std.crypto.ecc.Secp256k1;
     const Scalar = Secp256k1.scalar.Scalar;
 
     const c0 = Secp256k1.basePoint;
-    const x = Scalar.fromInt(42);
+    const x = scalarFromU64(42);
     const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{c0}, x);
-    try testing.expect(result.eql(c0));
+    try testing.expect(ptEql(Secp256k1, result, c0));
 }
 
 test "evalGroupPoly two elements" {
@@ -72,19 +102,19 @@ test "evalGroupPoly two elements" {
 
     const c0 = Secp256k1.basePoint;
     const c1 = Secp256k1.basePoint;
-    const x = Scalar.fromInt(1);
+    const x = scalarFromU64(1);
 
     // C_0 + x * C_1 = G + 1*G = 2G
     const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{ c0, c1 }, x);
-    const expected = c0.add(c1);
-    try testing.expect(result.eql(expected));
+    const expected = Secp256k1.basePoint.dbl();
+    try testing.expect(ptEql(Secp256k1, result, expected));
 }
 
 test "evalGroupPoly empty" {
     const Secp256k1 = std.crypto.ecc.Secp256k1;
     const Scalar = Secp256k1.scalar.Scalar;
 
-    const x = Scalar.fromInt(42);
+    const x = scalarFromU64(42);
     const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{}, x);
-    try testing.expect(result.eql(Secp256k1.identityElement));
+    try testing.expect(ptEql(Secp256k1, result, Secp256k1.identityElement));
 }

@@ -210,6 +210,23 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
             };
         }
 
+        /// Multiply by small constants (faster than general multiplication).
+        pub fn mulBy2(self: Self) Self {
+            return self.add(self);
+        }
+        pub fn mulBy3(self: Self) Self {
+            return self.add(self).add(self);
+        }
+        pub fn mulBy4(self: Self) Self {
+            return self.mulBy2().mulBy2();
+        }
+        pub fn mulBy5(self: Self) Self {
+            return self.mulBy4().add(self);
+        }
+        pub fn sqr(self: Self) Self {
+            return self.mul(self);
+        }
+
         /// Constant-time exponentiation. Exponent must fit in `WideExp` and be non-negative.
         /// WARNING: ~2x slower than square-and-multiply because every multiply is
         /// executed unconditionally. Use only when the exponent is secret.
@@ -446,6 +463,23 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
                 .c1 = BaseField.random(rnd),
                 .c2 = BaseField.random(rnd),
             };
+        }
+
+        /// Multiply by small constants (faster than general multiplication).
+        pub fn mulBy2(self: Self) Self {
+            return self.add(self);
+        }
+        pub fn mulBy3(self: Self) Self {
+            return self.add(self).add(self);
+        }
+        pub fn mulBy4(self: Self) Self {
+            return self.mulBy2().mulBy2();
+        }
+        pub fn mulBy5(self: Self) Self {
+            return self.mulBy4().add(self);
+        }
+        pub fn sqr(self: Self) Self {
+            return self.mul(self);
         }
 
         /// Constant-time exponentiation. Exponent must fit in `WideExp` and be non-negative.
