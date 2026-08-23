@@ -1,5 +1,39 @@
 const std = @import("std");
 
+/// Create the module for a library, register its unit-test binary, and wire a
+/// run step into `test_step` so `zig build test` actually executes the tests
+/// (not merely compiles them).
+fn lib(
+    b: *std.Build,
+    test_step: *std.Build.Step,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    comptime module_name: []const u8,
+    root_source: []const u8,
+    imports: []const struct { []const u8, *std.Build.Module },
+) *std.Build.Module {
+    const mod = b.addModule(module_name, .{
+        .root_source_file = b.path(root_source),
+        .target = target,
+        .optimize = optimize,
+    });
+    const test_module = b.createModule(.{
+        .root_source_file = b.path(root_source),
+        .target = target,
+        .optimize = optimize,
+    });
+    for (imports) |imp| {
+        mod.addImport(imp[0], imp[1]);
+        test_module.addImport(imp[0], imp[1]);
+    }    const tests = b.addTest(.{
+        .name = module_name ++ "-tests",
+        .root_module = test_module,
+    });
+    const run_tests = b.addRunArtifact(tests);
+    test_step.dependOn(&run_tests.step);
+    return mod;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -7,235 +41,179 @@ pub fn build(b: *std.Build) void {
     // Test step that runs all library tests
     const test_step = b.step("test", "Run all library tests");
 
-    // algebra-traits
-    const traits_mod = b.addModule("zig-algebra-traits", .{
-        .root_source_file = b.path("libs/algebra-traits/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const traits_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/algebra-traits/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const traits_tests = b.addTest(.{
-        .name = "zig-algebra-traits-tests",
-        .root_module = traits_test_module,
-    });
-    test_step.dependOn(&traits_tests.step);
+    // algebra-traits (no deps)
+    const traits_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-algebra-traits",
+        "libs/algebra-traits/src/root.zig",
+        &.{},
+    );
 
-    // bigint
-    const bigint_mod = b.addModule("zig-bigint", .{
-        .root_source_file = b.path("libs/bigint/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    bigint_mod.addImport("zig-algebra-traits", traits_mod);
-    const bigint_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/bigint/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    bigint_test_module.addImport("zig-algebra-traits", traits_mod);
-    const bigint_tests = b.addTest(.{
-        .name = "zig-bigint-tests",
-        .root_module = bigint_test_module,
-    });
-    test_step.dependOn(&bigint_tests.step);
+    // bigint -> algebra-traits
+    const bigint_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-bigint",
+        "libs/bigint/src/root.zig",
+        &.{.{ "zig-algebra-traits", traits_mod }},
+    );
 
-    // hash
-    const hash_mod = b.addModule("zig-hash", .{
-        .root_source_file = b.path("libs/hash/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    hash_mod.addImport("zig-algebra-traits", traits_mod);
-    const hash_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/hash/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    hash_test_module.addImport("zig-algebra-traits", traits_mod);
-    const hash_tests = b.addTest(.{
-        .name = "zig-hash-tests",
-        .root_module = hash_test_module,
-    });
-    test_step.dependOn(&hash_tests.step);
+    // hash -> algebra-traits
+    const hash_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-hash",
+        "libs/hash/src/root.zig",
+        &.{.{ "zig-algebra-traits", traits_mod }},
+    );
 
-    // rng
-    const rng_mod = b.addModule("zig-rng", .{
-        .root_source_file = b.path("libs/rng/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    rng_mod.addImport("zig-algebra-traits", traits_mod);
-    rng_mod.addImport("zig-hash", hash_mod);
-    const rng_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/rng/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    rng_test_module.addImport("zig-algebra-traits", traits_mod);
-    rng_test_module.addImport("zig-hash", hash_mod);
-    const rng_tests = b.addTest(.{
-        .name = "zig-rng-tests",
-        .root_module = rng_test_module,
-    });
-    test_step.dependOn(&rng_tests.step);
+    // rng -> algebra-traits, hash
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-rng",
+        "libs/rng/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-hash", hash_mod },
+        },
+    );
 
-    // field
-    const field_mod = b.addModule("zig-field", .{
-        .root_source_file = b.path("libs/field/src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    field_mod.addImport("zig-bigint", bigint_mod);
-    const field_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/field/src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    field_test_module.addImport("zig-bigint", bigint_mod);
-    const field_tests = b.addTest(.{
-        .name = "zig-field-tests",
-        .root_module = field_test_module,
-    });
-    test_step.dependOn(&field_tests.step);
+    // field -> bigint
+    const field_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-field",
+        "libs/field/src/lib.zig",
+        &.{.{ "zig-bigint", bigint_mod }},
+    );
 
-    // binary-field
-    const binary_field_mod = b.addModule("zig-binary-field", .{
-        .root_source_file = b.path("libs/binary-field/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    binary_field_mod.addImport("zig-algebra-traits", traits_mod);
-    binary_field_mod.addImport("zig-hash", hash_mod);
-    const binary_field_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/binary-field/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    binary_field_test_module.addImport("zig-algebra-traits", traits_mod);
-    binary_field_test_module.addImport("zig-hash", hash_mod);
-    const binary_field_tests = b.addTest(.{
-        .name = "zig-binary-field-tests",
-        .root_module = binary_field_test_module,
-    });
-    test_step.dependOn(&binary_field_tests.step);
+    // binary-field -> algebra-traits, hash
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-binary-field",
+        "libs/binary-field/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-hash", hash_mod },
+        },
+    );
 
-    // curve
-    const curve_mod = b.addModule("zig-curve", .{
-        .root_source_file = b.path("libs/curve/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    curve_mod.addImport("zig-field", field_mod);
-    curve_mod.addImport("zig-hash", hash_mod);
-    const curve_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/curve/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    curve_test_module.addImport("zig-field", field_mod);
-    curve_test_module.addImport("zig-hash", hash_mod);
-    const curve_tests = b.addTest(.{
-        .name = "zig-curve-tests",
-        .root_module = curve_test_module,
-    });
-    test_step.dependOn(&curve_tests.step);
+    // curve -> field, hash
+    const curve_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-curve",
+        "libs/curve/src/root.zig",
+        &.{
+            .{ "zig-field", field_mod },
+            .{ "zig-hash", hash_mod },
+        },
+    );
 
-    // merkle
-    const merkle_mod = b.addModule("zig-merkle", .{
-        .root_source_file = b.path("libs/merkle/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    merkle_mod.addImport("zig-algebra-traits", traits_mod);
-    merkle_mod.addImport("zig-hash", hash_mod);
-    const merkle_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/merkle/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    merkle_test_module.addImport("zig-algebra-traits", traits_mod);
-    merkle_test_module.addImport("zig-hash", hash_mod);
-    const merkle_tests = b.addTest(.{
-        .name = "zig-merkle-tests",
-        .root_module = merkle_test_module,
-    });
-    test_step.dependOn(&merkle_tests.step);
+    // merkle -> algebra-traits, hash
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-merkle",
+        "libs/merkle/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-hash", hash_mod },
+        },
+    );
 
-    // ntt
-    const ntt_mod = b.addModule("zig-ntt", .{
-        .root_source_file = b.path("libs/ntt/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    ntt_mod.addImport("zig-algebra-traits", traits_mod);
-    ntt_mod.addImport("zig-field", field_mod);
-    const ntt_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/ntt/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    ntt_test_module.addImport("zig-algebra-traits", traits_mod);
-    ntt_test_module.addImport("zig-field", field_mod);
-    const ntt_tests = b.addTest(.{
-        .name = "zig-ntt-tests",
-        .root_module = ntt_test_module,
-    });
-    test_step.dependOn(&ntt_tests.step);
+    // ntt -> algebra-traits, field
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-ntt",
+        "libs/ntt/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-field", field_mod },
+        },
+    );
 
-    // poly
-    const poly_mod = b.addModule("zig-poly", .{
-        .root_source_file = b.path("libs/poly/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    poly_mod.addImport("zig-algebra-traits", traits_mod);
-    const poly_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/poly/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    poly_test_module.addImport("zig-algebra-traits", traits_mod);
-    const poly_tests = b.addTest(.{
-        .name = "zig-poly-tests",
-        .root_module = poly_test_module,
-    });
-    test_step.dependOn(&poly_tests.step);
+    // poly -> algebra-traits
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-poly",
+        "libs/poly/src/root.zig",
+        &.{.{ "zig-algebra-traits", traits_mod }},
+    );
 
-    // parallel
-    _ = b.addModule("zig-parallel", .{
-        .root_source_file = b.path("libs/parallel/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const parallel_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/parallel/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const parallel_tests = b.addTest(.{
-        .name = "zig-parallel-tests",
-        .root_module = parallel_test_module,
-    });
-    test_step.dependOn(&parallel_tests.step);
+    // linalg -> algebra-traits, field
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-linalg",
+        "libs/linalg/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-field", field_mod },
+        },
+    );
 
-    // serialization
-    _ = b.addModule("zig-serialization", .{
-        .root_source_file = b.path("libs/serialization/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const serialization_test_module = b.createModule(.{
-        .root_source_file = b.path("libs/serialization/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    const serialization_tests = b.addTest(.{
-        .name = "zig-serialization-tests",
-        .root_module = serialization_test_module,
-    });
-    test_step.dependOn(&serialization_tests.step);
+    // parallel (no deps)
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-parallel",
+        "libs/parallel/src/root.zig",
+        &.{},
+    );
+
+    // serialization (no deps)
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-serialization",
+        "libs/serialization/src/root.zig",
+        &.{},
+    );
+
+    // pairing -> algebra-traits, field, curve
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-pairing",
+        "libs/pairing/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-field", field_mod },
+            .{ "zig-curve", curve_mod },
+        },
+    );
 }
