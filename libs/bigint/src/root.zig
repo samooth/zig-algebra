@@ -15,6 +15,7 @@ pub const Limb = limb.Limb;
 pub const DoubleLimb = limb.DoubleLimb;
 pub const BigInt = bigint.BigInt;
 pub const ExtendedGcd = gcd.ExtendedGcd;
+pub const Gcd = gcd.ExtendedGcd;
 pub const ModExp = modexp.ModExp;
 pub const PrimalityTest = prime.PrimalityTest;
 
@@ -237,4 +238,11 @@ test "BigInt bit operations" {
 
     const bxor = a.bitXor(b);
     try std.testing.expect(bxor.eql(Big.fromU64(0b0110)));
+}
+
+test "modInverse accessible via Gcd re-export" {
+    const G = Gcd(8);
+    const Big = BigInt(8);
+    const inv = try G.modInv(Big.fromU64(3), Big.fromU64(11));
+    try std.testing.expect(inv.eql(Big.fromU64(4))); // 3*4 = 12 ≡ 1 mod 11
 }

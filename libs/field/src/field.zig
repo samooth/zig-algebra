@@ -264,11 +264,15 @@ fn SmallField(comptime modulus: comptime_int) type {
             return self.mul(self);
         }
 
-        /// Random element in [0, bound).
+        /// Random element in [0, min(bound, MODULUS)).
+        /// Uses rejection sampling: draws a full-width u64 and accepts only
+        /// values below the limit, giving a uniform distribution.
         pub fn randomBounded(rnd: std.Random, bound: u64) Self {
+            std.debug.assert(bound > 0);
+            const limit = @min(bound, MODULUS);
             while (true) {
-                const v = rnd.int(u64) % bound;
-                return .{ .value = v };
+                const v = rnd.int(u64);
+                if (v < limit) return .{ .value = v };
             }
         }
 
@@ -908,15 +912,18 @@ fn BigField(comptime modulus: comptime_int) type {
             return self.mul(self);
         }
 
-        /// Random element in [0, bound).
+        /// Random element in [0, min(bound, MODULUS)).
+        /// Uses rejection sampling: draws NUM_BYTES random bytes, interprets
+        /// as u512, and accepts only values below the limit.
         pub fn randomBounded(rnd: std.Random, bound: u512) Self {
+            std.debug.assert(bound > 0);
+            const limit = @min(bound, @as(u512, MODULUS));
             while (true) {
                 var buf: [NUM_BYTES]u8 = undefined;
                 rnd.bytes(&buf);
                 var v: u512 = 0;
                 for (buf, 0..) |b, i| v |= @as(u512, b) << @intCast(8 * i);
-                v %= bound;
-                if (v < MODULUS) return .{ .limbs = Mont.toMontgomery(intToLimbs(v)) };
+                if (v < limit) return .{ .limbs = Mont.toMontgomery(intToLimbs(v)) };
             }
         }
 
