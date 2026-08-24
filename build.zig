@@ -142,7 +142,7 @@ pub fn build(b: *std.Build) void {
     );
 
     // ntt -> algebra-traits, field
-    _ = lib(
+    const ntt_mod = lib(
         b,
         test_step,
         target,
@@ -227,6 +227,9 @@ pub fn build(b: *std.Build) void {
     });
     bench_module.addImport("zig-field", field_mod);
     bench_module.addImport("zig-curve", curve_mod);
+    bench_module.addImport("zig-algebra-traits", traits_mod);
+    bench_module.addImport("zig-bigint", bigint_mod);
+    bench_module.addImport("zig-ntt", ntt_mod);
     const bench_exe = b.addExecutable(.{
         .name = "pairing-bench",
         .root_module = bench_module,
