@@ -75,6 +75,17 @@ pub fn build(b: *std.Build) void {
         &.{.{ "zig-algebra-traits", traits_mod }},
     );
 
+    // transcript -> (stdlib only, no internal deps)
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-transcript",
+        "libs/transcript/src/root.zig",
+        &.{},
+    );
+
     // rng -> algebra-traits, hash
     _ = lib(
         b,
