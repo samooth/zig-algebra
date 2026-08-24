@@ -86,6 +86,24 @@ pub fn build(b: *std.Build) void {
         &.{},
     );
 
+    // fri -> transcript
+    {
+        const transcript_mod = b.addModule("zig-transcript-inner", .{
+            .root_source_file = b.path("libs/transcript/src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        _ = lib(
+            b,
+            test_step,
+            target,
+            optimize,
+            "zig-fri",
+            "libs/fri/src/root.zig",
+            &.{.{ "zig-transcript", transcript_mod }},
+        );
+    }
+
     // rng -> algebra-traits, hash
     _ = lib(
         b,
