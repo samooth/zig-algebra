@@ -255,3 +255,76 @@ pub const Ipa = commitment_.Ipa;
 // M31 Vec8 SIMD NTT
 pub const nttVec8M31 = Vec8NttM31.nttVec8M31;
 pub const inttVec8M31 = Vec8NttM31.inttVec8M31;
+
+// ============================================================================
+// Property-based tests: ring/field axioms over random elements
+// ============================================================================
+
+const stdx = @import("std");
+const testing = stdx.testing;
+
+fn checkFieldAxioms(comptime F: type, iterations: usize, seed: u64) !void {
+    var prng = stdx.Random.DefaultPrng.init(seed);
+    const rand = prng.random();
+
+    for (0..iterations) |_| {
+        const a = F.random(rand);
+        const b = F.random(rand);
+        const c = F.random(rand);
+
+        // Additive associativity: (a+b)+c == a+(b+c)
+        try testing.expect(a.add(b).add(c).eql(a.add(b.add(c))));
+
+        // Additive commutativity: a+b == b+a
+        try testing.expect(a.add(b).eql(b.add(a)));
+
+        // Additive identity: a+0 == a
+        try testing.expect(a.add(F.zero()).eql(a));
+
+        // Additive inverse: a+(-a) == 0
+        try testing.expect(a.add(a.neg()).isZero());
+
+        // Multiplicative associativity: (a*b)*c == a*(b*c)
+        try testing.expect(a.mul(b).mul(c).eql(a.mul(b.mul(c))));
+
+        // Multiplicative commutativity: a*b == b*a
+        try testing.expect(a.mul(b).eql(b.mul(a)));
+
+        // Multiplicative identity: a*1 == a
+        try testing.expect(a.mul(F.one()).eql(a));
+
+        // Distributivity: a*(b+c) == a*b + a*c
+        try testing.expect(a.mul(b.add(c)).eql(a.mul(b).add(a.mul(c))));
+
+        // Squaring consistency: a^2 == a*a
+        if (@hasDecl(F, "sqr")) {
+            try testing.expect(a.sqr().eql(a.mul(a)));
+        }
+
+        // Inversion round-trip: a * a^-1 == 1 (for nonzero a)
+        if (!a.isZero()) {
+            if (@hasDecl(F, "inv")) {
+                const inv_a = a.inv();
+                try testing.expect(a.mul(inv_a).eql(F.one()));
+                try testing.expect(inv_a.mul(a).eql(F.one()));
+            }
+        }
+
+        // Byte round-trip: toBytes(fromBytes(x)) == x
+        const bytes = a.toBytes();
+        const recovered = try F.fromBytes(&bytes);
+        try testing.expect(recovered.eql(a));
+    }
+}
+
+test "property: SmallField M31 axioms" {
+    try checkFieldAxioms(predef.M31, 200, 0xC0FFEE);
+}
+
+test "property: BN254_Fp axioms" {
+    try checkFieldAxioms(predef.BN254_Fp, 20, 0xBEEF);
+}
+
+test "property: BLS12_381_Fp axioms" {
+    try checkFieldAxioms(predef.BLS12_381_Fp, 5, 0xDEAD);
+}
