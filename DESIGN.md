@@ -102,3 +102,17 @@ Constant-time guarantees apply ONLY where explicitly documented:
 
 For STARK/SNARK proving (public data): all of the above are safe.
 For signature schemes or key exchange: audit before use.
+
+## WASM Compilation
+
+Zig compiles to wasm32-freestanding natively:
+
+```bash
+zig build-exe examples/wasm_fp.zig \
+  -target wasm32-freestanding -O ReleaseFast \
+  --dep zig-field -Mroot=examples/wasm_fp.zig \
+  -Mzig-field=libs/field/src/lib.zig ...
+```
+
+See `examples/wasm_fp.zig` for exported functions (`fp_mul`, `fp_add`, `fp_inv`).
+The build.zig target is pending Zig 0.16 WASM linker flags.

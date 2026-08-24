@@ -203,7 +203,7 @@ pub fn build(b: *std.Build) void {
     );
 
     // pairing -> algebra-traits, field, curve
-    _ = lib(
+    const pairing_mod = lib(
         b,
         test_step,
         target,
@@ -236,4 +236,24 @@ pub fn build(b: *std.Build) void {
     });
     const run_bench = b.addRunArtifact(bench_exe);
     bench_step.dependOn(&run_bench.step);
+
+    // Example: Schnorr signature over BLS12-381
+    const example_step = b.step("example", "Run BLS12-381 Schnorr signature example");
+    const ex_mod = b.createModule(.{
+        .root_source_file = b.path("examples/schnorr_signature.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    ex_mod.addImport("zig-field", field_mod);
+    ex_mod.addImport("zig-curve", curve_mod);
+    ex_mod.addImport("zig-pairing", pairing_mod);
+    ex_mod.addImport("zig-algebra-traits", traits_mod);
+    ex_mod.addImport("zig-bigint", bigint_mod);
+    const example_exe = b.addExecutable(.{
+        .name = "schnorr-example",
+        .root_module = ex_mod,
+    });
+    const run_example = b.addRunArtifact(example_exe);
+    example_step.dependOn(&run_example.step);
+
 }
