@@ -37,6 +37,16 @@ jobs:
           version: 0.16.0
       - run: zig build -Doptimize=ReleaseFast
 
+  stark-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+      - name: Run STARK prover demo (Fibonacci over M31 via FRI)
+        run: zig build stark
+
   wasm-build:
     runs-on: ubuntu-latest
     steps:
@@ -44,12 +54,20 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.16.0
-      - name: Compile field arithmetic to WASM (smoke)
+      - name: Build wasm32-freestanding module (zig build wasm)
+        run: zig build wasm
+      - name: Verify exports and call fp_mul from Node
         run: |
-          zig build-exe examples/wasm_fp.zig \
-            -target wasm32-freestanding -O ReleaseFast \
-            --dep zig-field -Mroot=examples/wasm_fp.zig \
-            -Mzig-field=libs/field/src/lib.zig \
-            --dep zig-bigint -Mzig-bigint=libs/bigint/src/root.zig \
-            --dep zig-algebra-traits -Mzig-algebra-traits=libs/algebra-traits/src/root.zig \
-            -fno-emit-bin
+          node -e '
+          const fs = require("fs");
+          (async () => {
+            const { instance } = await WebAssembly.instantiate(
+              fs.readFileSync("zig-out/bin/zig_algebra_fp.wasm"), {});
+            const e = instance.exports;
+            for (const name of ["fp_add", "fp_mul", "fp_inv"]) {
+              if (typeof e[name] !== "function") throw new Error("missing export: " + name);
+            }
+            if (e.fp_mul(5n, 0n, 7n, 0n) !== 35n) throw new Error("fp_mul(5,7) != 35");
+            console.log("wasm exports OK:", Object.keys(e).join(", "));
+          })().catch((err) => { console.error(err); process.exit(1); });
+          '

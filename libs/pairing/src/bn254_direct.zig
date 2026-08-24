@@ -102,8 +102,61 @@ pub const Fp12Direct = struct {
         return .{ .coeff = out };
     }
 
+    /// Symmetric squaring: cross products c_i·c_j (i<j) computed once and
+    /// doubled — 78 Fp2 muls worst case vs 144 schoolbook. Followed by
+    /// reduction mod (w¹² − ξ).
     pub fn sqr(a: Fp12Direct) Fp12Direct {
-        return a.mul(a);
+        var prod: [24]Fp2 = @splat(Fp2.zero());
+        for (0..12) |i| {
+            const ai = a.coeff[i];
+            if (ai.isZero()) continue;
+            prod[2 * i] = prod[2 * i].add(ai.sqr());
+            var j = i + 1;
+            while (j < 12) : (j += 1) {
+                const aj = a.coeff[j];
+                if (aj.isZero()) continue;
+                const p1 = ai.mul(aj);
+                prod[i + j] = prod[i + j].add(p1.add(p1));
+            }
+        }
+        var out: [12]Fp2 = undefined;
+        for (0..12) |k| {
+            out[k] = prod[k].add(XI.mul(prod[k + 12]));
+        }
+        return .{ .coeff = out };
+    }
+
+    /// Multiply by sparse element c0 + c2·w² + c6·w⁶ (Miller line values).
+    /// Source term c_s·f[k] lands at degree k+s; degrees ≥12 fold via ξ.
+    /// 36 Fp2 muls vs 144 schoolbook.
+    fn mulBySparse026(f: Fp12Direct, c0: Fp2, c2: Fp2, c6: Fp2) Fp12Direct {
+        var out: [12]Fp2 = @splat(Fp2.zero());
+        var hi: [12]Fp2 = @splat(Fp2.zero()); // degrees 12..23
+        for (0..12) |k| {
+            const fk = f.coeff[k];
+            out[k] = out[k].add(c0.mul(fk));
+            if (k + 2 < 12) out[k + 2] = out[k + 2].add(c2.mul(fk)) else hi[k + 2 - 12] = hi[k + 2 - 12].add(c2.mul(fk));
+            if (k + 6 < 12) out[k + 6] = out[k + 6].add(c6.mul(fk)) else hi[k + 6 - 12] = hi[k + 6 - 12].add(c6.mul(fk));
+        }
+        for (0..12) |k| {
+            out[k] = out[k].add(XI.mul(hi[k]));
+        }
+        return .{ .coeff = out };
+    }
+
+    /// Multiply by sparse vertical v0 + v4·w⁴. 24 Fp2 muls vs 144.
+    fn mulBySparse04(f: Fp12Direct, v0: Fp2, v4: Fp2) Fp12Direct {
+        var out: [12]Fp2 = @splat(Fp2.zero());
+        var hi: [12]Fp2 = @splat(Fp2.zero());
+        for (0..12) |k| {
+            const fk = f.coeff[k];
+            out[k] = out[k].add(v0.mul(fk));
+            if (k + 4 < 12) out[k + 4] = out[k + 4].add(v4.mul(fk)) else hi[k + 4 - 12] = hi[k + 4 - 12].add(v4.mul(fk));
+        }
+        for (0..12) |k| {
+            out[k] = out[k].add(XI.mul(hi[k]));
+        }
+        return .{ .coeff = out };
     }
 
     /// Compute a^n via square-and-multiply for small positive n.
@@ -224,22 +277,24 @@ fn twistAdd(t: TwistAffine, q: TwistAffine) TwistAffine {
     return .{ .x = x3, .y = y3 };
 }
 
-/// Sparse line value l̃(P) = py·d + (−n·px)·w² + (n·tx − d·ty)·w⁶
-/// where λ = n/d. This equals d · (true tangent/chord line evaluated at P).
-fn lineNum(n: Fp2, d: Fp2, tx: Fp2, ty: Fp2, px: Fp, py: Fp) Fp12Direct {
-    var out = Fp12Direct.ZERO;
-    out.coeff[0] = Fp2.fromBase(py).mul(d);
-    out.coeff[2] = n.neg().mul(Fp2.fromBase(px));
-    out.coeff[6] = n.mul(tx).sub(d.mul(ty));
-    return out;
+/// Coefficients (slots 0,2,6) of the scaled line l̃(P)
+/// = py·d + (−n·px)·w² + (n·tx − d·ty)·w⁶, where λ = n/d. This equals
+/// d · (true tangent/chord line evaluated at P).
+const LineCoeffs = struct { s0: Fp2, s2: Fp2, s6: Fp2 };
+
+fn lineNum(n: Fp2, d: Fp2, tx: Fp2, ty: Fp2, px: Fp, py: Fp) LineCoeffs {
+    return .{
+        .s0 = Fp2.fromBase(py).mul(d),
+        .s2 = n.neg().mul(Fp2.fromBase(px)),
+        .s6 = n.mul(tx).sub(d.mul(ty)),
+    };
 }
 
-/// Vertical line v(P) = px − tx·w⁴.
-fn lineDen(px: Fp, tx: Fp2) Fp12Direct {
-    var out = Fp12Direct.ZERO;
-    out.coeff[0] = Fp2.fromBase(px);
-    out.coeff[4] = tx.neg();
-    return out;
+/// Coefficients (slots 0,4) of the vertical v(P) = px − tx·w⁴.
+const VertCoeffs = struct { v0: Fp2, v4: Fp2 };
+
+fn lineDen(px: Fp, tx: Fp2) VertCoeffs {
+    return .{ .v0 = Fp2.fromBase(px), .v4 = tx.neg() };
 }
 
 /// Optimal ate Miller loop: f_{t−1,Q}(P) as ratio gnum/gden (exact, no
@@ -267,8 +322,10 @@ pub fn millerLoopPair(p: G1Point, q: G2Point) struct { num: Fp12Direct, den: Fp1
             const n = t.x.sqr().add(t.x.sqr().add(t.x.sqr()));
             const d = t.y.add(t.y);
             const t2 = twistDbl(t);
-            gnum = gnum.sqr().mul(lineNum(n, d, t.x, t.y, p.x, p.y));
-            gden = gden.sqr().mul(lineDen(p.x, t2.x));
+            const ln = lineNum(n, d, t.x, t.y, p.x, p.y);
+            const vd = lineDen(p.x, t2.x);
+            gnum = gnum.sqr().mulBySparse026(ln.s0, ln.s2, ln.s6);
+            gden = gden.sqr().mulBySparse04(vd.v0, vd.v4);
             t = t2;
         }
         // Addition: f ← f · ℓ_{t,q}(P)/v_{t+q}(P)
@@ -276,8 +333,10 @@ pub fn millerLoopPair(p: G1Point, q: G2Point) struct { num: Fp12Direct, den: Fp1
             const n = q.y.sub(t.y);
             const d = q.x.sub(t.x);
             const tq = twistAdd(t, .{ .x = q.x, .y = q.y });
-            gnum = gnum.mul(lineNum(n, d, t.x, t.y, p.x, p.y));
-            gden = gden.mul(lineDen(p.x, tq.x));
+            const ln = lineNum(n, d, t.x, t.y, p.x, p.y);
+            const vd = lineDen(p.x, tq.x);
+            gnum = gnum.mulBySparse026(ln.s0, ln.s2, ln.s6);
+            gden = gden.mulBySparse04(vd.v0, vd.v4);
             t = tq;
         }
         if (bit == 0) break;
@@ -336,6 +395,35 @@ test "fp12_direct: distributivity" {
     const b = Fp12Direct.fromFp2(Fp2.fromInt(7));
     const c = Fp12Direct.fromFp2(Fp2.fromInt(11));
     try std.testing.expect(a.mul(b.add(c)).eql(a.mul(b).add(a.mul(c))));
+}
+
+test "fp12_direct: sqr matches mul on dense elements" {
+    // Dense element exercising all 12 slots and the ξ-fold wraparound.
+    var a = Fp12Direct.ZERO;
+    for (0..12) |k| {
+        a.coeff[k] = Fp2.new(Fp.fromInt(k + 3), Fp.fromInt(2 * k + 1));
+    }
+    try std.testing.expect(a.sqr().eql(a.mul(a)));
+    // Sparse-ish and boundary values.
+    var b = Fp12Direct.ZERO;
+    b.coeff[11] = Fp2.new(Fp.fromInt(7), Fp.one());
+    b.coeff[0] = Fp2.new(Fp.fromInt(13), Fp.zero());
+    try std.testing.expect(b.sqr().eql(b.mul(b)));
+    // Sparse multiply paths agree with generic mul.
+    const c = Fp2.new(Fp.fromInt(5), Fp.fromInt(9));
+    const d = Fp2.new(Fp.fromInt(2), Fp.fromInt(17));
+    const e = Fp2.new(Fp.fromInt(11), Fp.zero());
+    const sparse = a.mulBySparse026(c, d, e);
+    var line = Fp12Direct.ZERO;
+    line.coeff[0] = c;
+    line.coeff[2] = d;
+    line.coeff[6] = e;
+    try std.testing.expect(sparse.eql(a.mul(line)));
+    const sparse_v = a.mulBySparse04(c, d);
+    var vert = Fp12Direct.ZERO;
+    vert.coeff[0] = c;
+    vert.coeff[4] = d;
+    try std.testing.expect(sparse_v.eql(a.mul(vert)));
 }
 
 test "fp12_direct: inv round-trips" {
