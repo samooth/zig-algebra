@@ -116,3 +116,26 @@ zig build-exe examples/wasm_fp.zig \
 
 See `examples/wasm_fp.zig` for exported functions (`fp_mul`, `fp_add`, `fp_inv`).
 The build.zig target is pending Zig 0.16 WASM linker flags.
+
+## Dependency Graph Rationale
+
+| Edge | Why |
+|------|-----|
+| bigint → algebra-traits | Validates BigInt against Ring/Field contracts at comptime |
+| hash → (none) | Self-contained; Blake3/Keccak/Poseidon have no deps beyond stdlib |
+| rng → hash | SHAKE256 XOF extends Keccak; CSPRNG seeds from Blake3 |
+| field → bigint | BigField uses `[N]u64` limbs from bigint for Montgomery arithmetic |
+| binary-field → hash | GF(2^n) uses hash for challenge generation in Binius PCS |
+| curve → field, hash | Points over Fp/Fp2 from field lib; hash-to-curve needs hash functions |
+| pairing → field, curve | Tower Fp12 built on field extensions; Miller loop evaluates on curve points |
+| ntt → algebra-traits | Validates Field trait for NTT-compatible types |
+| poly → algebra-traits | Validates coefficient type is a proper Ring/Field |
+| merkle → hash | Tree nodes hashed with Blake3/SHA3/Poseidon |
+| linalg → field | Matrix/vector elements are field elements |
+| parallel → (none) | Thread pool is self-contained |
+| serialization → (none) | Comptime reflection only |
+
+## Semantic Versioning
+
+- v0.1.0: Initial release — all 14 libs with verified tests
+- Future: bump MAJOR on breaking API changes, MINOR on new features
