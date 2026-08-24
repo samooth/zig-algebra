@@ -83,6 +83,15 @@ fn pairingBls() void {
     sink ^= @intFromBool(e.isZero());
 }
 
+const bn_direct = @import("bn254_direct.zig");
+
+fn pairingBn() void {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const e = bn_direct.pairing(g1, g2);
+    sink ^= @intFromBool(e.isZero());
+}
+
 pub fn main() !void {
     std.debug.print("\n=== zig-algebra benchmarks ===\n\n", .{});
 
@@ -98,6 +107,7 @@ pub fn main() !void {
 
     std.debug.print("\n--- Pairing ---\n", .{});
     _ = bench("BLS12-381 optimal ate", 20, pairingBls);
+    _ = bench("BN254 ate (direct deg-12)", 5, pairingBn);
 
     std.debug.print("\n(sink={d})\n", .{sink & 1});
 }

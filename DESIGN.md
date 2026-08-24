@@ -134,6 +134,8 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
 | linalg → field | Matrix/vector elements are field elements |
 | parallel → (none) | Thread pool is self-contained |
 | serialization → (none) | Comptime reflection only |
+| transcript → (none) | stdlib Blake3 only; base of the proof-stack dependency chain |
+| fri → transcript | Folding challenges derived from Fiat-Shamir transcript |
 
 ## Semantic Versioning
 
