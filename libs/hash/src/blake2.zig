@@ -105,7 +105,7 @@ pub const Blake2b256 = struct {
             }
             const want = BLOCK_LEN - self.buf_len;
             const take = @min(want, in.len);
-            @memcpy(self.buf[self.buf_len..self.buf_len + take], in[0..take]);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + take], in[0..take]);
             self.buf_len += @intCast(take);
             in = in[take..];
         }
@@ -214,7 +214,7 @@ pub const Blake2s256 = struct {
             }
             const want = BLOCK_LEN - self.buf_len;
             const take = @min(want, in.len);
-            @memcpy(self.buf[self.buf_len..self.buf_len + take], in[0..take]);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + take], in[0..take]);
             self.buf_len += @intCast(take);
             in = in[take..];
         }

@@ -16,13 +16,13 @@ const RC = [24]u64{
 };
 
 const RHO = [24]u6{
-    1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 2, 14,
-    27, 41, 56, 8, 25, 43, 62, 18, 39, 61, 20, 44,
+    1,  3,  6,  10, 15, 21, 28, 36, 45, 55, 2,  14,
+    27, 41, 56, 8,  25, 43, 62, 18, 39, 61, 20, 44,
 };
 
 const PI = [24]u5{
-    10, 7, 11, 17, 18, 3, 5, 16, 8, 21, 24, 4,
-    15, 23, 19, 13, 12, 2, 20, 14, 22, 9, 6, 1,
+    10, 7,  11, 17, 18, 3, 5,  16, 8,  21, 24, 4,
+    15, 23, 19, 13, 12, 2, 20, 14, 22, 9,  6,  1,
 };
 
 pub fn keccakF1600(state: *[25]u64) void {
@@ -73,7 +73,7 @@ fn absorb(state: *[25]u64, buf: []u8, rate: usize, input: []const u8) void {
     var in = input;
     while (in.len > 0) {
         const take = @min(rate - buf.len, in.len);
-        @memcpy(buf[buf.len..buf.len + take], in[0..take]);
+        @memcpy(buf[buf.len .. buf.len + take], in[0..take]);
         buf.len += take;
         in = in[take..];
         if (buf.len == rate) {
@@ -140,7 +140,7 @@ pub const Keccak256 = struct {
         var in = input;
         while (in.len > 0) {
             const take = @min(BLOCK_LEN - self.buf_len, in.len);
-            @memcpy(self.buf[self.buf_len..self.buf_len + take], in[0..take]);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + take], in[0..take]);
             self.buf_len += take;
             in = in[take..];
             if (self.buf_len == BLOCK_LEN) {
@@ -202,7 +202,7 @@ pub const Sha3_256 = struct {
         var in = input;
         while (in.len > 0) {
             const take = @min(BLOCK_LEN - self.buf_len, in.len);
-            @memcpy(self.buf[self.buf_len..self.buf_len + take], in[0..take]);
+            @memcpy(self.buf[self.buf_len .. self.buf_len + take], in[0..take]);
             self.buf_len += take;
             in = in[take..];
             if (self.buf_len == BLOCK_LEN) {

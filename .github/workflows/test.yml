@@ -6,16 +6,25 @@ on:
   pull_request:
 
 jobs:
-  test:
+  fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.16.0
+      - run: zig fmt --check .
 
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
       - name: Run all tests
         run: zig build test --summary all
 
@@ -23,11 +32,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Zig
-        uses: mlugg/setup-zig@v1
+      - uses: mlugg/setup-zig@v1
         with:
           version: 0.16.0
+      - run: zig build -Doptimize=ReleaseFast
 
-      - name: Build ReleaseFast (smoke test)
-        run: zig build -Doptimize=ReleaseFast
+  wasm-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+      - name: Compile field arithmetic to WASM (smoke)
+        run: |
+          zig build-exe examples/wasm_fp.zig \
+            -target wasm32-freestanding -O ReleaseFast \
+            --dep zig-field -Mroot=examples/wasm_fp.zig \
+            -Mzig-field=libs/field/src/lib.zig \
+            --dep zig-bigint -Mzig-bigint=libs/bigint/src/root.zig \
+            --dep zig-algebra-traits -Mzig-algebra-traits=libs/algebra-traits/src/root.zig \
+            -fno-emit-bin

@@ -62,7 +62,7 @@ fn testTiming() !void {
         global_sink += @as(i64, @intCast(i));
     }
     const end = getNanos();
-    std.debug.print("Timing test: start={}, end={}, diff={} ns\n", .{start, end, end - start});
+    std.debug.print("Timing test: start={}, end={}, diff={} ns\n", .{ start, end, end - start });
 }
 
 fn bench(comptime F: type, name: []const u8, iters: usize) !void {
@@ -101,7 +101,7 @@ fn bench(comptime F: type, name: []const u8, iters: usize) !void {
     const mul_ns = @divTrunc(mul_elapsed, @as(i64, @intCast(iters)));
 
     // Print raw elapsed for debugging
-    std.debug.print("  raw: add_elapsed={} mul_elapsed={}\n", .{add_elapsed, mul_elapsed});
+    std.debug.print("  raw: add_elapsed={} mul_elapsed={}\n", .{ add_elapsed, mul_elapsed });
 
     std.debug.print(
         "{s:>12}: add {d:>6} ns/op  mul {d:>6} ns/op\n",

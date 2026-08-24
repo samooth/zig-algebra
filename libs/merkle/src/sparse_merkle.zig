@@ -63,8 +63,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
                 .cache = std.hash_map.AutoHashMapUnmanaged(CacheKey, [HASH_LEN]u8){},
                 .allocator = allocator,
             };
-            
-            
+
             return smt;
         }
 

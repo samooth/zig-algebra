@@ -63,21 +63,41 @@ const F7 = struct {
     pub const characteristic: u64 = 7;
     pub const order: u64 = 7;
 
-    pub fn zero() Self { return .{ .value = 0 }; }
-    pub fn one() Self { return .{ .value = 1 }; }
-    pub fn fromInt(x: u256) Self { return .{ .value = @intCast(x % modulus) }; }
-    pub fn toInt(self: Self) u64 { return self.value; }
-    pub fn eql(a: Self, b: Self) bool { return a.value == b.value; }
-    pub fn add(a: Self, b: Self) Self { return fromInt(a.value + b.value); }
-    pub fn sub(a: Self, b: Self) Self { return fromInt(a.value + (modulus - b.value % modulus)); }
-    pub fn neg(a: Self) Self { return if (a.value == 0) zero() else fromInt(modulus - a.value); }
-    pub fn mul(a: Self, b: Self) Self { return fromInt(a.value * b.value); }
+    pub fn zero() Self {
+        return .{ .value = 0 };
+    }
+    pub fn one() Self {
+        return .{ .value = 1 };
+    }
+    pub fn fromInt(x: u256) Self {
+        return .{ .value = @intCast(x % modulus) };
+    }
+    pub fn toInt(self: Self) u64 {
+        return self.value;
+    }
+    pub fn eql(a: Self, b: Self) bool {
+        return a.value == b.value;
+    }
+    pub fn add(a: Self, b: Self) Self {
+        return fromInt(a.value + b.value);
+    }
+    pub fn sub(a: Self, b: Self) Self {
+        return fromInt(a.value + (modulus - b.value % modulus));
+    }
+    pub fn neg(a: Self) Self {
+        return if (a.value == 0) zero() else fromInt(modulus - a.value);
+    }
+    pub fn mul(a: Self, b: Self) Self {
+        return fromInt(a.value * b.value);
+    }
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
-    pub fn div(a: Self, b: Self) Self { return mul(a, inv(b)); }
+    pub fn div(a: Self, b: Self) Self {
+        return mul(a, inv(b));
+    }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
         var b = base;
@@ -89,8 +109,12 @@ const F7 = struct {
         }
         return result;
     }
-    pub fn isZero(self: Self) bool { return self.value == 0; }
-    pub fn random() Self { return fromInt(1); } // stub
+    pub fn isZero(self: Self) bool {
+        return self.value == 0;
+    }
+    pub fn random() Self {
+        return fromInt(1);
+    } // stub
 };
 
 test "Blake3 basic hash" {

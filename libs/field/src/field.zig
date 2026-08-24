@@ -1025,14 +1025,8 @@ fn BigField(comptime modulus: comptime_int) type {
                 for (0..window_size) |j| buckets[j] = Self.one();
                 for (bases, exponents) |base_, exp| {
                     const shift = w * window_bits;
-                    // Extract window bits from u512 exponent using a loop to avoid shift type issues
-                    var window_val_u512: u512 = exp;
-                    var i: usize = 0;
-                    while (i < shift) : (i += 1) {
-                        window_val_u512 >>= 1;
-                    }
-                    window_val_u512 &= mask;
-                    const window_val = @as(usize, @intCast(window_val_u512));
+                    // Extract window bits directly (O(1) vs previous O(shift) loop)
+                    const window_val = @as(usize, @intCast((exp >> @intCast(shift)) & mask));
                     if (window_val != 0) buckets[window_val] = buckets[window_val].mul(base_);
                 }
                 // Pippenger: accumulate from high to low, skipping bucket 0

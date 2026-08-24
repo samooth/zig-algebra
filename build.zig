@@ -25,7 +25,8 @@ fn lib(
     for (imports) |imp| {
         mod.addImport(imp[0], imp[1]);
         test_module.addImport(imp[0], imp[1]);
-    }    const tests = b.addTest(.{
+    }
+    const tests = b.addTest(.{
         .name = module_name ++ "-tests",
         .root_module = test_module,
     });
@@ -255,5 +256,4 @@ pub fn build(b: *std.Build) void {
     });
     const run_example = b.addRunArtifact(example_exe);
     example_step.dependOn(&run_example.step);
-
 }

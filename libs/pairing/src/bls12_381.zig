@@ -217,7 +217,10 @@ const n_bits_verify = blk: {
     var bits: [nb]bool = undefined;
     var rem: comptime_int = n_;
     var i: usize = nb;
-    while (i > 0) : (i -= 1) { bits[i - 1] = (rem & 1) == 1; rem >>= 1; }
+    while (i > 0) : (i -= 1) {
+        bits[i - 1] = (rem & 1) == 1;
+        rem >>= 1;
+    }
     break :blk bits;
 };
 
@@ -258,13 +261,7 @@ fn finalExp(f: Fp12) Fp12 {
 ///
 /// Step 1: t = conj(f) · f⁻¹  →  f^(p⁶−1)   [conj IS p⁶-map, η′=−1 verified]
 /// Step 2: u = frob²(t); return t·u  →  t^(1+p²)
-
-
-
-
 /// Hard part: raise to d = (p⁴ − p² + 1)/r via square-and-multiply.
-
-
 /// Full optimal ate pairing e(P, Q) = Miller loop followed by the final
 /// exponentiation.
 pub fn pairing(p: G1Point, q: G2Point) Fp12 {
@@ -351,10 +348,6 @@ test "frobenius matches explicit p-power" {
     try testing.expect(sample.frobenius2().eql(once.frobenius()));
 }
 
-
-
-
-
 test "pairing is non-degenerate" {
     const g1 = zc.bls12_381.G1_generator;
     const g2 = zc.bls12_381.G2_generator;
@@ -401,7 +394,6 @@ test "pairing bilinearity with additive split" {
     try testing.expect(lhs.eql(rhs));
 }
 
-
 test "ISOLATED v³ == ξ" {
     const v = Fp6.new(Fp2.zero(), Fp2.one(), Fp2.zero());
     const v2 = v.mul(v);
@@ -413,5 +405,3 @@ test "ISOLATED v³ == ξ" {
     try testing.expect(v3.c1.eql(Fp2.zero()));
     try testing.expect(v3.c2.eql(Fp2.zero()));
 }
-
-

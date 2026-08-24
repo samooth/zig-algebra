@@ -24,8 +24,12 @@ pub fn Fp2(comptime F: type, comptime non_residue: F) type {
         c0: F,
         c1: F,
 
-        pub fn zero() Self { return .{ .c0 = F.zero(), .c1 = F.zero() }; }
-        pub fn one() Self { return .{ .c0 = F.one(), .c1 = F.zero() }; }
+        pub fn zero() Self {
+            return .{ .c0 = F.zero(), .c1 = F.zero() };
+        }
+        pub fn one() Self {
+            return .{ .c0 = F.one(), .c1 = F.zero() };
+        }
 
         pub fn add(a: Self, b: Self) Self {
             return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1) };
@@ -48,14 +52,26 @@ pub fn Fp2(comptime F: type, comptime non_residue: F) type {
             const norm_inv = norm.inv();
             return .{ .c0 = a.c0.mul(norm_inv), .c1 = a.c1.neg().mul(norm_inv) };
         }
-        pub fn div(a: Self, b: Self) Self { return a.mul(b.inv()); }
+        pub fn div(a: Self, b: Self) Self {
+            return a.mul(b.inv());
+        }
 
-        pub fn eql(a: Self, b: Self) bool { return a.c0.eql(b.c0) and a.c1.eql(b.c1); }
-        pub fn isZero(self: Self) bool { return self.c0.isZero() and self.c1.isZero(); }
-        pub fn isOne(self: Self) bool { return self.c0.isOne() and self.c1.isZero(); }
+        pub fn eql(a: Self, b: Self) bool {
+            return a.c0.eql(b.c0) and a.c1.eql(b.c1);
+        }
+        pub fn isZero(self: Self) bool {
+            return self.c0.isZero() and self.c1.isZero();
+        }
+        pub fn isOne(self: Self) bool {
+            return self.c0.isOne() and self.c1.isZero();
+        }
 
-        pub fn conjugate(a: Self) Self { return .{ .c0 = a.c0, .c1 = a.c1.neg() }; }
-        pub fn frobenius(a: Self) Self { return a.conjugate(); } // For quadratic extension
+        pub fn conjugate(a: Self) Self {
+            return .{ .c0 = a.c0, .c1 = a.c1.neg() };
+        }
+        pub fn frobenius(a: Self) Self {
+            return a.conjugate();
+        } // For quadratic extension
 
         pub fn pow(a: Self, exp: u64) Self {
             var result = Self.one();
@@ -79,8 +95,12 @@ pub fn Fp6(comptime BaseFp2: type, comptime non_residue: BaseFp2) type {
         c1: BaseFp2,
         c2: BaseFp2,
 
-        pub fn zero() Self { return .{ .c0 = BaseFp2.zero(), .c1 = BaseFp2.zero(), .c2 = BaseFp2.zero() }; }
-        pub fn one() Self { return .{ .c0 = BaseFp2.one(), .c1 = BaseFp2.zero(), .c2 = BaseFp2.zero() }; }
+        pub fn zero() Self {
+            return .{ .c0 = BaseFp2.zero(), .c1 = BaseFp2.zero(), .c2 = BaseFp2.zero() };
+        }
+        pub fn one() Self {
+            return .{ .c0 = BaseFp2.one(), .c1 = BaseFp2.zero(), .c2 = BaseFp2.zero() };
+        }
 
         pub fn add(a: Self, b: Self) Self {
             return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1), .c2 = a.c2.add(b.c2) };
@@ -106,16 +126,26 @@ pub fn Fp6(comptime BaseFp2: type, comptime non_residue: BaseFp2) type {
             // This is a placeholder - proper implementation needed
             return .{ .c0 = a.c0, .c1 = a.c1.neg(), .c2 = a.c2.neg() };
         }
-        pub fn div(a: Self, b: Self) Self { return a.mul(b.inv()); }
+        pub fn div(a: Self, b: Self) Self {
+            return a.mul(b.inv());
+        }
 
         pub fn eql(a: Self, b: Self) bool {
             return a.c0.eql(b.c0) and a.c1.eql(b.c1) and a.c2.eql(b.c2);
         }
-        pub fn isZero(self: Self) bool { return self.c0.isZero() and self.c1.isZero() and self.c2.isZero(); }
-        pub fn isOne(self: Self) bool { return self.c0.isOne() and self.c1.isZero() and self.c2.isZero(); }
+        pub fn isZero(self: Self) bool {
+            return self.c0.isZero() and self.c1.isZero() and self.c2.isZero();
+        }
+        pub fn isOne(self: Self) bool {
+            return self.c0.isOne() and self.c1.isZero() and self.c2.isZero();
+        }
 
-        pub fn conjugate(a: Self) Self { return .{ .c0 = a.c0, .c1 = a.c1.neg(), .c2 = a.c2 }; }
-        pub fn frobenius(a: Self) Self { return .{ .c0 = a.c0.frobenius(), .c1 = a.c1.frobenius(), .c2 = a.c2.frobenius() }; }
+        pub fn conjugate(a: Self) Self {
+            return .{ .c0 = a.c0, .c1 = a.c1.neg(), .c2 = a.c2 };
+        }
+        pub fn frobenius(a: Self) Self {
+            return .{ .c0 = a.c0.frobenius(), .c1 = a.c1.frobenius(), .c2 = a.c2.frobenius() };
+        }
 
         pub fn pow(a: Self, exp: u64) Self {
             var result = Self.one();
@@ -138,12 +168,22 @@ pub fn Fp12(comptime BaseFp6: type, comptime non_residue: BaseFp6) type {
         c0: BaseFp6,
         c1: BaseFp6,
 
-        pub fn zero() Self { return .{ .c0 = BaseFp6.zero(), .c1 = BaseFp6.zero() }; }
-        pub fn one() Self { return .{ .c0 = BaseFp6.one(), .c1 = BaseFp6.zero() }; }
+        pub fn zero() Self {
+            return .{ .c0 = BaseFp6.zero(), .c1 = BaseFp6.zero() };
+        }
+        pub fn one() Self {
+            return .{ .c0 = BaseFp6.one(), .c1 = BaseFp6.zero() };
+        }
 
-        pub fn add(a: Self, b: Self) Self { return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1) }; }
-        pub fn sub(a: Self, b: Self) Self { return .{ .c0 = a.c0.sub(b.c0), .c1 = a.c1.sub(b.c1) }; }
-        pub fn neg(a: Self) Self { return .{ .c0 = a.c0.neg(), .c1 = a.c1.neg() }; }
+        pub fn add(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.add(b.c0), .c1 = a.c1.add(b.c1) };
+        }
+        pub fn sub(a: Self, b: Self) Self {
+            return .{ .c0 = a.c0.sub(b.c0), .c1 = a.c1.sub(b.c1) };
+        }
+        pub fn neg(a: Self) Self {
+            return .{ .c0 = a.c0.neg(), .c1 = a.c1.neg() };
+        }
         pub fn mul(a: Self, b: Self) Self {
             // (a0 + a1*w) * (b0 + b1*w) = (a0*b0 + a1*b1*non_residue) + (a0*b1 + a1*b0)*w
             const c0 = a.c0.mul(b.c0).add(a.c1.mul(b.c1).mul(non_residue));
@@ -155,14 +195,26 @@ pub fn Fp12(comptime BaseFp6: type, comptime non_residue: BaseFp6) type {
             const norm_inv = norm.inv();
             return .{ .c0 = a.c0.mul(norm_inv), .c1 = a.c1.neg().mul(norm_inv) };
         }
-        pub fn div(a: Self, b: Self) Self { return a.mul(b.inv()); }
+        pub fn div(a: Self, b: Self) Self {
+            return a.mul(b.inv());
+        }
 
-        pub fn eql(a: Self, b: Self) bool { return a.c0.eql(b.c0) and a.c1.eql(b.c1); }
-        pub fn isZero(self: Self) bool { return self.c0.isZero() and self.c1.isZero(); }
-        pub fn isOne(self: Self) bool { return self.c0.isOne() and self.c1.isZero(); }
+        pub fn eql(a: Self, b: Self) bool {
+            return a.c0.eql(b.c0) and a.c1.eql(b.c1);
+        }
+        pub fn isZero(self: Self) bool {
+            return self.c0.isZero() and self.c1.isZero();
+        }
+        pub fn isOne(self: Self) bool {
+            return self.c0.isOne() and self.c1.isZero();
+        }
 
-        pub fn conjugate(a: Self) Self { return .{ .c0 = a.c0, .c1 = a.c1.neg() }; }
-        pub fn frobenius(a: Self) Self { return .{ .c0 = a.c0.frobenius(), .c1 = a.c1.frobenius() }; }
+        pub fn conjugate(a: Self) Self {
+            return .{ .c0 = a.c0, .c1 = a.c1.neg() };
+        }
+        pub fn frobenius(a: Self) Self {
+            return .{ .c0 = a.c0.frobenius(), .c1 = a.c1.frobenius() };
+        }
 
         pub fn pow(a: Self, exp: u64) Self {
             var result = Self.one();
@@ -193,7 +245,6 @@ pub const BN254_G2 = zc.bn254.G2;
 pub const bls12_381_pairing_impl = @import("bls12_381.zig");
 pub const bn254_pairing_impl = @import("bn254.zig");
 
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -206,21 +257,41 @@ const F7 = struct {
     pub const characteristic: u64 = 7;
     pub const order: u64 = 7;
 
-    pub fn zero() Self { return .{ .value = 0 }; }
-    pub fn one() Self { return .{ .value = 1 }; }
-    pub fn fromInt(x: u256) Self { return .{ .value = @intCast(x % modulus) }; }
-    pub fn toInt(self: Self) u64 { return self.value; }
-    pub fn eql(a: Self, b: Self) bool { return a.value == b.value; }
-    pub fn add(a: Self, b: Self) Self { return fromInt(a.value + b.value); }
-    pub fn sub(a: Self, b: Self) Self { return fromInt(a.value + (modulus - b.value % modulus)); }
-    pub fn neg(a: Self) Self { return if (a.value == 0) zero() else fromInt(modulus - a.value); }
-    pub fn mul(a: Self, b: Self) Self { return fromInt(a.value * b.value); }
+    pub fn zero() Self {
+        return .{ .value = 0 };
+    }
+    pub fn one() Self {
+        return .{ .value = 1 };
+    }
+    pub fn fromInt(x: u256) Self {
+        return .{ .value = @intCast(x % modulus) };
+    }
+    pub fn toInt(self: Self) u64 {
+        return self.value;
+    }
+    pub fn eql(a: Self, b: Self) bool {
+        return a.value == b.value;
+    }
+    pub fn add(a: Self, b: Self) Self {
+        return fromInt(a.value + b.value);
+    }
+    pub fn sub(a: Self, b: Self) Self {
+        return fromInt(a.value + (modulus - b.value % modulus));
+    }
+    pub fn neg(a: Self) Self {
+        return if (a.value == 0) zero() else fromInt(modulus - a.value);
+    }
+    pub fn mul(a: Self, b: Self) Self {
+        return fromInt(a.value * b.value);
+    }
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
-    pub fn div(a: Self, b: Self) Self { return mul(a, inv(b)); }
+    pub fn div(a: Self, b: Self) Self {
+        return mul(a, inv(b));
+    }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
         var b = base;
@@ -232,9 +303,15 @@ const F7 = struct {
         }
         return result;
     }
-    pub fn isZero(self: Self) bool { return self.value == 0; }
-    pub fn random() Self { return fromInt(1); }
-    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void { try w.print("{}", .{self.value}); }
+    pub fn isZero(self: Self) bool {
+        return self.value == 0;
+    }
+    pub fn random() Self {
+        return fromInt(1);
+    }
+    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
+        try w.print("{}", .{self.value});
+    }
 };
 
 test "Fp2 basic operations" {
@@ -245,7 +322,7 @@ test "Fp2 basic operations" {
 
     try std.testing.expect(a.add(b).eql(Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(4), .c1 = F7.fromInt(6) }));
     try std.testing.expect(a.sub(b).eql(Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(5), .c1 = F7.fromInt(5) }));
-    
+
     // (1 + 2u) * (3 + 4u) = 3 + 4u + 6u + 8u^2 = 3 + 10u - 8 = -5 + 3u = 2 + 3u (mod 7)
     // Wait: u^2 = -1, so 8u^2 = -8 = 6 (mod 7)
     // 3 + 4u + 6u + 6 = 9 + 10u = 2 + 3u (mod 7)
@@ -273,18 +350,10 @@ test "BN254 Fp2 construction" {
 test "Fp6 basic structure" {
     const Fp2_7 = Fp2(F7, F7.fromInt(6));
     _ = Fp6(Fp2(F7, F7.fromInt(6)), Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(1) });
-    
-    const a = Fp6(Fp2_7, Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(1) }){ 
-        .c0 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(0) }, 
-        .c1 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(1) }, 
-        .c2 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(0) } 
-    };
-    const b = Fp6(Fp2_7, Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(1) }){ 
-        .c0 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(1) }, 
-        .c1 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(0) }, 
-        .c2 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(0) } 
-    };
-    
+
+    const a = Fp6(Fp2_7, Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(1) }){ .c0 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(0) }, .c1 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(1) }, .c2 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(0) } };
+    const b = Fp6(Fp2_7, Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(1) }){ .c0 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(1) }, .c1 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(1), .c1 = F7.fromInt(0) }, .c2 = Fp2(F7, F7.fromInt(6)){ .c0 = F7.fromInt(0), .c1 = F7.fromInt(0) } };
+
     // a = 1 + v, b = u + v
     // a*b = (1+v)(u+v) = u + v + uv + v^2 = u + (1+u)v + v^2 ... expanded in Fp6:
     //   c0' = c0*d0 + n*(c1*d2 + c2*d1) = (1)(u) + n*0 = u

@@ -76,8 +76,6 @@ fn curveScalarMul() void {
     _ = g1.scalarMul(@as(u64, 0xDEADBEEF));
 }
 
-
-
 fn pairingBls() void {
     const g1 = zc.bls12_381.G1_generator;
     const g2 = zc.bls12_381.G2_generator;

@@ -35,7 +35,6 @@ fn challenge(pk: G1, committer: G1, msg: []const u8) u64 {
 }
 
 pub fn main() !void {
-
     std.debug.print("=== Schnorr Signature over BLS12-381 G1 ===\n\n", .{});
 
     // 1. Key Generation

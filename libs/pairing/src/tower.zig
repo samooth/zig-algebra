@@ -362,7 +362,3 @@ fn etaOnce(comptime Base6: type) @TypeOf(Base6.zero().c0) {
         return Base6.XI.powFast(num / 6);
     }
 }
-
-
-
-

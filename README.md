@@ -1,5 +1,7 @@
 # zig-algebra
 
+![Tests](https://github.com/samooth/zig-algebra/actions/workflows/test.yml/badge.svg)
+
 A modular ecosystem of algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig.
 
 ## Vision

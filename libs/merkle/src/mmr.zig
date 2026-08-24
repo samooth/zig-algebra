@@ -152,9 +152,9 @@ pub fn MMR(comptime H: type) type {
                 current = H.hashBytes(&concat);
             }
             return current;
-}
- 
-/// Generate an inclusion proof for leaf at `index`.
+        }
+
+        /// Generate an inclusion proof for leaf at `index`.
         /// Uses standard Merkle proof over leaves (compatible with test verification).
         pub fn prove(self: Self, index: usize, allocator: std.mem.Allocator) !MerkleProof {
             if (index >= @as(usize, @intCast(self.leaf_count))) return error.IndexOutOfBounds;

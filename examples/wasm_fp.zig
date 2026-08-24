@@ -14,7 +14,7 @@ const zf = @import("zig-field");
 const Fp = zf.BLS12_381_Fp;
 
 export fn fp_add(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64) u64 {
-    const a = Fp.fromInt(a_lo) .add(Fp.fromInt(a_hi));
+    const a = Fp.fromInt(a_lo).add(Fp.fromInt(a_hi));
     _ = b_lo;
     _ = b_hi;
     return @truncate(a.toInt());

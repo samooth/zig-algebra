@@ -178,10 +178,18 @@ pub fn BigInt(comptime max_limbs: usize) type {
             return mag_cmp;
         }
 
-        pub fn lt(self: Self, other: Self) bool { return self.cmp(other) < 0; }
-        pub fn gt(self: Self, other: Self) bool { return self.cmp(other) > 0; }
-        pub fn leq(self: Self, other: Self) bool { return self.cmp(other) <= 0; }
-        pub fn geq(self: Self, other: Self) bool { return self.cmp(other) >= 0; }
+        pub fn lt(self: Self, other: Self) bool {
+            return self.cmp(other) < 0;
+        }
+        pub fn gt(self: Self, other: Self) bool {
+            return self.cmp(other) > 0;
+        }
+        pub fn leq(self: Self, other: Self) bool {
+            return self.cmp(other) <= 0;
+        }
+        pub fn geq(self: Self, other: Self) bool {
+            return self.cmp(other) >= 0;
+        }
 
         // ------------------------------------------------------------------
         // Addition / Subtraction (unsigned magnitude)
@@ -418,7 +426,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             var i: usize = m + 1;
             while (i > 0) {
                 i -= 1;
-                var rem_slice = remainder.limbs[i..i + n + 1];
+                var rem_slice = remainder.limbs[i .. i + n + 1];
                 const rem_hi = @as(DoubleLimb, rem_slice[n]) << 64 | rem_slice[n - 1];
                 var qhat: Limb = @truncate(@min(rem_hi / b_msb, std.math.maxInt(Limb)));
 
