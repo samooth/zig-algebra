@@ -318,4 +318,25 @@ pub fn build(b: *std.Build) void {
     });
     const run_stark = b.addRunArtifact(stark_exe);
     stark_step.dependOn(&run_stark.step);
+
+    // WASM build: freestanding, no entry point; `export fn`s become imports.
+    const wasm_step = b.step("wasm", "Build examples/wasm_fp.zig to wasm32-freestanding");
+    const wasm_target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
+    const wasm_mod = b.createModule(.{
+        .root_source_file = b.path("examples/wasm_fp.zig"),
+        .target = wasm_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-field", .module = field_mod },
+        },
+    });
+    // createModule() doesn't take this field; assign directly (Module.zig:39).
+    wasm_mod.export_symbol_names = &.{ "fp_add", "fp_mul", "fp_inv" };
+    const wasm_exe = b.addExecutable(.{
+        .name = "zig_algebra_fp",
+        .root_module = wasm_mod,
+    });
+    wasm_exe.entry = .disabled; // -fno-entry: exports via `export fn`
+    const install_wasm = b.addInstallArtifact(wasm_exe, .{});
+    wasm_step.dependOn(&install_wasm.step);
 }
