@@ -301,7 +301,10 @@ pub fn prove(
     }
     transcript.absorbBytes(&trees_buf[0].?.root()); // Fold rounds 1..R, committing between challenges.
     for (1..rounds + 1) |i| {
-        const alpha = blk: { const a = transcript.challengeField(F); break :blk a; };
+        const alpha = blk: {
+            const a = transcript.challengeField(F);
+            break :blk a;
+        };
         const prev = layer_evals[i - 1];
         const half = prev.len / 2;
         const cur = allocator.alloc(F, half) catch return FriError.OutOfMemory;
@@ -415,7 +418,11 @@ pub fn verify(
     var alphas: [64]F = undefined;
     if (rounds > 64) return FriError.ProofTooShort;
     for (0..rounds) |i| {
-        transcript.absorbBytes(&proof.layers[i].merkle_root); alphas[i] = blk: { const a = transcript.challengeField(F); break :blk a; };
+        transcript.absorbBytes(&proof.layers[i].merkle_root);
+        alphas[i] = blk: {
+            const a = transcript.challengeField(F);
+            break :blk a;
+        };
     }
     // Absorb final evaluations (same order as prover).
     var final_vals: [4096]F = undefined;
@@ -435,7 +442,9 @@ pub fn verify(
         // Derive same query index.
         const seed = transcript.challengeU64();
         const expected_idx: usize = @intCast(seed % @as(u64, @intCast(n)));
-        if (q.index != expected_idx) { return false; }
+        if (q.index != expected_idx) {
+            return false;
+        }
 
         var idx = q.index;
         // Track the value carried forward from previous round's fold.
@@ -458,8 +467,9 @@ pub fn verify(
             var leaf_hash: [HASH_LEN]u8 = undefined;
             h.final(&leaf_hash);
 
-            if (!MerkleTree.verifyPath(proof.layers[r].merkle_root, leaf_idx, leaf_hash, q.auth_paths[r]))
-                { return false; }
+            if (!MerkleTree.verifyPath(proof.layers[r].merkle_root, leaf_idx, leaf_hash, q.auth_paths[r])) {
+                return false;
+            }
             // Fold-consistency check: carried (from previous round's fold)
             // must equal one of {even, odd} depending on parity.
             if (carried) |cv| {
@@ -468,7 +478,9 @@ pub fn verify(
                 // One of them must be cv.
                 const even_matches = cv.eql(even);
                 const odd_matches = cv.eql(odd);
-                if (!even_matches and !odd_matches) { return false; }
+                if (!even_matches and !odd_matches) {
+                    return false;
+                }
             }
 
             // Compute next round's carried value via fold.
@@ -482,7 +494,9 @@ pub fn verify(
         const fi = idx; // == original_k >> rounds
         if (fi >= proof.final_evals.len) return false;
         const fc = carried orelse return false;
-        if (!fc.eql(final_vals[fi])) { return false; }
+        if (!fc.eql(final_vals[fi])) {
+            return false;
+        }
     }
 
     return true;
@@ -501,18 +515,42 @@ const M31 = struct {
     pub const MODULUS: u32 = 0x7FFFFFFF;
     pub const NUM_BYTES: usize = 4;
 
-    pub fn zero() Self { return .{ .value = 0 }; }
-    pub fn one() Self { return .{ .value = 1 }; }
-    pub fn fromInt(x: anytype) Self { return .{ .value = @intCast(@mod(x, Self.MODULUS)) }; }
-    pub fn toInt(self: Self) u32 { return self.value; }
-    pub fn eql(a: Self, b: Self) bool { return a.value == b.value; }
-    pub fn add(a: Self, b: Self) Self { return fromInt(a.value +% b.value); }
-    pub fn mul(a: Self, b: Self) Self { return fromInt(@as(u64, a.value) *% b.value); }
-    pub fn sub(a: Self, b: Self) Self { return fromInt(a.value +% Self.MODULUS -% b.value); }
-    pub fn isZero(self: Self) bool { return self.value == 0; }
-    pub fn neg(a: Self) Self { return if (a.value == 0) zero() else fromInt(Self.MODULUS - a.value); }
-    pub fn sqr(a: Self) Self { return mul(a, a); }
-    pub fn inv(a: Self) Self { return pow(a, Self.MODULUS - 2); }
+    pub fn zero() Self {
+        return .{ .value = 0 };
+    }
+    pub fn one() Self {
+        return .{ .value = 1 };
+    }
+    pub fn fromInt(x: anytype) Self {
+        return .{ .value = @intCast(@mod(x, Self.MODULUS)) };
+    }
+    pub fn toInt(self: Self) u32 {
+        return self.value;
+    }
+    pub fn eql(a: Self, b: Self) bool {
+        return a.value == b.value;
+    }
+    pub fn add(a: Self, b: Self) Self {
+        return fromInt(a.value +% b.value);
+    }
+    pub fn mul(a: Self, b: Self) Self {
+        return fromInt(@as(u64, a.value) *% b.value);
+    }
+    pub fn sub(a: Self, b: Self) Self {
+        return fromInt(a.value +% Self.MODULUS -% b.value);
+    }
+    pub fn isZero(self: Self) bool {
+        return self.value == 0;
+    }
+    pub fn neg(a: Self) Self {
+        return if (a.value == 0) zero() else fromInt(Self.MODULUS - a.value);
+    }
+    pub fn sqr(a: Self) Self {
+        return mul(a, a);
+    }
+    pub fn inv(a: Self) Self {
+        return pow(a, Self.MODULUS - 2);
+    }
     pub fn pow(base: Self, exp: u32) Self {
         var r = one();
         var b = base;

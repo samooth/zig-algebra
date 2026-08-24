@@ -174,17 +174,39 @@ const M31 = struct {
     pub const MODULUS: u32 = 0x7FFFFFFF;
     pub const NUM_BYTES: usize = 4;
 
-    pub fn zero() Self { return .{ .value = 0 }; }
-    pub fn one() Self { return .{ .value = 1 }; }
-    pub fn fromInt(x: anytype) Self { return .{ .value = @intCast(@mod(x, Self.MODULUS)) }; }
-    pub fn toInt(self: Self) u32 { return self.value; }
-    pub fn eql(a: Self, b: Self) bool { return a.value == b.value; }
-    pub fn add(a: Self, b: Self) Self { return fromInt(a.value + b.value); }
-    pub fn mul(a: Self, b: Self) Self { return fromInt(@as(u64, a.value) * b.value); }
-    pub fn sub(a: Self, b: Self) Self { return fromInt(a.value +% Self.MODULUS -% b.value); }
-    pub fn isZero(self: Self) bool { return self.value == 0; }
-    pub fn neg(a: Self) Self { return if (a.value == 0) zero() else fromInt(Self.MODULUS - a.value); }
-    pub fn sqr(a: Self) Self { return mul(a, a); }
+    pub fn zero() Self {
+        return .{ .value = 0 };
+    }
+    pub fn one() Self {
+        return .{ .value = 1 };
+    }
+    pub fn fromInt(x: anytype) Self {
+        return .{ .value = @intCast(@mod(x, Self.MODULUS)) };
+    }
+    pub fn toInt(self: Self) u32 {
+        return self.value;
+    }
+    pub fn eql(a: Self, b: Self) bool {
+        return a.value == b.value;
+    }
+    pub fn add(a: Self, b: Self) Self {
+        return fromInt(a.value + b.value);
+    }
+    pub fn mul(a: Self, b: Self) Self {
+        return fromInt(@as(u64, a.value) * b.value);
+    }
+    pub fn sub(a: Self, b: Self) Self {
+        return fromInt(a.value +% Self.MODULUS -% b.value);
+    }
+    pub fn isZero(self: Self) bool {
+        return self.value == 0;
+    }
+    pub fn neg(a: Self) Self {
+        return if (a.value == 0) zero() else fromInt(Self.MODULUS - a.value);
+    }
+    pub fn sqr(a: Self) Self {
+        return mul(a, a);
+    }
     pub fn inv(a: Self) Self {
         // Fermat: x^(p-2) mod p
         return pow(a, Self.MODULUS - 2);

@@ -285,4 +285,37 @@ pub fn build(b: *std.Build) void {
     });
     const run_example = b.addRunArtifact(example_exe);
     example_step.dependOn(&run_example.step);
+
+    // Example: STARK prover (Fibonacci over M31 with FRI)
+    const stark_step = b.step("stark", "Run STARK prover example (Fibonacci over M31)");
+    const transcript_root = b.path("libs/transcript/src/root.zig");
+    const fri_root = b.path("libs/fri/src/root.zig");
+    const stark_transcript_mod = b.createModule(.{
+        .root_source_file = transcript_root,
+        .target = target,
+        .optimize = optimize,
+    });
+    const stark_fri_mod = b.createModule(.{
+        .root_source_file = fri_root,
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-transcript", .module = stark_transcript_mod },
+        },
+    });
+    const stark_mod = b.createModule(.{
+        .root_source_file = b.path("examples/stark_prover.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-transcript", .module = stark_transcript_mod },
+            .{ .name = "zig-fri", .module = stark_fri_mod },
+        },
+    });
+    const stark_exe = b.addExecutable(.{
+        .name = "stark-example",
+        .root_module = stark_mod,
+    });
+    const run_stark = b.addRunArtifact(stark_exe);
+    stark_step.dependOn(&run_stark.step);
 }
