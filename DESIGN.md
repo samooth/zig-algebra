@@ -141,3 +141,25 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
 
 - v0.1.0: Initial release — all 14 libs with verified tests
 - Future: bump MAJOR on breaking API changes, MINOR on new features
+
+## BN254 optimal ate pairing (tower) — algorithm notes
+
+- Tower: Fp6 = Fp2[v]/(v^3 - gamma), gamma = 9+u (non-cube, non-square;
+  an early session's contrary claim was a faulty numeric check).
+  Fp12 = Fp6[w]/(w^2 - v); w^6 = gamma.
+- Untwist: psi(x',y') = (x'*v, y'*v*w)  [zeta=1 eigenspace].
+- Loop: optimal ate 6x+2, twist-side affine arithmetic with sparse lines
+  (~15 Fp2 muls/step). SIGN ASYMMETRY: tangent lines use
+  (-n*px, n*tx - d*ty) while chord lines use (+n*px, d*ty - n*tx);
+  reusing tangent signs on chords corrupts every addition step.
+- Verticals are OMITTED: v(P)=px - x'*v is a general Fp12 element in
+  this layout and does NOT vanish under final exponentiation.
+- Extra terms: two dense lines with pi(Q) and -pi^2(Q), pi applied per
+  coordinate of the EMBEDDED point (field Frobenius), per py_ecc.
+- Final exp split: f^N = [frob^6(f) * f^-1]^M, M=(p^6+1)/r. The easy
+  part is Frobenius-only + one closed-form tower inversion; the hard
+  part runs 4-bit-windowed SA&M with cyclotomic compressed squaring
+  (valid since frob^6 == w-conjugation on this subgroup).
+
+Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
+(cyclotomic+window) -> ~32 ms steady-state (sparse loop).

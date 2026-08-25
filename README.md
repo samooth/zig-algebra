@@ -60,7 +60,7 @@ algebra-traits (no deps)
 | [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 58+ |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 53 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 83 |
-| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 tower + BN254 direct degree-12 (both verified bilinear) | 26 |
+| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 tower + BN254 tower & direct (all verified bilinear; sparse Miller + split final exp) | 47 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | 10 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 11 |
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 12 |
@@ -128,6 +128,17 @@ zig build test
 3. **Comptime-first** — all constants computed at compile time
 4. **Allocation-free** — stack-only where possible
 5. **Generic** — algorithms work over any field/curve via comptime parameters
+
+## Benchmarks (ReleaseFast)
+
+```
+BLS12-381 optimal ate         159 ms
+BN254 optimal ate (tower)      32 ms   <- sparse Miller + frob^6 easy part
+                                          + windowed cyclotomic hard part
+BN254 ate (direct deg-24)      98 ms
+Fp12 mul                     42 µs
+M31 mul (SmallField)        430 ns
+```
 
 ## License
 
