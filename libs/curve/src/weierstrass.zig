@@ -72,7 +72,7 @@ pub fn AffinePoint(comptime F: type, comptime a: F, comptime b: F) type {
         pub fn scalarMul(self: Self, scalar: anytype) Self {
             var result = Self.zero();
             var base = self;
-            var exp = scalar;
+            var exp: u512 = scalar;
 
             while (exp > 0) {
                 if (exp % 2 == 1) {
@@ -149,16 +149,17 @@ pub fn ProjectivePoint(comptime F: type, comptime a: F, comptime b: F) type {
             if (self.isZero() and other.isZero()) return true;
             if (self.isZero() or other.isZero()) return false;
 
-            const z1_inv2 = self.z.inv().mul(self.z.inv());
-            const z2_inv2 = other.z.inv().mul(other.z.inv());
-            const x1_proj = self.x.mul(z2_inv2);
-            const x2_proj = other.x.mul(z1_inv2);
+            // Normalise each side by ITS OWN z (fixed cross-z bug).
+            const z1_inv = self.z.inv();
+            const z2_inv = other.z.inv();
+            const z1_inv2 = z1_inv.mul(z1_inv);
+            const z2_inv2 = z2_inv.mul(z2_inv);
+            const x1_proj = self.x.mul(z1_inv2);
+            const x2_proj = other.x.mul(z2_inv2);
             if (!x1_proj.eql(x2_proj)) return false;
 
-            const z1_inv3 = z1_inv2.mul(self.z.inv());
-            const z2_inv3 = z2_inv2.mul(other.z.inv());
-            const y1 = self.y.mul(z2_inv3);
-            const y2 = other.y.mul(z1_inv3);
+            const y1 = self.y.mul(z1_inv2.mul(z1_inv));
+            const y2 = other.y.mul(z2_inv2.mul(z2_inv));
             return y1.eql(y2);
         }
 
@@ -218,7 +219,7 @@ pub fn ProjectivePoint(comptime F: type, comptime a: F, comptime b: F) type {
         pub fn scalarMul(self: Self, scalar: anytype) Self {
             var result = Self.zero();
             var base = self;
-            var exp = scalar;
+            var exp: u512 = scalar;
 
             while (exp > 0) {
                 if (exp % 2 == 1) {

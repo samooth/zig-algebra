@@ -257,6 +257,10 @@ fn SmallField(comptime modulus: comptime_int) type {
         pub fn mulBy4(self: Self) Self {
             return self.mulBy2().mulBy2();
         }
+
+        pub fn mulBy8(self: Self) Self {
+            return self.mulBy2().mulBy2().mulBy2();
+        }
         pub fn mulBy5(self: Self) Self {
             return self.mulBy4().add(self);
         }
@@ -904,6 +908,10 @@ fn BigField(comptime modulus: comptime_int) type {
         }
         pub fn mulBy4(self: Self) Self {
             return self.mulBy2().mulBy2();
+        }
+
+        pub fn mulBy8(self: Self) Self {
+            return self.mulBy2().mulBy2().mulBy2();
         }
         pub fn mulBy5(self: Self) Self {
             return self.mulBy4().add(self);

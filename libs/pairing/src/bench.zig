@@ -85,6 +85,34 @@ fn pairingBls() void {
 
 const bn_direct = @import("bn254_direct.zig");
 const bn_tower = @import("bn254_tower.zig");
+const curve_msm = @import("zig-curve").msm;
+
+fn msmNaive() void {
+    const Fr = zc.bn254.Fr;
+    var acc = zc.bn254.G1Projective.zero();
+    for (0..256) |i| {
+        const p = zc.bn254.G1_generator.scalarMul(@as(u64, i * 7 + 1));
+        const s64: u64 = @intCast(Fr.fromInt(@as(u64, i * 2654435761 % 1000000007)).toU64());
+        acc = acc.add(G1PFromAff(p).scalarMul(s64));
+    }
+    sink ^= @intFromBool(acc.isZero());
+}
+
+fn G1PFromAff(p: zc.bn254.G1) zc.bn254.G1Projective {
+    return .{ .x = p.x, .y = p.y, .z = zf.BN254_Fp.one() };
+}
+
+fn msmPippenger() void {
+    const Fr = zc.bn254.Fr;
+    var pts: [256]zc.bn254.G1 = undefined;
+    var scs: [256]Fr = undefined;
+    for (0..256) |i| {
+        pts[i] = zc.bn254.G1_generator.scalarMul(@as(u64, i * 7 + 1));
+        scs[i] = Fr.fromInt(@as(u64, i * 2654435761 % 1000000007));
+    }
+    const r = curve_msm.msm(zc.bn254.G1, zc.bn254.G1Projective, Fr, std.heap.page_allocator, &pts, &scs) catch return;
+    sink ^= @intFromBool(r.isZero());
+}
 
 fn pairingBnTower() void {
     const g1 = zc.bn254.G1_generator;
@@ -117,6 +145,8 @@ pub fn main() !void {
     _ = bench("BLS12-381 optimal ate", 20, pairingBls);
     _ = bench("BN254 ate (direct deg-12)", 5, pairingBn);
     _ = bench("BN254 optimal ate (tower)", 5, pairingBnTower);
+    _ = bench("MSM n=256 naive", 20, msmNaive);
+    _ = bench("MSM n=256 pippenger", 200, msmPippenger);
 
     std.debug.print("\n(sink={d})\n", .{sink & 1});
 }

@@ -38,6 +38,7 @@ pub const pasta = @import("pasta.zig");
 // ============================================================================
 
 pub const weierstrass = @import("weierstrass.zig");
+pub const msm = @import("msm.zig");
 
 // ============================================================================
 // Hash-to-curve (RFC 9380)
