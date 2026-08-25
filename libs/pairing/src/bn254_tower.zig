@@ -181,11 +181,12 @@ fn millerLoopPairOpt(p: zc.bn254.G1, q: zc.bn254.G2, comptime with_extras: bool)
             // layouts); py_ecc omits them identically.
             t = twistDbl(t);
         }
-        // Addition: ℓ̃_{t,q}(P); vertical v_{t+q}(P).
+        // Addition: chord line has POSITIVE slope term (unlike tangent):
+        // ℓ̃ = py·d + w[ +n·px + v(d·ty - n·tx) ] with λ'=n/d.
         if ((LOOP >> @intCast(bit)) & 1 == 1) {
             const n = q.y.sub(t.y);
             const d = q.x.sub(t.x);
-            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.neg().mul(Fp2.fromBase(p.x)), n.mul(t.x).sub(d.mul(t.y)));
+            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.mul(Fp2.fromBase(p.x)), d.mul(t.y).sub(n.mul(t.x)));
             t = twistAdd(t, .{ .x = q.x, .y = q.y });
         }
         if (bit == 0) break;
@@ -559,10 +560,10 @@ test "bn254_tower: DENSE reference non-degenerate" {
     try testing.expect(!e.eql(Fp12T.one()));
 }
 
-test "bn254_tower: EXPERIMENTAL sparse == dense pairing (open)" {
-    // Disabled until pairingSparse's systematic-factor gap is resolved.
-    // Re-enable once the subfield-placement investigation concludes.
-    return error.SkipZigTest;
+test "bn254_tower: sparse == dense pairing" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    try testing.expect(pairing(g1, g2).eql(pairingDense(g1, g2)));
 }
 
 test "bn254_tower: sparse bilinear small scalars" {
@@ -642,4 +643,47 @@ test "bn254_tower: DEBUG window4 == binary" {
     const a = powByLimbsCyclo(easy, &HARD_PART_LIMBS);
     const b = powByLimbsWindow4(easy, &HARD_PART_LIMBS);
     std.debug.print("\nWIN4==BIN: {}\n", .{a.eql(b)});
+}
+
+test "bn254_tower: BISECT addition-step line ratio" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+
+    // chord through T=Q and Q (i.e. adding Q again -> 2Q path uses dbl;
+    // use T=3Q vs Q to exercise a genuine chord)
+    var tq = twistDbl(.{ .x = g2.x, .y = g2.y });
+    tq = twistAdd(tq, .{ .x = g2.x, .y = g2.y }); // 3Q
+
+    const n = g2.y.sub(tq.y);
+    const d = g2.x.sub(tq.x);
+    var sparse = mulByLine(Fp12T.one(), Fp2.fromBase(g1.y).mul(d), n.neg().mul(Fp2.fromBase(g1.x)), n.mul(tq.x).sub(d.mul(tq.y)));
+
+    const embT = embedTwist(tq.x, tq.y);
+    var Px = Fp12T.zero();
+    Px.c0.c0 = Fp2.fromBase(g1.x);
+    var Py = Fp12T.zero();
+    Py.c0.c0 = Fp2.fromBase(g1.y);
+    const dense = lineFunc(embT, embedTwist(g2.x, g2.y), .{ .X = Px, .Y = Py });
+
+    const ratio = sparse.mul(dense.inv());
+    std.debug.print("\nADD-STEP ratio in Fp6 (c1==0): {}\n", .{ratio.c1.isZero()});
+}
+
+test "bn254_tower: BISECT psi-commutes with group ops" {
+    const g2 = zc.bn254.G2_generator;
+    // walk several multiples to hit generic points
+    var t = TwistAffine{ .x = g2.x, .y = g2.y };
+    const emb0 = embedTwist(g2.x, g2.y);
+    var emb = emb0;
+    var ok = true;
+    for (0..8) |_| {
+        t = twistDbl(t);
+        emb = denseDouble(emb);
+        const e2 = embedTwist(t.x, t.y);
+        if (!e2.X.eql(emb.X) or !e2.Y.eql(emb.Y)) {
+            ok = false;
+            break;
+        }
+    }
+    std.debug.print("\nPSI-COMM dbl: {}\n", .{ok});
 }
