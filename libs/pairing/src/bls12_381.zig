@@ -181,8 +181,11 @@ pub fn millerLoop(p: G1Point, q: G2Point) Fp12 {
         if (i == 0) break;
     }
 
-    // n < 0 for BLS12-381: f ↦ conj(f)
-    return f.conjugate();
+    // NOTE: x < 0 for BLS12-381; looping over |x| without conjugation
+    // yields the canonical py_ecc/EIP-197-compatible value. The conjugated
+    // variant is the inverse pairing and equally valid, but we standardise
+    // on the reference convention.
+    return f;
 }
 
 // ---------------------------------------------------------------------------
@@ -457,4 +460,19 @@ test "bls12_381: easy part matches SA&M over (p^6-1)(p^2+1)" {
     const g2 = zc.bls12_381.G2_generator;
     const f = millerLoop(g1, g2);
     try std.testing.expect(finalExpEasy(f).eql(f.powByLimbs(&EASY_EXP_LIMBS)));
+}
+
+test "bls12_381: known-answer vs py_ecc reference" {
+    // Canonical generators (IETF BLS signatures / py_ecc).
+    const g1k = zc.bls12_381.G1.generator(Fp.fromInt(0x17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb), Fp.fromInt(0x8b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1));
+    const g2k = zc.bls12_381.G2.generator(Fp2.new(Fp.fromInt(0x24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8), Fp.fromInt(0x13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e)), Fp2.new(Fp.fromInt(0xce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801), Fp.fromInt(0x606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be)));
+
+    var want = Fp12.zero();
+    want.c0.c0 = Fp2.new(Fp.fromInt(0x2b62ad302f9ec67dff95bdb104dfef29d46bd561cdaaf850890a65b52f417421632e99a72f323a6455daa96e84d4f003), Fp.fromInt(0x153ce14a76a53e205ba8f275ef1137c56a566f638b52d34ba3bf3bf22f277d70f76316218c0dfd583a394b8448d2be7f));
+    want.c0.c1 = Fp2.new(Fp.fromInt(0x23577ae58382e52d59efef1dc6983e328cb267f19d11173b3bf3458aa2f031cb1db705a7efadc71f7476bce995eff13d), Fp.fromInt(0x16deedaa683124fe7260085184d88f7d036b86f53bb5b7f1fc5e248814782065413e7d958d17960109ea006b2afdeb5f));
+    want.c0.c2 = Fp2.new(Fp.fromInt(0x23ca3eda68bcba6d44eef37a9239baac678c38c9bde2438dd1cf92f492989e8f30cadc6034f0cc90464adde256cd0af3), Fp.fromInt(0x111061f398efc2a97ff825b04d21089e24fd8b93a47e41e60eae7e9b2a38d54fa4dedced0811c34ce528781ab9e929c7));
+    want.c1.c0 = Fp2.new(Fp.fromInt(0x181414f71cf9c11f9b1060ac800c903b1676d52b16251674f3df408a79cf5f1e91b0b36a8ef580e44dd85264597046ef), Fp.fromInt(0x11780ac3c545c705a3026d9fdb4af55eed32a2d765557f598bba4c626d657c12466c6f263dfd816255a2308da4ccd83c));
+    want.c1.c1 = Fp2.new(Fp.fromInt(0xb9f4a97f83340ba78c2be55d79fa3fc784d97a22e14b058d1da3d5144892232f89d120c5d0d5f79097ab432bc9b3e9b), Fp.fromInt(0xa1ad2d1da290971360be31d875d054dfa8f6401ef4ef1e43339789b560e27c7da8014ff13b26a00a4e8b3ff5498eccd));
+    want.c1.c2 = Fp2.new(Fp.fromInt(0x9710eb1905115e5d0299652d3ceaeeaf2fbcca0ba8423d5b134adb0f6a49daf4a2bec8bd60c767850e2a99573b86133), Fp.fromInt(0x5ac909b08f9f5b3eaf9604f2787a41b96574464de4e9132d7131553d61b189d5cbf747622fa9ee0595bfe508888ec6e));
+    try std.testing.expect(pairing(g1k, g2k).eql(want));
 }
