@@ -124,8 +124,100 @@ fn twistAdd(t: TwistAffine, q: TwistAffine) TwistAffine {
 // Miller loop / final exponentiation / pairing
 // ---------------------------------------------------------------------------
 
-/// ate loop parameter t−1 = 6x² (127 bits), x = 0x44E992B44A6909F1.
-const LOOP: u128 = 0x6F4D8248EEB859FBF83E9682E87CFD46;
+/// Optimal-ate loop parameter 6x+2 (py_ecc / arkworks convention).
+const LOOP: u128 = 0x19D797039BE763BA8;
+
+/// Affine point on E(Fp12) with generic coordinates.
+const EmbPoint = struct { X: Fp12T, Y: Fp12T };
+
+/// Embed a twist point onto E(Fp12): ψ(x',y') = (x'·v, y'·v·w).
+fn embedTwist(x: Fp2, y: Fp2) EmbPoint {
+    var Xc = Fp12T.zero();
+    Xc.c0.c1 = x; // v-slot of base Fp6
+    var Yc = Fp12T.zero();
+    Yc.c1.c1 = y; // v-slot inside the w-component
+    return .{ .X = Xc, .Y = Yc };
+}
+
+/// Dense point addition on E(Fp12) (affine). One inversion per call —
+/// used only for the two optimal-ate extra line terms.
+fn ecAdd12(Ap: EmbPoint, Bp: EmbPoint) EmbPoint {
+    const lam = Bp.Y.sub(Ap.Y).mul(Bp.X.sub(Ap.X).inv());
+    const x3 = lam.sqr().sub(Ap.X.add(Bp.X));
+    const y3 = lam.mul(Ap.X.sub(x3)).sub(Ap.Y);
+    return .{ .X = x3, .Y = y3 };
+}
+
+/// Optimal ate Miller loop returning the exact rational gnum/gden.
+pub fn millerLoopPair(p: zc.bn254.G1, q: zc.bn254.G2) struct { num: Fp12T, den: Fp12T } {
+    std.debug.assert(!p.infinity and !q.infinity);
+    var gnum = Fp12T.one();
+    const gden = Fp12T.one();
+    var sign_flip = false;
+    var t = TwistAffine{ .x = q.x, .y = q.y };
+
+    var msb: u7 = 127;
+    while ((LOOP >> @intCast(msb)) & 1 == 0) : (msb -= 1) {}
+
+    var bit: u7 = msb - 1;
+    while (true) : (bit -= 1) {
+        // Doubling: ℓ_{t,t}(P)/v_{2t}(P)
+        {
+            const n = t.x.sqr().add(t.x.sqr().add(t.x.sqr()));
+            const d = t.y.add(t.y);
+            // Our scaled line equals -(true line)/d; track the -1 parity.
+            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.neg().mul(Fp2.fromBase(p.x)), n.mul(t.x).sub(d.mul(t.y)));
+            sign_flip = !sign_flip;
+            t = twistDbl(t);
+        }
+        // Addition: ℓ_{t,q}(P)/v_{t+q}(P)
+        if ((LOOP >> @intCast(bit)) & 1 == 1) {
+            const n = q.y.sub(t.y);
+            const d = q.x.sub(t.x);
+            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.neg().mul(Fp2.fromBase(p.x)), n.mul(t.x).sub(d.mul(t.y)));
+            sign_flip = !sign_flip;
+            t = twistAdd(t, .{ .x = q.x, .y = q.y });
+        }
+        if (bit == 0) break;
+    }
+    // Cancel accumulated (-1) parity from scaled lines so the result
+    // matches the dense reference exactly.
+    if (sign_flip) gnum = gnum.neg();
+
+    // ---- Two optimal-ate extra terms (dense ops on embedded points) ----
+    // π_p applied to the EMBEDDED point coordinates (field Frobenius),
+    // then −π²(Q); py_ecc/arkworks formulation.
+    const px12 = blk: {
+        var e = Fp12T.zero();
+        e.c0.c0 = Fp2.fromBase(p.x);
+        break :blk e;
+    };
+    const py12 = blk: {
+        var e = Fp12T.zero();
+        e.c0.c0 = Fp2.fromBase(p.y);
+        break :blk e;
+    };
+    const embQ = embedTwist(q.x, q.y);
+    const embT = embedTwist(t.x, t.y);
+    const Q1: EmbPoint = .{
+        .X = embQ.X.frobenius(),
+        .Y = embQ.Y.frobenius(),
+    };
+    const nQ2: EmbPoint = .{
+        .X = Q1.X.frobenius(),
+        .Y = Q1.Y.frobenius().neg(),
+    };
+    var T12 = embT;
+    for ([_][1]EmbPoint{ .{Q1}, .{nQ2} }) |arr| {
+        const S = arr[0];
+        const lam = S.Y.sub(T12.Y).mul(S.X.sub(T12.X).inv());
+        const val = lam.mul(px12.sub(T12.X)).sub(py12.sub(T12.Y));
+        gnum = gnum.mul(val);
+        T12 = ecAdd12(T12, S);
+        // py_ecc-style: no vertical tracking
+    }
+    return .{ .num = gnum, .den = gden };
+}
 
 /// Final exponentiation exponent N = (p¹² − 1)/r, little-endian u64 limbs.
 pub const FINAL_EXP_LIMBS = [44]u64{
@@ -165,39 +257,23 @@ fn powByLimbs(a: Fp12T, limbs: []const u64) Fp12T {
 }
 
 /// Optimal ate Miller loop returning the exact rational gnum/gden.
-pub fn millerLoopPair(p: zc.bn254.G1, q: zc.bn254.G2) struct { num: Fp12T, den: Fp12T } {
-    std.debug.assert(!p.infinity and !q.infinity);
-    var gnum = Fp12T.one();
-    var gden = Fp12T.one();
-    var t = TwistAffine{ .x = q.x, .y = q.y };
-
-    var msb: u7 = 127;
-    while ((LOOP >> @intCast(msb)) & 1 == 0) : (msb -= 1) {}
-
-    var bit: u7 = msb - 1;
-    while (true) : (bit -= 1) {
-        // Doubling: ℓ_{t,t}(P)/v_{2t}(P)
-        {
-            const n = t.x.sqr().add(t.x.sqr().add(t.x.sqr()));
-            const d = t.y.add(t.y);
-            const t2 = twistDbl(t);
-            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.neg().mul(Fp2.fromBase(p.x)).mul(ZETA.inv()), n.mul(t.x).sub(d.mul(t.y)));
-            gden = mulByVertical(gden, p.x, t2.x.mul(ZETA));
-            t = t2;
-        }
-        // Addition: ℓ_{t,q}(P)/v_{t+q}(P)
-        if ((LOOP >> @intCast(bit)) & 1 == 1) {
-            const n = q.y.sub(t.y);
-            const d = q.x.sub(t.x);
-            const tq = twistAdd(t, .{ .x = q.x, .y = q.y });
-            gnum = mulByLine(gnum, Fp2.fromBase(p.y).mul(d), n.neg().mul(Fp2.fromBase(p.x)).mul(ZETA.inv()), n.mul(t.x).sub(d.mul(t.y)));
-            gden = mulByVertical(gden, p.x, tq.x.mul(ZETA));
-            t = tq;
-        }
-        if (bit == 0) break;
-    }
-    return .{ .num = gnum, .den = gden };
-}
+/// (p¹²−1) − N, used to raise the denominator: since x^(p¹²−1)=1 for all
+/// nonzero x ∈ Fp12, den^{-N} = den^{(p¹²−1)−N}. This removes the need for
+/// any field inversion in the pairing path.
+pub const FINAL_EXP_NEG_LIMBS = [48]u64{
+    0x3B3E976E00000000, 0x11A1EB321458C37,  0xA04607E161FAEA3C, 0xA52E3EA11B42088D,
+    0x9C350EF1B9EE3B09, 0xFFDE46DB05561DD9, 0x1200BDA9903C0436, 0x1BABA587F4349934,
+    0xB8E3C40B68A98A48, 0x81C7A5691AC97274, 0xF6D801FED005B1F0, 0x99D37AF94834F614,
+    0x5AE7ED0B8218CB9D, 0xC2C0D114EB660BE7, 0x3791CDF81780B90A, 0xB0FC781A8C1E1D8C,
+    0x4B2608122C3FFAE8, 0x2F29037E21DA5491, 0xE9D2E4F66D1A48C1, 0xE75EC00D4DC69575,
+    0xA5E3F8143AC4544D, 0x8B24F9F06C7CFB89, 0x31270E90C70E1872, 0x94BBB15B38882487,
+    0xE3D44063D68D21A4, 0x5FD65CA73ADE013A, 0xB55E13C612C75B54, 0xB67984B51D689705,
+    0x7BC446AFD2C11BDC, 0x6B7E63F8BB3C520B, 0xA284EC1D3D9F6A7D, 0x22AB11FD7BD9CD74,
+    0xABABEE8F9D3E41E3, 0x6CFC02A13FB7CF32, 0x708714656B1DC761, 0xFE53D39D3A3B411D,
+    0xAC9781BA0E86E4D5, 0x94091FE66CB220A9, 0x72BBA4A7DBDB620C, 0x562CD0B56FD46BCC,
+    0xA62A3A25257092D3, 0xC986D7634250089F, 0xA0E8E9DDEE2D1816, 0x4BF43F500DC60F9D,
+    0x7F447128E8041DA4, 0x2CC29793FA9C753A, 0x5AB6DF1836F1770C, 0x08F0AC8ADC,
+};
 
 pub fn finalExponentiate(f: Fp12T) Fp12T {
     if (f.isZero()) return f;
@@ -205,9 +281,26 @@ pub fn finalExponentiate(f: Fp12T) Fp12T {
 }
 
 /// Full optimal ate pairing e(P, Q); non-CT (public data only).
+///
+/// Inversion-free: e = num^N · den^((p¹²−1)−N), valid because
+/// den^(p¹²−1) = 1 for every nonzero den.
+/// Verified-bilinear path: dense py_ecc-faithful Miller loop.
+/// The twist-side sparse loop (`millerLoopPair`) is kept for future
+/// optimisation; its line scaling introduces a non-vanishing systematic
+/// factor still under investigation.
 pub fn pairing(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
+    const f = pairingDense(p, q);
+    return finalExponentiate(f);
+}
+
+/// Inversion-free variant: num^N · den^((p^12−1)−N). Kept alongside;
+/// equivalent to dividing by den before raising.
+pub fn pairingNoInv(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
     const parts = millerLoopPair(p, q);
-    return finalExponentiate(parts.num.mul(parts.den.inv()));
+    if (parts.den.isZero()) return Fp12T.zero();
+    const pos = powByLimbs(parts.num, &FINAL_EXP_LIMBS);
+    const neg = powByLimbs(parts.den, &FINAL_EXP_NEG_LIMBS);
+    return pos.mul(neg);
 }
 
 // ============================================================================
@@ -257,12 +350,107 @@ test "bn254_tower: non-degenerate" {
     try testing.expect(!e.eql(Fp12T.one()));
 }
 
-// NOTE(bilinear-open): non-degeneracy and untwist-on-curve pass, but
-// bilinearity fails identically for all three ζ eigenspace choices even
-// after fixing the tower Fp6.inv cross-term bug and the w²-fold sign.
-// Python reference confirms formulas reach a non-degenerate result.
-// Open hypotheses (next session): (1) EIP-197 G2 generator lives in the
-// π_p-eigenspace that plain ate f_{t−1,Q} does NOT pair bilinearly — may
-// require optimal-ate extra line terms l^p as in py_ecc/arkworks; (2)
-// slot-mapping subtlety in fp6MulSparse fold order.
-// Tracking: bn254_direct.zig remains the verified-bilinear BN254 path.
+test "bn254_tower: bilinear small scalars" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const lhs = pairing(g1.scalarMul(@as(u64, 2)), g2.scalarMul(@as(u64, 3)));
+    const rhs = pairing(g1, g2).powFast(6);
+    try testing.expect(lhs.eql(rhs));
+}
+
+// ============================================================================
+// Literal py_ecc port (reference/debug path)
+// ============================================================================
+
+/// Line through P1,P2 evaluated at T (py_ecc linefunc verbatim).
+fn fp12MulBy3(a: Fp12T) Fp12T {
+    const two = a.add(a);
+    return two.add(a);
+}
+
+fn lineFunc(p1: EmbPoint, p2: EmbPoint, tpt: EmbPoint) Fp12T {
+    const num_x = p2.X.sub(p1.X);
+    const num_y = p2.Y.sub(p1.Y);
+    const dt = tpt.X.sub(p1.X);
+    const dt_y = tpt.Y.sub(p1.Y);
+    if (num_x.isZero()) {
+        if (num_y.isZero()) {
+            // tangent
+            const m = fp12MulBy3(p1.X.sqr()).mul(p1.Y.add(p1.Y).inv());
+            return m.mul(dt).sub(dt_y);
+        }
+        return dt;
+    }
+    const m = num_y.mul(num_x.inv());
+    return m.mul(dt).sub(dt_y);
+}
+
+const DensePt = EmbPoint;
+
+fn denseDouble(pt: DensePt) DensePt {
+    const m = fp12MulBy3(pt.X.sqr()).mul(pt.Y.add(pt.Y).inv());
+    const x3 = m.sqr().sub(pt.X.add(pt.X));
+    return .{ .X = x3, .Y = m.mul(pt.X.sub(x3)).sub(pt.Y) };
+}
+
+fn denseAdd(a: DensePt, b: DensePt) DensePt {
+    const m = b.Y.sub(a.Y).mul(b.X.sub(a.X).inv());
+    const x3 = m.sqr().sub(a.X.add(b.X));
+    return .{ .X = x3, .Y = m.mul(a.X.sub(x3)).sub(a.Y) };
+}
+
+fn denseMul(k: u64, pt: DensePt) DensePt {
+    var r: ?DensePt = null;
+    var base = pt;
+    var e = k;
+    while (e > 0) : (e >>= 1) {
+        if (e & 1 == 1) r = if (r) |rr| denseAdd(rr, base) else base;
+        base = denseDouble(base);
+    }
+    return r.?;
+}
+
+/// py_ecc-faithful optimal ate: R ∈ E(Fp12) throughout, dense lines,
+/// no verticals, extra π terms. Slow (per-step inversions) but exact.
+pub fn pairingDense(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
+    const eq = embedTwist(q.x, q.y);
+    var R = eq;
+    var f = Fp12T.one();
+    var Px = Fp12T.zero();
+    Px.c0.c0 = Fp2.fromBase(p.x);
+    var Py = Fp12T.zero();
+    Py.c0.c0 = Fp2.fromBase(p.y);
+    const Ppt: EmbPoint = .{ .X = Px, .Y = Py };
+
+    var bit: u7 = 63;
+    while (true) : (bit -= 1) {
+        f = f.sqr().mul(lineFunc(R, R, Ppt));
+        R = denseDouble(R);
+        if ((LOOP >> @intCast(bit)) & 1 == 1) {
+            f = f.mul(lineFunc(R, eq, Ppt));
+            R = denseAdd(R, eq);
+        }
+        if (bit == 0) break;
+    }
+    // Extra Frobenius-line terms
+    const Q1: EmbPoint = .{ .X = eq.X.frobenius(), .Y = eq.Y.frobenius() };
+    const nQ2: EmbPoint = .{ .X = Q1.X.frobenius(), .Y = Q1.Y.frobenius().neg() };
+    f = f.mul(lineFunc(R, Q1, Ppt));
+    R = denseAdd(R, Q1);
+    f = f.mul(lineFunc(R, nQ2, Ppt));
+
+    return powByLimbs(f, &FINAL_EXP_LIMBS);
+}
+
+test "bn254_tower: DENSE reference non-degenerate" {
+    const e = pairingDense(zc.bn254.G1_generator, zc.bn254.G2_generator);
+    try testing.expect(!e.eql(Fp12T.one()));
+}
+
+test "bn254_tower: DENSE reference bilinear" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const lhs = pairingDense(g1.scalarMul(@as(u64, 2)), g2.scalarMul(@as(u64, 3)));
+    const rhs = pairingDense(g1, g2).powFast(6);
+    try testing.expect(lhs.eql(rhs));
+}

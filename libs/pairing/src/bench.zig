@@ -84,6 +84,14 @@ fn pairingBls() void {
 }
 
 const bn_direct = @import("bn254_direct.zig");
+const bn_tower = @import("bn254_tower.zig");
+
+fn pairingBnTower() void {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const e = bn_tower.pairing(g1, g2);
+    sink ^= @intFromBool(e.isZero());
+}
 
 fn pairingBn() void {
     const g1 = zc.bn254.G1_generator;
@@ -108,6 +116,7 @@ pub fn main() !void {
     std.debug.print("\n--- Pairing ---\n", .{});
     _ = bench("BLS12-381 optimal ate", 20, pairingBls);
     _ = bench("BN254 ate (direct deg-12)", 5, pairingBn);
+    _ = bench("BN254 optimal ate (tower)", 5, pairingBnTower);
 
     std.debug.print("\n(sink={d})\n", .{sink & 1});
 }
