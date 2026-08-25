@@ -246,6 +246,7 @@ pub const bls12_381_pairing_impl = @import("bls12_381.zig");
 pub const bn254_pairing_impl = @import("bn254.zig");
 pub const bn254_direct = @import("bn254_direct.zig");
 pub const bn254_pairing = bn254_direct;
+pub const bn254_tower_pairing = @import("bn254_tower.zig");
 
 // ============================================================================
 // Tests

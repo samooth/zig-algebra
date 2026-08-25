@@ -1,23 +1,14 @@
-//! BN254 direct degree-12 extension: Fp12 = Fp2[w]/(w¹² − ξ) with ξ = 9+u.
+//! BN254 pairing on Fp2[w]/(w¹² − (9+u)) — NOTE: this ring has degree 24
+//! over Fp, not 12! A degree-12 extension of Fp2 IS degree-24 over Fp; the
+//! true Fp12 used by pairings lives in bn254_tower.zig via the standard
+//! 2→6→12 tower. This module is kept because:
+//!   1. Its pairing is fully verified bilinear (the tower path is WIP).
+//!   2. The larger ring is mathematically sound for pairing computation:
+//!      values land in μ_r ⊂ Fp12 ⊂ Fp24 regardless of ambient ring.
+//! Cost: ~4× larger multiplies than the tower would need.
 //!
-//! # Why direct extension
-//!
-//! BN254 uses a D-type twist where b' = 4/ξ_c with ξ_c = 9+u. Building the
-//! tower hierarchically (Fp6 then Fp12) requires choosing a cubic non-residue
-//! at the Fp6 level, but ξ_c turns out to be a cube in Fp₂*, making it
-//! unusable there.
-//!
-//! However ξ_c is neither a square nor a cube in Fp₂* (verified numerically),
-//! so x¹² − ξ_c IS irreducible over Fp₂ and gives us a valid degree-12
-//! extension directly. Bonus: the untwist map becomes trivial:
-//!
-//!   ψ(x', y') ∈ E'(Fp2) ↦ (x'·w⁴, y'·w⁶) ∈ E(Fp12)
-//!
-//! because w¹² = ξ_c absorbs the twist coefficient exactly.
-//!
-//! # Status
-//!
-//! Field arithmetic implemented and tested. Miller loop / final exp pending.
+//! Untwist here: ψ(x', y') = (x'·w⁴, y'·w⁶), absorbing b' = 3/(9+u)
+//! exactly (alt_bn128 curve is y² = x³ + 3).
 
 const std = @import("std");
 const zf = @import("zig-field");

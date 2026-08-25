@@ -111,8 +111,8 @@ pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
             const t2 = a.c1.mul(a.c1).sub(a.c0.mul(a.c2));
 
             const n = a.c0.mul(t0)
-                .add(a.c1.mul(t1))
-                .add(a.c2.mul(t2).mul(xi));
+                .add(a.c2.mul(t1).mul(xi))
+                .add(a.c1.mul(t2).mul(xi));
             const n_inv = n.inv();
 
             return .{
@@ -125,6 +125,22 @@ pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
         /// Multiply by an Fp2 scalar.
         pub fn mulFp2(a: Self, s: Fp2) Self {
             return .{ .c0 = a.c0.mul(s), .c1 = a.c1.mul(s), .c2 = a.c2.mul(s) };
+        }
+
+        test "fp6 inv: generic round-trips (regression: N cross terms)" {
+            const Fp2t = @TypeOf(xi);
+            // Cases hitting each denominator term, incl. the a=(0,a1,0)
+            // shape that exposed the swapped ξ cross-terms.
+            const cases = [_][3]Fp2t{
+                .{ Fp2t.fromInt(3), Fp2t.fromInt(5), Fp2t.fromInt(7) },
+                .{ Fp2t.zero(), Fp2t.fromInt(4), Fp2t.zero() },
+                .{ Fp2t.zero(), Fp2t.zero(), Fp2t.fromInt(9) },
+                .{ Fp2t.fromInt(11), Fp2t.zero(), Fp2t.fromInt(2) },
+            };
+            for (cases) |cc| {
+                const a = Self.new(cc[0], cc[1], cc[2]);
+                try std.testing.expect(a.mul(a.inv()).eql(Self.one()));
+            }
         }
 
         /// Frobenius (single application). Uses γ = ξ^{(p−1)/3} ∈ Fp2 and
