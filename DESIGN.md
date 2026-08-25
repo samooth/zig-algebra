@@ -163,3 +163,18 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
 
 Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
 (cyclotomic+window) -> ~32 ms steady-state (sparse loop).
+
+## BLS12-381 pairing — final exponentiation notes
+
+- Easy part: t = conj(f)*f^-1 (= f^(p^6-1); conj IS the p^6-map because
+  nu is a non-residue in Fp6*), then u = frob^2(t)*t (= t^(1+p^2)).
+- Hard part: u^d, d = (p^4-p^2+1)/r, via 4-bit-windowed SA&M with
+  cyclotomic compressed squaring (shared tower.Fp12 primitives).
+- Stage anchoring pattern (used for BN254 too): every optimised stage
+  must be tested equal to an independent comptime-limb SA&M over the
+  exact stage exponent BEFORE wiring into production; full-pipeline
+  equality against the unoptimised path closes the loop.
+- The early-session "broken split" was never diagnosed at the time;
+  resurrecting it with stage anchoring revealed no defect in the
+  documented formulas — the original failure predates the current test
+  infrastructure and did not reproduce.
