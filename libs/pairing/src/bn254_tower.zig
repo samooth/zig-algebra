@@ -298,6 +298,78 @@ pub fn finalExponentiate(f: Fp12T) Fp12T {
     return powByLimbs(f, &FINAL_EXP_LIMBS);
 }
 
+/// Squaring specialised for elements of the cyclotomic subgroup
+/// (those satisfying g·conj(g)=1, i.e. u²=1+v·(v_e²)):
+///   g² = (1 + 2·v·v_e²) + (2·u·v_e)·w
+/// Costs 1 Fp6 squaring + 1 Fp6 multiplication vs 2+1 general.
+fn cyclotomicSqr(g: Fp12T) Fp12T {
+    const ve_sq = g.c1.sqr();
+    const v_ve_sq = fp6MulByV(ve_sq);
+    const c0 = Fp6T.one().add(v_ve_sq).add(v_ve_sq);
+    const uv = g.c0.mul(g.c1);
+    const c1 = uv.add(uv);
+    return .{ .c0 = c0, .c1 = c1 };
+}
+
+/// Square-and-multiply over limbs using the compressed squaring.
+/// Valid ONLY when `a` is in the cyclotomic subgroup (post easy-part).
+fn powByLimbsCyclo(a: Fp12T, limbs: []const u64) Fp12T {
+    var result = a;
+    var started = false;
+    var i: usize = limbs.len;
+    while (i > 0) {
+        i -= 1;
+        const limb = limbs[i];
+        var bit: u6 = 63;
+        while (true) : (bit -= 1) {
+            if (started) result = cyclotomicSqr(result);
+            if ((limb >> bit) & 1 == 1) {
+                result = if (started) result.mul(a) else a;
+                started = true;
+            }
+            if (bit == 0) break;
+        }
+    }
+    return result;
+}
+
+/// 4-bit windowed SA&M over the cyclotomic subgroup: precomputes
+/// a^(0..15) then consumes 4 exponent bits per step — halves the
+/// general multiplications versus binary at the cost of 14 extra
+/// precomputation squarings/mults.
+fn powByLimbsWindow4(a: Fp12T, limbs: []const u64) Fp12T {
+    var table: [16]Fp12T = undefined;
+    table[1] = a;
+    table[2] = cyclotomicSqr(a);
+    var k: usize = 3;
+    while (k < 16) : (k += 1) {
+        // odd entries: table[k-1] * a
+        table[k] = table[k - 1].mul(a);
+    }
+
+    var result = Fp12T.one();
+    var started = false;
+    var i: usize = limbs.len;
+    while (i > 0) {
+        i -= 1;
+        const limb = limbs[i];
+        var nib: u4 = 15; // top nibble index within u64
+        while (true) : (nib -= 1) {
+            const shift: u6 = @intCast(@as(u6, nib) * 4);
+            const w = @as(u64, (limb >> shift) & 0xF);
+            if (started) {
+                result = cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(result))));
+            }
+            if (w != 0) {
+                result = if (started) result.mul(table[w]) else table[w];
+                started = true;
+            }
+            if (nib == 0) break;
+        }
+    }
+    return result;
+}
+
 /// Split final exponentiation: f^N = frob⁶(f)·f⁻¹ raised to M.
 /// The easy part costs six Frobenius applications plus one cheap
 /// closed-form tower inversion; only the hard part runs SA&M over the
@@ -307,7 +379,7 @@ pub fn finalExponentiateSplit(f: Fp12T) Fp12T {
     // f^(p^6): three applications of frobenius2.
     var fp6 = f.frobenius2().frobenius2().frobenius2();
     const easy = fp6.mul(f.inv());
-    return powByLimbs(easy, &HARD_PART_LIMBS);
+    return powByLimbsWindow4(easy, &HARD_PART_LIMBS);
 }
 
 /// Full optimal ate pairing e(P, Q); non-CT (public data only).
@@ -523,4 +595,51 @@ test "bn254_tower: split final exp == full" {
     // arbitrary non-trivial element: dense Miller output
     const f = millerDense(g1, g2);
     try testing.expect(finalExponentiateSplit(f).eql(finalExponentiate(f)));
+}
+
+test "bn254_tower: cyclotomic unitary invariant on easy-part output" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const f = millerDense(g1, g2);
+    // easy part: f^(p^6-1) = frob^6(f) * f^-1
+    const fp6 = f.frobenius2().frobenius2().frobenius2();
+    const easy = fp6.mul(f.inv());
+    // invariant: frob6(easy) == easy^-1  (i.e. easy^(p^6) = easy^-1)
+    const fr6 = easy.frobenius2().frobenius2().frobenius2();
+    try testing.expect(fr6.eql(easy.inv()));
+    // and: easy lives in the p^6+1 group => easy^(p^6+1) == 1
+    const prod = fr6.mul(easy);
+    try testing.expect(prod.eql(Fp12T.one()));
+}
+
+test "bn254_tower: frob6 equals simple w-conjugation on cyclotomic subgroup" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const f = millerDense(g1, g2);
+    const fp6 = f.frobenius2().frobenius2().frobenius2();
+    const easy = fp6.mul(f.inv());
+    // simple conjugation: negate the w-part
+    const conj = easy.conjugate();
+    const fr6 = easy.frobenius2().frobenius2().frobenius2();
+    try testing.expect(conj.eql(fr6));
+}
+
+test "bn254_tower: cyclotomicSqr matches generic sqr" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const f = millerDense(g1, g2);
+    const fp6 = f.frobenius2().frobenius2().frobenius2();
+    const easy = fp6.mul(f.inv());
+    try testing.expect(cyclotomicSqr(easy).eql(easy.sqr()));
+}
+
+test "bn254_tower: DEBUG window4 == binary" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const f = millerDense(g1, g2);
+    const fp6 = f.frobenius2().frobenius2().frobenius2();
+    const easy = fp6.mul(f.inv());
+    const a = powByLimbsCyclo(easy, &HARD_PART_LIMBS);
+    const b = powByLimbsWindow4(easy, &HARD_PART_LIMBS);
+    std.debug.print("\nWIN4==BIN: {}\n", .{a.eql(b)});
 }
