@@ -339,4 +339,34 @@ pub fn build(b: *std.Build) void {
     wasm_exe.entry = .disabled; // -fno-entry: exports via `export fn`
     const install_wasm = b.addInstallArtifact(wasm_exe, .{});
     wasm_step.dependOn(&install_wasm.step);
+
+    // Pairing WASM module (BN254 e(G1,G2) for JS/TS interop).
+    const wp_step = b.step("wasm-pairing", "Build examples/wasm_pairing.zig to wasm32-freestanding");
+    const pairing_src = b.createModule(.{
+        .root_source_file = b.path("libs/pairing/src/root.zig"),
+        .target = wasm_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-field", .module = field_mod },
+            .{ .name = "zig-curve", .module = curve_mod },
+        },
+    });
+    const wpm = b.createModule(.{
+        .root_source_file = b.path("examples/wasm_pairing.zig"),
+        .target = wasm_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-field", .module = field_mod },
+            .{ .name = "zig-curve", .module = curve_mod },
+            .{ .name = "zig-pairing", .module = pairing_src },
+        },
+    });
+    wpm.export_symbol_names = &.{ "pairing_api_version", "g1_validate", "g2_validate", "pairing_compute", "pairing_bilinear_check", "scratch_ptr" };
+    const wp_exe = b.addExecutable(.{
+        .name = "zig_algebra_pairing",
+        .root_module = wpm,
+    });
+    wp_exe.entry = .disabled;
+    const install_wp = b.addInstallArtifact(wp_exe, .{});
+    wp_step.dependOn(&install_wp.step);
 }

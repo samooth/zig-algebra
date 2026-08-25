@@ -54,9 +54,11 @@ jobs:
       - uses: mlugg/setup-zig@v1
         with:
           version: 0.16.0
-      - name: Build wasm32-freestanding module (zig build wasm)
-        run: zig build wasm
-      - name: Verify exports and call fp_mul from Node
+      - name: Build wasm32-freestanding modules (zig build wasm + wasm-pairing)
+        run: |
+          zig build wasm
+          zig build wasm-pairing
+      - name: Verify field exports and fp_mul from Node
         run: |
           node -e '
           const fs = require("fs");
@@ -68,6 +70,8 @@ jobs:
               if (typeof e[name] !== "function") throw new Error("missing export: " + name);
             }
             if (e.fp_mul(5n, 0n, 7n, 0n) !== 35n) throw new Error("fp_mul(5,7) != 35");
-            console.log("wasm exports OK:", Object.keys(e).join(", "));
+            console.log("field wasm OK:", Object.keys(e).join(", "));
           })().catch((err) => { console.error(err); process.exit(1); });
           '
+      - name: Pairing WASM smoke (validations + in-module bilinearity)
+        run: node scripts/wasm_pairing_smoke.js

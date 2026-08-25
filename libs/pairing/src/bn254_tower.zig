@@ -362,7 +362,7 @@ fn powByLimbsWindow4(a: Fp12T, limbs: []const u64) Fp12T {
                 result = cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(result))));
             }
             if (w != 0) {
-                result = if (started) result.mul(table[w]) else table[w];
+                result = if (started) result.mul(table[@intCast(w)]) else table[@intCast(w)];
                 started = true;
             }
             if (nib == 0) break;
