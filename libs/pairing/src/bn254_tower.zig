@@ -284,9 +284,30 @@ pub const FINAL_EXP_NEG_LIMBS = [48]u64{
     0x7F447128E8041DA4, 0x2CC29793FA9C753A, 0x5AB6DF1836F1770C, 0x08F0AC8ADC,
 };
 
+/// Hard-part exponent M = (p⁶+1)/r (1268 bits) for the split final exp.
+pub const HARD_PART_LIMBS = [20]u64{
+    0x5250A54036E3F812, 0xA5635F1596789051, 0xD1138BF54D5BD1D4, 0xA8CE2533BE36C7A2,
+    0x94F69F6B84E09BF6, 0x42AD1F5E50EF3644, 0xFCC420E48C3454C,  0x758E4408ECC9952C,
+    0xC901BF1887C6042C, 0xA733CD65B14BB3B5, 0xDF6D76BDCF51B0D8, 0xCA64C0FD82EB59E1,
+    0x1D2E5726E39276A1, 0xC2D1EA74A391CAE9, 0x07409206C82D647E, 0x51C6D1AA5AFDD17,
+    0xB37F601919667AF5, 0x150E578C5084015B, 0xFBDEA556C23998E4, 0x0FD14CC52F5B83,
+};
+
 pub fn finalExponentiate(f: Fp12T) Fp12T {
     if (f.isZero()) return f;
     return powByLimbs(f, &FINAL_EXP_LIMBS);
+}
+
+/// Split final exponentiation: f^N = frob⁶(f)·f⁻¹ raised to M.
+/// The easy part costs six Frobenius applications plus one cheap
+/// closed-form tower inversion; only the hard part runs SA&M over the
+/// 1268-bit M — ~2.2× fewer squarings than the full-NAF-free path.
+pub fn finalExponentiateSplit(f: Fp12T) Fp12T {
+    if (f.isZero()) return f;
+    // f^(p^6): three applications of frobenius2.
+    var fp6 = f.frobenius2().frobenius2().frobenius2();
+    const easy = fp6.mul(f.inv());
+    return powByLimbs(easy, &HARD_PART_LIMBS);
 }
 
 /// Full optimal ate pairing e(P, Q); non-CT (public data only).
@@ -312,7 +333,7 @@ pub fn pairingSparse(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
 /// per step) but independently verified bilinear; used in tests to
 /// cross-check `pairing`.
 pub fn pairingDense(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
-    return finalExponentiate(millerDense(p, q));
+    return finalExponentiateSplit(millerDense(p, q));
 }
 
 // ============================================================================
@@ -486,4 +507,20 @@ test "bn254_tower: DENSE reference bilinear" {
     const lhs = pairingDense(g1.scalarMul(@as(u64, 2)), g2.scalarMul(@as(u64, 3)));
     const rhs = pairingDense(g1, g2).powFast(6);
     try testing.expect(lhs.eql(rhs));
+}
+
+test "bn254_tower: frobenius matches p-power SA&M" {
+    var x = Fp12T.zero();
+    x.c0 = Fp6T.new(Fp2.fromInt(7), Fp2.fromInt(11), Fp2.fromInt(13));
+    x.c1 = Fp6T.new(Fp2.fromInt(17), Fp2.fromInt(19), Fp2.fromInt(23));
+    const P_LIMBS = [4]u64{ 0x3C208C16D87CFD47, 0x97816A916871CA8D, 0xB85045B68181585D, 0x30644E72E131A029 };
+    try testing.expect(x.frobenius().eql(powByLimbs(x, &P_LIMBS)));
+}
+
+test "bn254_tower: split final exp == full" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    // arbitrary non-trivial element: dense Miller output
+    const f = millerDense(g1, g2);
+    try testing.expect(finalExponentiateSplit(f).eql(finalExponentiate(f)));
 }
