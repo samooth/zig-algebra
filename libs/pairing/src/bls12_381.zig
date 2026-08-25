@@ -257,6 +257,31 @@ fn finalExp(f: Fp12) Fp12 {
     return acc;
 }
 
+/// d = (p⁴ − p² + 1)/r — hard-part exponent (1268 bits), little-endian u64.
+pub const D_LIMBS = [20]u64{
+    0xE516C3F438E3BA79, 0xFA9912AAE208CCF1, 0x905CE937335D5B68, 0xC71A2629B0DEA236,
+    0x83774940996754C8, 0x21D160AEB6A1E799, 0x2ED0B283ED237DB4, 0x915C97F36C6F1821,
+    0x67F17FCBDE783765, 0x2378B9039096D1B7, 0x7988F8761BDC51DC, 0x2076995003FC77A1,
+    0x827ECA0BA621315B, 0xE5A72BCE8D63CB9F, 0xF68F7764C28B6F8A, 0x2F230063CF081517,
+    0x94506632528D6A9A, 0xD3CDE88EEB996CA3, 0xC0BD38C3195C899E, 0xF686B3D807D01,
+};
+
+/// Easy part of the final exponentiation:
+///   t = conj(f)·f⁻¹          (= f^(p⁶−1); conj IS the p⁶-map here)
+///   u = frob²(t)·t           (= t^(1+p²))
+fn finalExpEasy(f: Fp12) Fp12 {
+    const t = f.conjugate().mul(f.inv());
+    return t.frobenius2().mul(t);
+}
+
+/// Split final exponentiation: full SA&M result equals
+///   finalExpEasy(f)^d,  d = (p⁴ − p² + 1)/r
+/// with the hard part using windowed cyclotomic squaring.
+pub fn finalExpSplit(f: Fp12) Fp12 {
+    const easy = finalExpEasy(f);
+    return easy.powByLimbsWindow4Cyclo(&D_LIMBS);
+}
+
 /// Easy part of the final exponentiation: f^(p⁶−1)(p²+1).
 ///
 /// Step 1: t = conj(f) · f⁻¹  →  f^(p⁶−1)   [conj IS p⁶-map, η′=−1 verified]
@@ -265,7 +290,7 @@ fn finalExp(f: Fp12) Fp12 {
 /// Full optimal ate pairing e(P, Q) = Miller loop followed by the final
 /// exponentiation.
 pub fn pairing(p: G1Point, q: G2Point) Fp12 {
-    return finalExp(millerLoop(p, q));
+    return finalExpSplit(millerLoop(p, q));
 }
 
 // ---------------------------------------------------------------------------
@@ -404,4 +429,32 @@ test "ISOLATED v³ == ξ" {
     try testing.expect(v3.c0.eql(XI));
     try testing.expect(v3.c1.eql(Fp2.zero()));
     try testing.expect(v3.c2.eql(Fp2.zero()));
+}
+
+test "bls12_381: split final exp == full SA&M" {
+    // Real Miller output as the input element.
+    const g1 = zc.bls12_381.G1_generator;
+    const g2 = zc.bls12_381.G2_generator;
+    const f = millerLoop(g1, g2);
+    try std.testing.expect(finalExpSplit(f).eql(finalExp(f)));
+}
+
+const EASY_EXP_LIMBS = blk: {
+    @setEvalBranchQuota(100_000);
+    const p_: comptime_int = Fp.MODULUS;
+    const e_: comptime_int = (ipow(p_, 6) - 1) * (ipow(p_, 2) + 1);
+    const nl = (bitLen(e_) + 63) / 64;
+    var l: [nl]u64 = undefined;
+    var i: usize = 0;
+    while (i < nl) : (i += 1) {
+        l[i] = @truncate(e_ >> @intCast(64 * i));
+    }
+    break :blk l;
+};
+
+test "bls12_381: easy part matches SA&M over (p^6-1)(p^2+1)" {
+    const g1 = zc.bls12_381.G1_generator;
+    const g2 = zc.bls12_381.G2_generator;
+    const f = millerLoop(g1, g2);
+    try std.testing.expect(finalExpEasy(f).eql(f.powByLimbs(&EASY_EXP_LIMBS)));
 }

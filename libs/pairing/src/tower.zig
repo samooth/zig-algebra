@@ -351,6 +351,73 @@ pub fn Fp12(comptime Base6: type) type {
             };
         }
 
+        /// Squaring specialised for elements of the cyclotomic subgroup
+        /// (g·conj(g)=1, i.e. c0² = 1 + ν·c1²):
+        ///   g² = (1 + 2·ν·c1²) + (2·c0·c1)·w
+        /// Costs 1 Base squaring + 1 Base multiplication vs 2+1 general.
+        pub fn cyclotomicSqr(g: Self) Self {
+            const ve_sq = g.c1.sqr();
+            const nu_ve = mulByNu(ve_sq);
+            const c0 = Self.one().c0.add(nu_ve).add(nu_ve);
+            const uv = g.c0.mul(g.c1);
+            const c1 = uv.add(uv);
+            return .{ .c0 = c0, .c1 = c1 };
+        }
+
+        /// Binary square-and-multiply over little-endian u64 limbs.
+        pub fn powByLimbs(a: Self, limbs: []const u64) Self {
+            var result = Self.one();
+            var started = false;
+            var i: usize = limbs.len;
+            while (i > 0) {
+                i -= 1;
+                const limb = limbs[i];
+                var bit: u6 = 63;
+                while (true) : (bit -= 1) {
+                    if (started) result = result.sqr();
+                    if ((limb >> bit) & 1 == 1) {
+                        result = if (started) result.mul(a) else a;
+                        started = true;
+                    }
+                    if (bit == 0) break;
+                }
+            }
+            return result;
+        }
+
+        /// 4-bit windowed SA&M using compressed squaring. Valid ONLY for
+        /// elements of the cyclotomic subgroup (post easy-part).
+        pub fn powByLimbsWindow4Cyclo(a: Self, limbs: []const u64) Self {
+            var table: [16]Self = undefined;
+            table[1] = a;
+            table[2] = cyclotomicSqr(a);
+            var k: usize = 3;
+            while (k < 16) : (k += 1) {
+                table[k] = table[k - 1].mul(a);
+            }
+            var result = Self.one();
+            var started = false;
+            var i: usize = limbs.len;
+            while (i > 0) {
+                i -= 1;
+                const limb = limbs[i];
+                var nib: u4 = 15;
+                while (true) : (nib -= 1) {
+                    const shift: u6 = @intCast(@as(u6, nib) * 4);
+                    const w = @as(u64, (limb >> shift) & 0xF);
+                    if (started) {
+                        result = cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(cyclotomicSqr(result))));
+                    }
+                    if (w != 0) {
+                        result = if (started) result.mul(table[w]) else table[w];
+                        started = true;
+                    }
+                    if (nib == 0) break;
+                }
+            }
+            return result;
+        }
+
         /// Fast exponentiation (public exponent).
         pub fn powFast(a: Self, exp: anytype) Self {
             var result = Self.one();
