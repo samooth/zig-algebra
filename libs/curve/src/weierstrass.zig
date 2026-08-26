@@ -69,19 +69,14 @@ pub fn AffinePoint(comptime F: type, comptime a: F, comptime b: F) type {
             return .{ .x = x3, .y = y3, .infinity = false };
         }
 
+        /// Scalar multiplication: windowed ladder run in projective
+        /// coordinates so the whole computation costs O(1) field inversions
+        /// instead of one per addition.
+        ///
+        /// Non-CT (branches on scalar bits); NOT for secret scalars.
         pub fn scalarMul(self: Self, scalar: anytype) Self {
-            var result = Self.zero();
-            var base = self;
-            var exp: u512 = scalar;
-
-            while (exp > 0) {
-                if (exp % 2 == 1) {
-                    result = result.add(base);
-                }
-                base = base.dbl();
-                exp /= 2;
-            }
-            return result;
+            const exp: u512 = scalar;
+            return self.toProjective().scalarMul(exp).toAffine();
         }
 
         pub fn toBytes(self: Self) [2 * F.NUM_BYTES]u8 {
@@ -113,6 +108,51 @@ pub fn AffinePoint(comptime F: type, comptime a: F, comptime b: F) type {
             };
         }
     };
+}
+
+/// 4-bit windowed left-to-right scalar multiplication over any point type
+/// with `zero()`, `dbl()` and `add()`.
+///
+/// ~n/4 additions instead of ~n/2 for n-bit scalars; on affine points the
+/// caller should run this through projective coordinates to avoid per-step
+/// field inversions (see `AffinePoint.scalarMul`).
+///
+/// Non-CT (branches on scalar bits); NOT for secret scalars.
+fn scalarMulWindowed(comptime Point: type, base: Point, exp: u512) Point {
+    if (exp == 0) return Point.zero();
+
+    // table[i] = (i+1)*base for nibble values 1..15 (0 needs no add).
+    var table: [15]Point = undefined;
+    table[0] = base;
+    var t: usize = 1;
+    while (t < 15) : (t += 1) table[t] = table[t - 1].add(base);
+
+    const nbits: usize = 512 - @clz(exp);
+    var result = Point.zero();
+    var nib: usize = (nbits + 3) / 4;
+    while (nib > 0) {
+        nib -= 1;
+        const shift: std.math.Log2Int(u512) = @intCast(nib * 4);
+        const digit: u4 = @truncate(exp >> shift);
+        var j: usize = 0;
+        while (j < 4) : (j += 1) result = result.dbl();
+        if (digit != 0) result = result.add(table[digit - 1]);
+    }
+    return result;
+}
+
+/// Naive LSB-first double-and-add; kept as the independent test reference
+/// for `scalarMulWindowed` (stage anchoring, see DESIGN.md).
+fn scalarMulNaive(comptime Point: type, base: Point, exp: u512) Point {
+    var result = Point.zero();
+    var acc = base;
+    var k = exp;
+    while (k > 0) {
+        if (k % 2 == 1) result = result.add(acc);
+        acc = acc.dbl();
+        k /= 2;
+    }
+    return result;
 }
 
 /// Projective (Jacobian) point: (X : Y : Z) represents (X/Z^2, Y/Z^3).
@@ -210,25 +250,19 @@ pub fn ProjectivePoint(comptime F: type, comptime a: F, comptime b: F) type {
             const t = m.mul(m).sub(s.mulBy2());
 
             const x = t;
-            const y = m.mul(s.sub(t)).sub(yyyy.mulBy8());
+            const y = m.mul(s.sub(t)).sub(yyyy.mulBy4().mulBy2());
             const z = self.y.mulBy2().mul(self.z);
 
             return .{ .x = x, .y = y, .z = z };
         }
 
+        /// Scalar multiplication via 4-bit windowed left-to-right ladder in
+        /// Jacobian coordinates (no inversions in the loop).
+        ///
+        /// Non-CT (branches on scalar bits); NOT for secret scalars.
         pub fn scalarMul(self: Self, scalar: anytype) Self {
-            var result = Self.zero();
-            var base = self;
-            var exp: u512 = scalar;
-
-            while (exp > 0) {
-                if (exp % 2 == 1) {
-                    result = result.add(base);
-                }
-                base = base.dbl();
-                exp /= 2;
-            }
-            return result;
+            const exp: u512 = scalar;
+            return scalarMulWindowed(Self, self, exp);
         }
 
         pub fn toAffine(self: Self) Affine {
@@ -243,4 +277,52 @@ pub fn ProjectivePoint(comptime F: type, comptime a: F, comptime b: F) type {
             };
         }
     };
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+const testing = std.testing;
+const bn254 = @import("bn254.zig");
+
+test "windowed scalar mul matches naive reference (affine + projective)" {
+    var prng = std.Random.DefaultPrng.init(0x57A7);
+    const rand = prng.random();
+
+    const G1 = bn254.G1;
+    const G1Proj = bn254.G1Projective;
+    const g = bn254.G1_generator;
+
+    var i: usize = 0;
+    while (i < 8) : (i += 1) {
+        // Full-width u512 scalars exercise every window position; the group
+        // law is total over integers so reduction mod r is not required.
+        var k_buf: [64]u8 = undefined;
+        rand.bytes(&k_buf);
+        const k = std.mem.readInt(u512, &k_buf, .little);
+        try testing.expect(
+            scalarMulWindowed(G1, g, k).eql(scalarMulNaive(G1, g, k)),
+        );
+        const gp = g.toProjective();
+        try testing.expect(
+            scalarMulWindowed(G1Proj, gp, k).toAffine().eql(scalarMulNaive(G1, g, k)),
+        );
+    }
+}
+
+test "windowed scalar mul edge cases" {
+    const G1 = bn254.G1;
+    const G1Proj = bn254.G1Projective;
+    const g = bn254.G1_generator;
+
+    const edges = [_]u512{ 0, 1, 2, 3, 15, 16, 17, 255, 256, 1 << 380, (1 << 381) - 1 };
+    for (edges) |k| {
+        const w = scalarMulWindowed(G1, g, k);
+        const n = scalarMulNaive(G1, g, k);
+        try testing.expect(w.eql(n));
+        try testing.expect(g.toProjective().scalarMul(k).toAffine().eql(n));
+    }
+    try testing.expect(scalarMulWindowed(G1, g, 0).infinity);
+    try testing.expect(scalarMulWindowed(G1Proj, G1Proj.zero(), 12345).isZero());
 }
