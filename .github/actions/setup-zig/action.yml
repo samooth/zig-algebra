@@ -8,7 +8,8 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Download and install Zig
+    - name: Download and install Zig (Linux/macOS)
+      if: runner.os != 'Windows'
       shell: bash
       env:
         ZIG_VERSION: ${{ inputs.version }}
@@ -24,10 +25,6 @@ runs:
           macOS)
             PLATFORM="x86_64-macos"
             EXT="tar.xz"
-            ;;
-          Windows)
-            PLATFORM="x86_64-windows"
-            EXT="zip"
             ;;
           *)
             echo "Unsupported OS: ${{ runner.os }}"
@@ -77,3 +74,56 @@ runs:
         
         # Cache the installation directory for reuse
         echo "ZIG_INSTALL_DIR=${ZIG_BIN}" >> $GITHUB_ENV
+
+    - name: Download and install Zig (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        ZIG_VERSION: ${{ inputs.version }}
+      run: |
+        $ErrorActionPreference = "Stop"
+        
+        $PLATFORM = "x86_64-windows"
+        $EXT = "zip"
+        $FILENAME = "zig-${PLATFORM}-${env:ZIG_VERSION}.${EXT}"
+        $URL = "https://ziglang.org/download/${env:ZIG_VERSION}/${FILENAME}"
+        
+        Write-Host "Downloading Zig ${env:ZIG_VERSION} for ${PLATFORM} from ${URL}"
+        
+        # Create temp directory
+        $TEMP_DIR = [System.IO.Path]::GetTempPath() + "zig-" + [System.Guid]::NewGuid()
+        New-Item -ItemType Directory -Force -Path $TEMP_DIR | Out-Null
+        Set-Location $TEMP_DIR
+        
+        # Download with retry
+        for ($i = 1; $i -le 3; $i++) {
+          try {
+            Invoke-WebRequest -Uri $URL -OutFile $FILENAME -ErrorAction Stop
+            Write-Host "Download successful"
+            break
+          } catch {
+            Write-Host "Download attempt $i failed: $_"
+            if ($i -eq 3) { throw $_ }
+            Start-Sleep -Seconds 5
+          }
+        }
+        
+        if (-not (Test-Path $FILENAME)) {
+          Write-Error "Failed to download after 3 attempts"
+          exit 1
+        }
+        
+        # Extract
+        Expand-Archive -Path $FILENAME -DestinationPath "." -Force
+        $ZIG_DIR = "zig-${PLATFORM}-${env:ZIG_VERSION}"
+        
+        # Add to PATH
+        $ZIG_BIN = Join-Path $TEMP_DIR $ZIG_DIR
+        $env:GITHUB_PATH = $ZIG_BIN + ";" + $env:GITHUB_PATH
+        [Environment]::SetEnvironmentVariable("GITHUB_PATH", $env:GITHUB_PATH, "User")
+        
+        # Verify
+        & "${ZIG_BIN}\zig.exe" version
+        
+        # Cache the installation directory for reuse
+        "ZIG_INSTALL_DIR=${ZIG_BIN}" >> $env:GITHUB_ENV
