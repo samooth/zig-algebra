@@ -33,7 +33,7 @@ const Blake3 = @import("zig-hash").Blake3;
 
 test "MerkleTree build and root" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -48,7 +48,7 @@ test "MerkleTree build and root" {
 
 test "MerkleTree prove and verify" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -67,7 +67,7 @@ test "MerkleTree prove and verify" {
 
 test "MerkleTree verify fails for wrong leaf" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -84,7 +84,7 @@ test "MerkleTree verify fails for wrong leaf" {
 
 test "MerkleTree proof serialization" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -110,7 +110,7 @@ test "MerkleTree proof serialization" {
 
 test "MerkleTree with non-power-of-2 leaves" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -128,7 +128,7 @@ test "MerkleTree with non-power-of-2 leaves" {
 
 test "MMR append and root" {
     const M = MMR(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -146,7 +146,7 @@ test "MMR append and root" {
 
 test "MMR prove and verify" {
     const M = MMR(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -190,7 +190,7 @@ test "MMR prove and verify" {
 
 test "SparseMerkleTree update and prove" {
     const SMT = SparseMerkleTree(Blake3, 8);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -213,7 +213,7 @@ test "SparseMerkleTree update and prove" {
 
 test "SparseMerkleTree non-membership" {
     const SMT = SparseMerkleTree(Blake3, 8);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -231,7 +231,7 @@ test "SparseMerkleTree non-membership" {
 
 test "SparseMerkleTree verify fails for wrong value" {
     const SMT = SparseMerkleTree(Blake3, 8);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -249,7 +249,7 @@ test "SparseMerkleTree verify fails for wrong value" {
 
 test "MerkleTree initFromHashes" {
     const Tree = MerkleTree(Blake3);
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

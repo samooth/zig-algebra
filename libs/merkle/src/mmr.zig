@@ -79,7 +79,7 @@ pub fn MMR(comptime H: type) type {
         pub fn init(allocator: std.mem.Allocator) !Self {
             return .{
                 .nodes = std.AutoHashMap(u64, [HASH_LEN]u8).init(allocator),
-                .peaks = std.ArrayList(Peak){},
+                .peaks = std.ArrayList(Peak).empty,
                 .leaf_count = 0,
                 .allocator = allocator,
             };
@@ -167,8 +167,8 @@ pub fn MMR(comptime H: type) type {
             }
 
             // Build standard Merkle proof over leaf hashes
-            var siblings = std.ArrayList([HASH_LEN]u8){};
-            var flags = std.ArrayList(bool){};
+            var siblings = std.ArrayList([HASH_LEN]u8).empty;
+            var flags = std.ArrayList(bool).empty;
             defer siblings.deinit(allocator);
             defer flags.deinit(allocator);
 

@@ -91,7 +91,7 @@ pub fn main() !void {
     var shake = rng.Shake256Rng.init();
     shake.absorbSeed("my protocol seed");
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

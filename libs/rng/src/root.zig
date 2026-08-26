@@ -134,7 +134,7 @@ test "Shake256Rng deterministic" {
     var rng2 = Shake256Rng.init();
     rng2.absorbSeed("test seed");
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
@@ -152,7 +152,7 @@ test "Shake256Rng different seeds" {
     var rng2 = Shake256Rng.init();
     rng2.absorbSeed("seed B");
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 

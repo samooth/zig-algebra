@@ -426,7 +426,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
             var i: usize = m + 1;
             while (i > 0) {
                 i -= 1;
-                var rem_slice = remainder.limbs[i .. i + n + 1];
+                const rem_slice = remainder.limbs[i .. i + n + 1];
                 const rem_hi = @as(DoubleLimb, rem_slice[n]) << 64 | rem_slice[n - 1];
                 var qhat: Limb = @truncate(@min(rem_hi / b_msb, std.math.maxInt(Limb)));
 
@@ -658,7 +658,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
                 return s;
             }
             var mag = self.abs();
-            var digits = std.ArrayList(u8){};
+            var digits = std.ArrayList(u8).empty;
             defer digits.deinit(allocator);
 
             while (!mag.isZero()) {
@@ -692,7 +692,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
         ) !void {
             _ = fmt;
             _ = options;
-            var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+            var gpa = std.heap.DebugAllocator(.{}){};
             defer _ = gpa.deinit();
             const s = try self.toString(gpa.allocator());
             defer gpa.allocator().free(s);

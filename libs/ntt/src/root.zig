@@ -469,7 +469,7 @@ test "twiddle precomputation and free" {
         _ = @as(usize, 1) << @intCast(log_n);
         const root = Goldilocks.primitiveRootOfUnity(log_n);
 
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa = std.heap.DebugAllocator(.{}){};
         defer _ = gpa.deinit();
         const allocator = gpa.allocator();
 
@@ -504,7 +504,7 @@ test "ntt with precomputed twiddles matches ntt without (Goldilocks)" {
         const n: usize = @as(usize, 1) << @intCast(log_n);
         const root = Goldilocks.primitiveRootOfUnity(log_n);
 
-        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        var gpa = std.heap.DebugAllocator(.{}){};
         defer _ = gpa.deinit();
         const allocator = gpa.allocator();
 

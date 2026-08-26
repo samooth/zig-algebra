@@ -196,7 +196,7 @@ pub fn main() !void {
     try stdout.print("product([1,2,3]) = {}\n", .{pr});
 
     // Polynomial example
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
