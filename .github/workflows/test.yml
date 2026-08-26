@@ -18,7 +18,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,21 @@ jobs:
         with:
           version: 0.16.0
       - run: zig build -Doptimize=ReleaseFast
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+      # Informational only: shared runners are noisy; no regression thresholds.
+      - name: Run benchmarks
+        run: zig build bench -Doptimize=ReleaseFast | tee benchmark-results.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
 
   stark-example:
     runs-on: ubuntu-latest
@@ -58,7 +73,7 @@ jobs:
         run: |
           zig build wasm
           zig build wasm-pairing
-      - name: Verify field exports and fp_mul from Node
+      - name: Verify field exports and value tests from Node
         run: |
           node -e '
           const fs = require("fs");
@@ -69,7 +84,19 @@ jobs:
             for (const name of ["fp_add", "fp_mul", "fp_inv"]) {
               if (typeof e[name] !== "function") throw new Error("missing export: " + name);
             }
+            const M = 0xffffffffffffffffn, W = 1n << 64n;
+            const u = (x) => (x < 0n ? x + W : x); // wasm i64 view of u64
+            if (e.fp_add(5n, 0n, 7n, 0n) !== 12n) throw new Error("fp_add(5,7) != 12");
             if (e.fp_mul(5n, 0n, 7n, 0n) !== 35n) throw new Error("fp_mul(5,7) != 35");
+            // Carry across lo/hi boundary: (2^64-1) + 2 -> lo word 1
+            if (u(e.fp_add(M, 0n, 2n, 0n)) !== 1n) throw new Error("fp_add carry failed");
+            // hi words must participate: (5*2^64) + (7*2^64) -> lo word 0
+            if (u(e.fp_add(0n, 5n, 0n, 7n)) !== 0n) throw new Error("fp_add hi words ignored");
+            // fp_inv(2) == 2^(p-2) mod p (BLS12-381), compared on low 64 bits
+            const P = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaabn;
+            let inv = 1n, base = 2n, exp = P - 2n;
+            while (exp > 0n) { if (exp & 1n) inv = inv * base % P; base = base * base % P; exp >>= 1n; }
+            if (u(e.fp_inv(2n, 0n)) !== (inv & M)) throw new Error("fp_inv(2) lo64 mismatch");
             console.log("field wasm OK:", Object.keys(e).join(", "));
           })().catch((err) => { console.error(err); process.exit(1); });
           '
