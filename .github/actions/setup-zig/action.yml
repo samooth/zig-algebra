@@ -117,13 +117,15 @@ runs:
         Expand-Archive -Path $FILENAME -DestinationPath "." -Force
         $ZIG_DIR = "zig-${PLATFORM}-${env:ZIG_VERSION}"
         
-        # Add to PATH
+        # Add to PATH for current session
         $ZIG_BIN = Join-Path $TEMP_DIR $ZIG_DIR
-        $env:GITHUB_PATH = $ZIG_BIN + ";" + $env:GITHUB_PATH
-        [Environment]::SetEnvironmentVariable("GITHUB_PATH", $env:GITHUB_PATH, "User")
+        $env:Path = $ZIG_BIN + ";" + $env:Path
+        
+        # Add to GITHUB_PATH file for subsequent steps
+        $ZIG_BIN | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         
         # Verify
         & "${ZIG_BIN}\zig.exe" version
         
         # Cache the installation directory for reuse
-        "ZIG_INSTALL_DIR=${ZIG_BIN}" >> $env:GITHUB_ENV
+        "ZIG_INSTALL_DIR=${ZIG_BIN}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
