@@ -321,7 +321,7 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
             std.debug.assert(rows == cols);
             const lu_decomp = self.lu();
             // Apply permutation: Pb
-            var Pb = lu_decomp.P.mulVec(b);
+            const Pb = lu_decomp.P.mulVec(b);
             // Forward substitution: L * y = Pb
             var y = Vector(F, rows).zero();
             for (0..rows) |i| {
