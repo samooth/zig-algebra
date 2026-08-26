@@ -229,17 +229,21 @@ pub const Blake3 = struct {
     }
 
     fn initInternal(key_words: *const [8]u32, flags: u32) Blake3 {
+        var cv_stack: [54][8]u32 = undefined;
+        for (&cv_stack) |*c| {
+            c.* = [_]u32{0} ** 8;
+        }
         return .{
             .key = key_words.*,
             .chunk_state = .{
                 .chaining_value = key_words.*,
                 .chunk_counter = 0,
-                .buf = undefined,
+                .buf = [_]u8{0} ** BLOCK_LEN,
                 .buf_len = 0,
                 .blocks_compressed = 0,
                 .flags = flags,
             },
-            .cv_stack = undefined,
+            .cv_stack = cv_stack,
             .cv_stack_len = 0,
             .flags = flags,
         };
