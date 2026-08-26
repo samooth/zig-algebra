@@ -1,0 +1,17 @@
+name: fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # nightly, 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mass-fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.16.0
+      - name: Massive randomized property tests (ReleaseFast)
+        run: zig build fuzz -Doptimize=ReleaseFast
