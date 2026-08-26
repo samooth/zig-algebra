@@ -263,7 +263,7 @@ pub const inttVec8M31 = Vec8NttM31.inttVec8M31;
 const stdx = @import("std");
 const testing = stdx.testing;
 
-fn checkFieldAxioms(comptime F: type, iterations: usize, seed: u64) !void {
+pub fn checkFieldAxioms(comptime F: type, iterations: usize, seed: u64) !void {
     var prng = stdx.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
