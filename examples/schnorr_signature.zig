@@ -94,17 +94,10 @@ pub fn main() !void {
     const pairing_impl = @import("zig-pairing");
     const g2_gen = zc.bls12_381.G2_generator;
 
-    const start_ns = blk: {
-        var ts: std.os.linux.timespec = undefined;
-        _ = std.os.linux.clock_gettime(std.os.linux.CLOCK.MONOTONIC, &ts);
-        break :blk @as(u64, @intCast(@as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec))));
-    };
+    const timing = @import("zig-parallel").timing;
+    const start_ns = timing.nowNs();
     _ = pairing_impl.bls12_381_pairing_impl.pairing(G1Gen, g2_gen);
-    const end_ns = blk: {
-        var ts: std.os.linux.timespec = undefined;
-        _ = std.os.linux.clock_gettime(std.os.linux.CLOCK.MONOTONIC, &ts);
-        break :blk @as(u64, @intCast(@as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec))));
-    };
+    const end_ns = timing.nowNs();
 
     std.debug.print("Pairing demo:\n", .{});
     std.debug.print("  e(G1, G2) in {d} ms\n", .{(end_ns - start_ns) / 1_000_000});

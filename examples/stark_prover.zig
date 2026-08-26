@@ -16,11 +16,7 @@
 
 const std = @import("std");
 
-fn nowNs() u64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(std.os.linux.CLOCK.MONOTONIC, &ts);
-    return @intCast(@as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec)));
-}
+const nowNs = @import("zig-parallel").timing.nowNs;
 const Transcript = @import("zig-transcript").Transcript;
 const fri = @import("zig-fri");
 

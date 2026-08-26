@@ -6,10 +6,15 @@
 //! Automatically falls back to sequential execution on single-threaded targets
 //! (e.g., WebAssembly) or when `num_workers <= 1`.
 //!
+//! Also hosts `timing.nowNs()`, the canonical portable monotonic clock used
+//! by examples and benchmarks across the workspace.
+//!
 //! Extracted from zig-stark's `core/pool.zig`.
 
 const std = @import("std");
 const builtin = @import("builtin");
+
+pub const timing = @import("timing.zig");
 
 /// A small fork-join parallel executor.
 ///

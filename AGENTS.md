@@ -99,7 +99,11 @@ test "property: associativity" {
 
 ## Common Gotchas (Zig 0.16)
 
-- No `std.time.Timer`; use `std.os.linux.clock_gettime` or platform-specific.
+- No `std.time.Timer` and no `std.time.nanoTimestamp()` in Zig 0.16. Use
+  `zig-parallel`'s portable clock: `@import("zig-parallel").timing.nowNs()`
+  (QPC on Windows, `std.c.clock_gettime(CLOCK_MONOTONIC)` with libc,
+  `std.os.linux.clock_gettime` bare-metal). Do NOT write Linux-only
+  timing inline in shared code.
 - No `std.io.getStdOut()`; use `std.debug.print` for output.
 - Blake3 is at `std.crypto.hash.Blake3`, not `std.crypto.hash.blake3`.
 - ArrayList needs explicit allocator at method calls, not construction.

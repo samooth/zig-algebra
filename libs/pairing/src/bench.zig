@@ -11,11 +11,7 @@ const Fp12 = pairing_impl.Fp12;
 
 var sink: usize = 0;
 
-fn nowNs() u64 {
-    var ts: std.os.linux.timespec = undefined;
-    _ = std.os.linux.clock_gettime(std.os.linux.CLOCK.MONOTONIC, &ts);
-    return @intCast(@as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec)));
-}
+const nowNs = @import("zig-parallel").timing.nowNs;
 
 fn bench(comptime name: []const u8, iterations: usize, comptime func: fn () void) u64 {
     // Warm up
@@ -86,6 +82,62 @@ fn pairingBls() void {
 const bn_direct = @import("bn254_direct.zig");
 const bn_tower = @import("bn254_tower.zig");
 const curve_msm = @import("zig-curve").msm;
+const ntt_mod = @import("zig-ntt");
+
+// --- NTT 2^20 over BN254 Fr (2-adicity 28; M31 has 2-adicity 1) ---
+
+const FrScalar = zf.Field(0x30644E72E131A029B85045B68181585D2833E84879B9709143E1F593F0000001);
+
+var ntt_buf: []FrScalar = &.{};
+var ntt_tw: []const []const FrScalar = &.{};
+
+fn nttSetup() void {
+    if (ntt_buf.len != 0) return;
+    const F = FrScalar;
+    ntt_buf = std.heap.page_allocator.alloc(F, 1 << 20) catch @panic("oom");
+    for (ntt_buf, 0..) |*x, i| x.* = F.fromInt(@as(u64, i % 1000));
+    const root = F.rootOfUnity(ntt_buf.len);
+    ntt_tw = ntt_mod.precomputeTwiddles(F, 20, root, std.heap.page_allocator) catch @panic("oom");
+}
+
+fn nttFr() void {
+    nttSetup();
+    ntt_mod.nttWithTwiddles(FrScalar, ntt_buf, 20, ntt_tw);
+    sink ^= @intFromBool(ntt_buf[0].isZero());
+}
+
+// --- MSM 2^16 with Pippenger ---
+
+const Msm16kState = struct {
+    var pts: [65536]zc.bn254.G1 = undefined;
+    var scs: [65536]zc.bn254.Fr = undefined;
+    var ready = false;
+
+    fn setup() void {
+        if (ready) return;
+        // Points: successive additions generate (i+1)*G cheaply.
+        var p = zc.bn254.G1_generator;
+        for (&pts, 0..) |*pt, i| {
+            pt.* = p;
+            p = p.add(zc.bn254.G1_generator);
+            scs[i] = zc.bn254.Fr.fromInt(@as(u64, i *% 2654435761 +% 12345));
+        }
+        ready = true;
+    }
+};
+
+fn msmPippenger64k() void {
+    Msm16kState.setup();
+    const r = curve_msm.msm(
+        zc.bn254.G1,
+        zc.bn254.G1Projective,
+        zc.bn254.Fr,
+        std.heap.page_allocator,
+        &Msm16kState.pts,
+        &Msm16kState.scs,
+    ) catch return;
+    sink ^= @intFromBool(r.isZero());
+}
 
 fn msmNaive() void {
     const Fr = zc.bn254.Fr;
@@ -121,6 +173,20 @@ fn pairingBnTower() void {
     sink ^= @intFromBool(e.isZero());
 }
 
+fn pairingBnTowerSparse() void {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const e = bn_tower.pairingSparse(g1, g2);
+    sink ^= @intFromBool(e.isZero());
+}
+
+fn pairingBnTowerDense() void {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+    const e = bn_tower.pairingDense(g1, g2);
+    sink ^= @intFromBool(e.isZero());
+}
+
 fn pairingBn() void {
     const g1 = zc.bn254.G1_generator;
     const g2 = zc.bn254.G2_generator;
@@ -145,8 +211,12 @@ pub fn main() !void {
     _ = bench("BLS12-381 optimal ate", 20, pairingBls);
     _ = bench("BN254 ate (direct deg-12)", 5, pairingBn);
     _ = bench("BN254 optimal ate (tower)", 5, pairingBnTower);
+    _ = bench("BN254 tower sparse loop", 5, pairingBnTowerSparse);
+    _ = bench("BN254 tower dense ref", 5, pairingBnTowerDense);
     _ = bench("MSM n=256 naive", 20, msmNaive);
     _ = bench("MSM n=256 pippenger", 200, msmPippenger);
+    _ = bench("MSM n=65536 pippenger", 10, msmPippenger64k);
+    _ = bench("NTT 2^20 Fr (twiddles)", 5, nttFr);
 
     std.debug.print("\n(sink={d})\n", .{sink & 1});
 }
