@@ -1,0 +1,79 @@
+name: 'Setup Zig Compiler (Direct Download)'
+description: 'Download and install Zig compiler directly from ziglang.org'
+inputs:
+  version:
+    description: 'Version of Zig compiler (e.g., "0.16.0")'
+    required: true
+    default: '0.16.0'
+runs:
+  using: 'composite'
+  steps:
+    - name: Download and install Zig
+      shell: bash
+      env:
+        ZIG_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        
+        # Determine platform
+        case "${{ runner.os }}" in
+          Linux)
+            PLATFORM="x86_64-linux"
+            EXT="tar.xz"
+            ;;
+          macOS)
+            PLATFORM="x86_64-macos"
+            EXT="tar.xz"
+            ;;
+          Windows)
+            PLATFORM="x86_64-windows"
+            EXT="zip"
+            ;;
+          *)
+            echo "Unsupported OS: ${{ runner.os }}"
+            exit 1
+            ;;
+        esac
+        
+        FILENAME="zig-${PLATFORM}-${ZIG_VERSION}.${EXT}"
+        URL="https://ziglang.org/download/${ZIG_VERSION}/${FILENAME}"
+        
+        echo "Downloading Zig ${ZIG_VERSION} for ${PLATFORM} from ${URL}"
+        
+        # Create temp directory
+        TEMP_DIR=$(mktemp -d)
+        cd "${TEMP_DIR}"
+        
+        # Download with retry
+        for i in 1 2 3; do
+          if curl -fL -o "${FILENAME}" "${URL}"; then
+            echo "Download successful"
+            break
+          fi
+          echo "Download attempt $i failed, retrying..."
+          sleep 5
+        done
+        
+        if [ ! -f "${FILENAME}" ]; then
+          echo "Failed to download after 3 attempts"
+          exit 1
+        fi
+        
+        # Extract
+        if [ "${EXT}" = "tar.xz" ]; then
+          tar -xf "${FILENAME}"
+          ZIG_DIR="zig-${PLATFORM}-${ZIG_VERSION}"
+        else
+          unzip -q "${FILENAME}"
+          ZIG_DIR="zig-${PLATFORM}-${ZIG_VERSION}"
+        fi
+        
+        # Add to PATH
+        ZIG_BIN="${TEMP_DIR}/${ZIG_DIR}"
+        echo "${ZIG_BIN}" >> $GITHUB_PATH
+        
+        # Verify
+        "${ZIG_BIN}/zig" version
+        
+        # Cache the installation directory for reuse
+        echo "ZIG_INSTALL_DIR=${ZIG_BIN}" >> $GITHUB_ENV

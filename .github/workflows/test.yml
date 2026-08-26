@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - run: zig fmt --check .
@@ -22,7 +23,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - name: Run all tests
@@ -32,7 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - run: zig build -Doptimize=ReleaseFast
@@ -41,7 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       # Informational only: shared runners are noisy; no regression thresholds.
@@ -56,7 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - name: Run STARK prover demo (Fibonacci over M31 via FRI)
@@ -66,7 +71,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - name: Build wasm32-freestanding modules (zig build wasm + wasm-pairing)
@@ -74,7 +80,10 @@ jobs:
           zig build wasm
           zig build wasm-pairing
       - name: Verify field exports and value tests from Node
-        run: |
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
           node -e '
           const fs = require("fs");
           (async () => {

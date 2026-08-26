@@ -10,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mlugg/setup-zig@v1
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
       - name: Massive randomized property tests (ReleaseFast)
