@@ -65,32 +65,18 @@ pub const Setup = struct {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers: G1/G2 scalar multiplication by an Fr element (via its LE bytes).
+// Helpers: G1/G2 scalar multiplication by an Fr element.
+// Delegates to zig-curve's windowed scalar mul (projective ladder).
 // ---------------------------------------------------------------------------
 
-/// Double-and-add over the scalar's little-endian bytes (affine ops).
-fn scalarMulFr(comptime Pt: type, p: Pt, s: Fr) Pt {
-    const bytes = s.toBytes();
-    var result = p;
-    result.infinity = true; // group identity
-    var base = p;
-    const n_bits = bytes.len * 8;
-    var i: usize = 0;
-    while (i < n_bits) : (i += 1) {
-        const bit_i: u3 = @intCast(i % 8);
-        if ((bytes[i / 8] >> bit_i) & 1 == 1)
-            result = result.add(base);
-        base = base.dbl();
-    }
-    return result;
-}
-
+/// Non-CT (synthetic setup and public proof values only).
 fn g1MulFr(p: G1, s: Fr) G1 {
-    return scalarMulFr(G1, p, s);
+    return p.scalarMul(s.toInt());
 }
 
+/// Non-CT (synthetic setup and public proof values only).
 fn g2MulFr(p: G2, s: Fr) G2 {
-    return scalarMulFr(G2, p, s);
+    return p.scalarMul(s.toInt());
 }
 
 fn toProj(p: G1) G1Proj {
@@ -103,9 +89,13 @@ fn toProj(p: G1) G1Proj {
 
 /// Commit to a polynomial (coefficients, low degree first):
 /// C = sum(coeffs[i] * [tau^i]G1).
-pub fn commit(setup: *const Setup, coeffs: []const Fr) KzgError!G1 {
+pub fn commit(
+    setup: *const Setup,
+    allocator: std.mem.Allocator,
+    coeffs: []const Fr,
+) KzgError!G1 {
     if (coeffs.len > setup.g1_pows.len) return KzgError.DegreeExceedsSetup;
-    const r = msmG1(setup.g1_pows[0..coeffs.len], coeffs);
+    const r = try msmG1(allocator, setup.g1_pows[0..coeffs.len], coeffs);
     return affine(r);
 }
 
@@ -156,7 +146,7 @@ pub fn prove(
     const y = evaluate(coeffs, z);
     const q = try witnessCoeffs(allocator, coeffs, z);
     defer allocator.free(q);
-    const w = msmG1(setup.g1_pows[0..q.len], q);
+    const w = try msmG1(allocator, setup.g1_pows[0..q.len], q);
     return .{ .witness = affine(w), .y = y };
 }
 
@@ -186,8 +176,14 @@ pub fn verify(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn msmG1(g1_pows: []const G1, scalars: []const Fr) G1Proj {
-    return zc.msm.msm(G1, G1Proj, Fr, std.heap.page_allocator, g1_pows, scalars) catch unreachable;
+fn msmG1(
+    allocator: std.mem.Allocator,
+    g1_pows: []const G1,
+    scalars: []const Fr,
+) KzgError!G1Proj {
+    return zc.msm.msm(G1, G1Proj, Fr, allocator, g1_pows, scalars) catch |err| switch (err) {
+        error.OutOfMemory => KzgError.OutOfMemory,
+    };
 }
 
 fn affine(p: G1Proj) G1 {
@@ -210,7 +206,7 @@ test "kzg: commit matches manual sum for degree 1" {
     defer setup.deinit();
 
     const coeffs = [_]Fr{ Fr.fromInt(3), Fr.fromInt(5) }; // p(x) = 3 + 5x
-    const C = try commit(&setup, &coeffs);
+    const C = try commit(&setup, stdt.allocator, &coeffs);
 
     const t1 = g1MulFr(zc.bn254.G1_generator, Fr.fromInt(3));
     const t2 = g1MulFr(setup.g1_pows[1], Fr.fromInt(5));
@@ -225,7 +221,7 @@ test "kzg: open/verify happy path" {
     const coeffs = [_]Fr{ Fr.fromInt(2), Fr.fromInt(1), Fr.fromInt(3) };
     const z = Fr.fromInt(5);
 
-    const C = try commit(&setup, &coeffs);
+    const C = try commit(&setup, stdt.allocator, &coeffs);
     const pf = try prove(&setup, stdt.allocator, &coeffs, z);
     defer {} // witness is a value copy
 
@@ -240,7 +236,7 @@ test "kzg: tampered evaluation fails" {
 
     const coeffs = [_]Fr{ Fr.fromInt(2), Fr.fromInt(1), Fr.fromInt(3) };
     const z = Fr.fromInt(5);
-    const C = try commit(&setup, &coeffs);
+    const C = try commit(&setup, stdt.allocator, &coeffs);
     const pf = try prove(&setup, stdt.allocator, &coeffs, z);
 
     const wrong_y = pf.y.add(Fr.one());
@@ -253,7 +249,7 @@ test "kzg: tampered witness fails" {
 
     const coeffs = [_]Fr{ Fr.fromInt(2), Fr.fromInt(1), Fr.fromInt(3) };
     const z = Fr.fromInt(5);
-    const C = try commit(&setup, &coeffs);
+    const C = try commit(&setup, stdt.allocator, &coeffs);
     const pf = try prove(&setup, stdt.allocator, &coeffs, z);
 
     const bad_w = g1MulFr(pf.witness, Fr.fromInt(2)); // 2W != W
@@ -265,7 +261,7 @@ test "kzg: different opening point fails with same witness" {
     defer setup.deinit();
 
     const coeffs = [_]Fr{ Fr.fromInt(2), Fr.fromInt(1), Fr.fromInt(3) };
-    const C = try commit(&setup, &coeffs);
+    const C = try commit(&setup, stdt.allocator, &coeffs);
     const pf = try prove(&setup, stdt.allocator, &coeffs, Fr.fromInt(5));
 
     // verify at a DIFFERENT z with same witness/eval must fail
