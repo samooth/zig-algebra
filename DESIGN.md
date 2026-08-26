@@ -135,7 +135,7 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
 | parallel → (none) | Thread pool is self-contained |
 | serialization → (none) | Comptime reflection only |
 | transcript → (none) | stdlib Blake3 only; base of the proof-stack dependency chain |
-| fri → transcript | Folding challenges derived from Fiat-Shamir transcript |
+| fri → transcript, merkle | Folding challenges from Fiat-Shamir; layer commitments via shared zig-merkle tree |
 
 ## Semantic Versioning
 
@@ -149,11 +149,15 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
   Fp12 = Fp6[w]/(w^2 - v); w^6 = gamma.
 - Untwist: psi(x',y') = (x'*v, y'*v*w)  [zeta=1 eigenspace].
 - Loop: optimal ate 6x+2, twist-side affine arithmetic with sparse lines
-  (~15 Fp2 muls/step). SIGN ASYMMETRY: tangent lines use
-  (-n*px, n*tx - d*ty) while chord lines use (+n*px, d*ty - n*tx);
-  reusing tangent signs on chords corrupts every addition step.
+  (~15 Fp2 muls/step + 1 Fp12 sqr). Tangent AND chord lines share one
+  slot convention: d*py + (-n*px)w + (n*tx - d*ty)vw. An early session's
+  contrary "sign asymmetry" note was wrong — the real defects were
+  MISSING MILLER SQUARINGS in the accumulator plus inverted chord signs;
+  both fixed and covered by direct sparse==dense / bilinearity tests.
 - Verticals are OMITTED: v(P)=px - x'*v is a general Fp12 element in
-  this layout and does NOT vanish under final exponentiation.
+  this layout and does NOT vanish under final exponentiation... but the
+  dense py_ecc reference omits them identically and matches EIP-197
+  KATs, so the omission is part of the verified formulation.
 - Extra terms: two dense lines with pi(Q) and -pi^2(Q), pi applied per
   coordinate of the EMBEDDED point (field Frobenius), per py_ecc.
 - Final exp split: f^N = [frob^6(f) * f^-1]^M, M=(p^6+1)/r. The easy
@@ -162,7 +166,9 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
   (valid since frob^6 == w-conjugation on this subgroup).
 
 Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
-(cyclotomic+window) -> ~32 ms steady-state (sparse loop).
+(cyclotomic+window) -> ~32 ms steady-state (sparse loop) -> ~17 ms
+(sparse promoted to production path after fixing missing Miller
+squarings; dense reference kept at ~30 ms for cross-checking).
 
 ## BLS12-381 pairing — final exponentiation notes
 
@@ -188,6 +194,8 @@ Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
 - verify pairing check: e(C-[y]G1, G2gen) == e(W, [tau]G2 - [z]G2gen).
   NOTE the RHS needs the affine SUBTRACTION in G2 — comparing against
   bare [tau]G2 silently fails even though group identity holds.
-- Scalar-mult by Fr over curve points: LSB-first double-and-add on LE
-  bytes (MSB-first with an infinity-flagged accumulator variant proved
-  fragile; see git history).
+- Scalar-mult by Fr over curve points: delegates to zig-curve's
+  windowed ladder (4-bit windows, left-to-right, Jacobian coordinates;
+  O(1) inversions). The earlier per-byte LSB-first affine double-and-add
+  was ~8x slower; an MSB-first infinity-flagged accumulator variant had
+  proved fragile before that (see git history).

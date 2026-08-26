@@ -45,83 +45,17 @@ pub const FriError = error{
     OutOfMemory,
 };
 
-/// Simple binary Merkle tree over fixed-size hashes (self-contained).
-const MerkleTree = struct {
-    levels: [][]const [HASH_LEN]u8,
-
-    fn init(
-        allocator: std.mem.Allocator,
-        leaf_hashes: []const [HASH_LEN]u8,
-    ) !MerkleTree {
-        if (leaf_hashes.len == 0) return error.EmptyTree;
-        if (leaf_hashes.len & (leaf_hashes.len - 1) != 0) return error.NotPowerOfTwo;
-        const num_levels = std.math.log2_int(usize, leaf_hashes.len) + 1;
-        var levels = try allocator.alloc([]const [HASH_LEN]u8, num_levels);
-        errdefer allocator.free(levels);
-
-        levels[0] = try allocator.dupe([HASH_LEN]u8, leaf_hashes);
-        for (1..num_levels) |i| {
-            const prev = levels[i - 1];
-            const count = prev.len / 2;
-            const cur = try allocator.alloc([HASH_LEN]u8, count);
-            for (0..count) |j| {
-                var h = Blake3.init(.{});
-                h.update(&prev[2 * j]);
-                h.update(&prev[2 * j + 1]);
-                h.final(&cur[j]);
-            }
-            levels[i] = cur;
-        }
-        return .{ .levels = levels };
-    }
-
-    fn deinit(self: *MerkleTree, allocator: std.mem.Allocator) void {
-        for (self.levels) |lvl| allocator.free(lvl);
-        allocator.free(self.levels);
-    }
-
-    fn root(self: *const MerkleTree) [HASH_LEN]u8 {
-        return self.levels[self.levels.len - 1][0];
-    }
-
-    fn prove(
-        self: *const MerkleTree,
-        allocator: std.mem.Allocator,
-        index: usize,
-    ) ![][HASH_LEN]u8 {
-        const path_len = self.levels.len - 1;
-        const path = try allocator.alloc([HASH_LEN]u8, path_len);
-        var idx = index;
-        for (0..path_len) |lvl| {
-            path[lvl] = self.levels[lvl][idx ^ 1];
-            idx >>= 1;
-        }
-        return path;
-    }
-
-    fn verifyPath(
-        root_hash: [HASH_LEN]u8,
-        index: usize,
-        leaf: [HASH_LEN]u8,
-        path: []const [HASH_LEN]u8,
-    ) bool {
-        var current = leaf;
-        var idx = index;
-        for (path) |sibling| {
-            var h = Blake3.init(.{});
-            if (idx & 1 == 0) {
-                h.update(&current);
-                h.update(&sibling);
-            } else {
-                h.update(&sibling);
-                h.update(&current);
-            }
-            h.final(&current);
-            idx >>= 1;
-        }
-        return std.mem.eql(u8, &current, &root_hash);
+/// Blake3 adapter for zig-merkle's `hashBytes` interface.
+const Blake3Hash = struct {
+    pub fn hashBytes(input: []const u8) [HASH_LEN]u8 {
+        var out: [HASH_LEN]u8 = undefined;
+        Blake3.hash(input, &out, .{});
+        return out;
     }
 };
+
+/// Binary Merkle tree over fixed-size hashes (shared zig-merkle impl).
+const MerkleTree = @import("zig-merkle").MerkleTree(Blake3Hash);
 
 fn hashElem(comptime F: type, elem: F) [HASH_LEN]u8 {
     const bytes = elem.toBytes();
@@ -283,11 +217,8 @@ pub fn prove(
     }
 
     var trees_buf: [64]?MerkleTree = @splat(null);
-    defer for (trees_buf) |maybe_tree| {
-        if (maybe_tree) |*t| {
-            var t_mut = t.*;
-            t_mut.deinit(allocator);
-        }
+    defer for (&trees_buf) |*maybe_tree| {
+        if (maybe_tree.*) |*t| t.deinit();
     };
 
     // Layer 0: commit to input.
@@ -297,7 +228,7 @@ pub fn prove(
         const hashes = allocator.alloc([HASH_LEN]u8, half) catch return FriError.OutOfMemory;
         defer allocator.free(hashes);
         for (0..half) |j| hashes[j] = hashPair(F, p_evals[2 * j], p_evals[2 * j + 1]);
-        trees_buf[0] = MerkleTree.init(allocator, hashes) catch return FriError.OutOfMemory;
+        trees_buf[0] = MerkleTree.initFromHashes(allocator, hashes) catch return FriError.OutOfMemory;
     }
     transcript.absorbBytes(&trees_buf[0].?.root()); // Fold rounds 1..R, committing between challenges.
     for (1..rounds + 1) |i| {
@@ -319,7 +250,7 @@ pub fn prove(
             const hashes = allocator.alloc([HASH_LEN]u8, num_pairs) catch return FriError.OutOfMemory;
             defer allocator.free(hashes);
             for (0..num_pairs) |j| hashes[j] = hashPair(F, cur[2 * j], cur[2 * j + 1]);
-            trees_buf[i] = MerkleTree.init(allocator, hashes) catch return FriError.OutOfMemory;
+            trees_buf[i] = MerkleTree.initFromHashes(allocator, hashes) catch return FriError.OutOfMemory;
             transcript.absorbBytes(&trees_buf[i].?.root());
         }
     }
@@ -360,7 +291,9 @@ pub fn prove(
             pairs[r] = serializePair(F, allocator, even, odd) catch return FriError.OutOfMemory;
 
             const leaf_idx = idx >> 1;
-            paths[r] = trees_buf[r].?.prove(allocator, leaf_idx) catch return FriError.OutOfMemory;
+            const mp = trees_buf[r].?.prove(leaf_idx, allocator) catch return FriError.OutOfMemory;
+            allocator.free(mp.is_left_sibling); // fri's wire format stores only the sibling path
+            paths[r] = mp.siblings;
 
             idx >>= 1;
         }
@@ -580,15 +513,15 @@ test "merkle: basic tree operations" {
     for (&leaves, 0..) |*leaf, i| {
         Blake3.hash(std.mem.asBytes(&i), leaf, .{});
     }
-    var tree = try MerkleTree.init(allocator, &leaves);
-    defer tree.deinit(allocator);
+    var tree = try MerkleTree.initFromHashes(allocator, &leaves);
+    defer tree.deinit();
 
     const r = tree.root();
 
     for (0..4) |i| {
-        const path = try tree.prove(allocator, i);
-        defer allocator.free(path);
-        try testing.expect(MerkleTree.verifyPath(r, i, leaves[i], path));
+        const proof = try tree.prove(i, allocator);
+        defer proof.deinit(allocator);
+        try testing.expect(MerkleTree.verifyPath(r, i, leaves[i], proof.siblings));
     }
 }
 
@@ -598,16 +531,16 @@ test "merkle: tampered leaf fails" {
     for (&leaves, 0..) |*leaf, i| {
         Blake3.hash(std.mem.asBytes(&i), leaf, .{});
     }
-    var tree = try MerkleTree.init(allocator, &leaves);
-    defer tree.deinit(allocator);
+    var tree = try MerkleTree.initFromHashes(allocator, &leaves);
+    defer tree.deinit();
 
     const r = tree.root();
-    const path = try tree.prove(allocator, 1);
-    defer allocator.free(path);
+    const proof = try tree.prove(1, allocator);
+    defer proof.deinit(allocator);
 
     var bad = leaves[1];
     bad[0] ^= 0xFF;
-    try testing.expect(!MerkleTree.verifyPath(r, 1, bad, path));
+    try testing.expect(!MerkleTree.verifyPath(r, 1, bad, proof.siblings));
 }
 
 test "fri: prove and verify low-degree polynomial" {

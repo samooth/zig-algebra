@@ -11,12 +11,28 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Local merkle dependency
+    const hash_mod = b.addModule("zig-hash", .{
+        .root_source_file = b.path("../hash/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const merkle_mod = b.addModule("zig-merkle", .{
+        .root_source_file = b.path("../merkle/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-hash", .module = hash_mod },
+        },
+    });
+
     _ = b.addModule("zig-fri", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zig-transcript", .module = transcript_mod },
+            .{ .name = "zig-merkle", .module = merkle_mod },
         },
     });
 
@@ -26,6 +42,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zig-transcript", .module = transcript_mod },
+            .{ .name = "zig-merkle", .module = merkle_mod },
         },
     });
     const tests = b.addTest(.{ .root_module = test_module });

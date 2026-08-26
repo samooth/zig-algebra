@@ -86,7 +86,21 @@ pub fn build(b: *std.Build) void {
         &.{},
     );
 
-    // fri -> transcript
+    // merkle -> algebra-traits, hash
+    const merkle_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-merkle",
+        "libs/merkle/src/root.zig",
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            .{ "zig-hash", hash_mod },
+        },
+    );
+
+    // fri -> transcript, merkle
     {
         const transcript_mod = b.addModule("zig-transcript-inner", .{
             .root_source_file = b.path("libs/transcript/src/root.zig"),
@@ -100,7 +114,7 @@ pub fn build(b: *std.Build) void {
             optimize,
             "zig-fri",
             "libs/fri/src/root.zig",
-            &.{.{ "zig-transcript", transcript_mod }},
+            &.{ .{ "zig-transcript", transcript_mod }, .{ "zig-merkle", merkle_mod } },
         );
     }
 
@@ -157,20 +171,6 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    // merkle -> algebra-traits, hash
-    _ = lib(
-        b,
-        test_step,
-        target,
-        optimize,
-        "zig-merkle",
-        "libs/merkle/src/root.zig",
-        &.{
-            .{ "zig-algebra-traits", traits_mod },
-            .{ "zig-hash", hash_mod },
-        },
-    );
-
     // ntt -> algebra-traits, field
     const ntt_mod = lib(
         b,
@@ -211,7 +211,7 @@ pub fn build(b: *std.Build) void {
     );
 
     // parallel (no deps)
-    _ = lib(
+    const parallel_mod = lib(
         b,
         test_step,
         target,
@@ -260,6 +260,7 @@ pub fn build(b: *std.Build) void {
     bench_module.addImport("zig-algebra-traits", traits_mod);
     bench_module.addImport("zig-bigint", bigint_mod);
     bench_module.addImport("zig-ntt", ntt_mod);
+    bench_module.addImport("zig-parallel", parallel_mod);
     const bench_exe = b.addExecutable(.{
         .name = "pairing-bench",
         .root_module = bench_module,
@@ -294,6 +295,7 @@ pub fn build(b: *std.Build) void {
     ex_mod.addImport("zig-pairing", pairing_mod);
     ex_mod.addImport("zig-algebra-traits", traits_mod);
     ex_mod.addImport("zig-bigint", bigint_mod);
+    ex_mod.addImport("zig-parallel", parallel_mod);
     const example_exe = b.addExecutable(.{
         .name = "schnorr-example",
         .root_module = ex_mod,
@@ -310,12 +312,26 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const stark_hash_mod = b.createModule(.{
+        .root_source_file = b.path("libs/hash/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const stark_merkle_mod = b.createModule(.{
+        .root_source_file = b.path("libs/merkle/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-hash", .module = stark_hash_mod },
+        },
+    });
     const stark_fri_mod = b.createModule(.{
         .root_source_file = fri_root,
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zig-transcript", .module = stark_transcript_mod },
+            .{ .name = "zig-merkle", .module = stark_merkle_mod },
         },
     });
     const stark_mod = b.createModule(.{
@@ -325,6 +341,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-transcript", .module = stark_transcript_mod },
             .{ .name = "zig-fri", .module = stark_fri_mod },
+            .{ .name = "zig-parallel", .module = parallel_mod },
         },
     });
     const stark_exe = b.addExecutable(.{
@@ -333,6 +350,34 @@ pub fn build(b: *std.Build) void {
     });
     const run_stark = b.addRunArtifact(stark_exe);
     stark_step.dependOn(&run_stark.step);
+
+    // Mass fuzz runner (nightly CI; ReleaseFast only — too slow in Debug)
+    const fuzz_step = b.step("fuzz", "Run massive randomized property tests (use -Doptimize=ReleaseFast)");
+    const fuzz_pairing_mod = b.createModule(.{
+        .root_source_file = b.path("libs/pairing/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-field", .module = field_mod },
+            .{ .name = "zig-curve", .module = curve_mod },
+        },
+    });
+    const fuzz_mod = b.createModule(.{
+        .root_source_file = b.path("examples/fuzz_runner.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "zig-field", .module = field_mod },
+            .{ .name = "zig-curve", .module = curve_mod },
+            .{ .name = "zig-pairing", .module = fuzz_pairing_mod },
+        },
+    });
+    const fuzz_exe = b.addExecutable(.{
+        .name = "fuzz-runner",
+        .root_module = fuzz_mod,
+    });
+    const run_fuzz = b.addRunArtifact(fuzz_exe);
+    fuzz_step.dependOn(&run_fuzz.step);
 
     // WASM build: freestanding, no entry point; `export fn`s become imports.
     const wasm_step = b.step("wasm", "Build examples/wasm_fp.zig to wasm32-freestanding");
