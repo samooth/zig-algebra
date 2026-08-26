@@ -1,6 +1,6 @@
 .{
     .name = .zig_algebra,
-    .version = "0.1.0",
+    .version = "0.3.0",
     .fingerprint = 0xf70ee8ced352d53d,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
@@ -8,5 +8,14 @@
         "build.zig",
         "build.zig.zon",
         "libs",
+        "examples",
+        "bench",
+        "docs",
+        "scripts",
+        "README.md",
+        "DESIGN.md",
+        "CHANGELOG.md",
+        "LICENSE-MIT",
+        "LICENSE-APACHE",
     },
 }

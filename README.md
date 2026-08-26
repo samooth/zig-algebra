@@ -1,6 +1,7 @@
 # zig-algebra
 
 ![Tests](https://github.com/samooth/zig-algebra/actions/workflows/test.yml/badge.svg)
+![Format](https://github.com/samooth/zig-algebra/actions/workflows/test.yml/badge.svg?job=fmt)
 
 A modular ecosystem of algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig.
 
@@ -26,7 +27,8 @@ Each library:
 | **Transforms** | `ntt` (Cooley-Tukey, Circle FFT, mixed-radix, SIMD) |
 | **Polynomials** | `poly` (dense univariate, Lagrange, Karatsuba, GCD) |
 | **Linear Algebra** | `linalg` (vectors, matrices, LU decomposition, linear solving over fields) |
-| **Utilities** | `parallel` (fork-join thread pool) · `serialization` (generic wire encoding) |
+| **Proof Stack** | `transcript` (Fiat-Shamir) · `fri` (low-degree testing) · `kzg` (polynomial commitments) |
+| **Utilities** | `parallel` (fork-join thread pool, portable monotonic clock) · `serialization` (generic wire encoding) |
 
 ## Dependency Graph
 
@@ -45,6 +47,11 @@ algebra-traits (no deps)
 ├── linalg            (→ field)
 ├── parallel          (no deps)
 └── serialization     (no deps)
+
+transcript (stdlib Blake3 only)
+└── fri               (→ transcript, merkle)
+
+kzg                   (→ field, curve, pairing)
 ```
 
 ## Libraries
@@ -130,15 +137,30 @@ zig build test
 4. **Allocation-free** — stack-only where possible
 5. **Generic** — algorithms work over any field/curve via comptime parameters
 
+## SIMD: Vec8 for Mersenne-31
+
+`zig-field` exposes 8-lane SIMD arithmetic for M31 (`@Vector(8, u64)` layout,
+auto-vectorized; falls back to scalar lanes on targets without 64-bit vectors):
+
+```zig
+const zf = @import("zig-field");
+const M31 = zf.M31;
+
+const a: M31.Vec8 = .{ 1, 2, 3, 4, 5, 6, 7, 8 };
+const b: M31.Vec8 = @splat(1000);
+const sum = M31.addVec8(a, b); // lane-wise add mod 2^31-1
+const prod = M31.mulVec8(a, b); // lane-wise mul mod 2^31-1
+```
+
 ## Benchmarks (ReleaseFast)
 
 ```
-BLS12-381 optimal ate         159 ms
-BN254 optimal ate (tower)      32 ms   <- sparse Miller + frob^6 easy part
-                                          + windowed cyclotomic hard part
-BN254 ate (direct deg-24)      98 ms
-Fp12 mul                     42 µs
-M31 mul (SmallField)        430 ns
+BLS12-381 optimal ate         ~27 ms
+BN254 optimal ate (tower)     ~17 ms   <- sparse twist-side Miller
+                                         + split cyclotomic final exp
+BN254 dense reference         ~30 ms
+BLS12-381 G1 scalarMul       ~86 µs    <- windowed projective ladder
+Run from repo root: zig build bench
 ```
 
 ## License

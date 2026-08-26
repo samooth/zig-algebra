@@ -9,5 +9,6 @@ const std = @import("std");
 pub fn main() !void {
     std.debug.print("\n", .{});
     std.debug.print("Use: zig build bench\n", .{});
-    std.debug.print("(Benchmarks live in libs/pairing/src/bench.zig)\n", .{});
+    std.debug.print("(Central harness: libs/pairing/src/bench.zig — fields, curves,\n", .{});
+    std.debug.print(" pairings, MSM, NTT. Field-only micro-benches: cd libs/field && zig build bench)\n", .{});
 }
