@@ -178,3 +178,16 @@ Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
   resurrecting it with stage anchoring revealed no defect in the
   documented formulas — the original failure predates the current test
   infrastructure and did not reproduce.
+
+## KZG commitment scheme
+
+- Setup is SYNTHETIC (fixed tau by caller): tests/dev only; production
+  requires a powers-of-tau ceremony with toxic-waste destruction.
+- commit = MSM over [tau^i]G1; prove = commit of witness quotient
+  q(x)=(p(x)-p(z))/(p... /(x-z)) via Horner synthetic division.
+- verify pairing check: e(C-[y]G1, G2gen) == e(W, [tau]G2 - [z]G2gen).
+  NOTE the RHS needs the affine SUBTRACTION in G2 — comparing against
+  bare [tau]G2 silently fails even though group identity holds.
+- Scalar-mult by Fr over curve points: LSB-first double-and-add on LE
+  bytes (MSB-first with an infinity-flagged accumulator variant proved
+  fragile; see git history).

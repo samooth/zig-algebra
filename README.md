@@ -67,6 +67,7 @@ algebra-traits (no deps)
 | [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 9 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 2 |
 | [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 4 |
+| [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM) | 10 |
 
 > Run everything from the repo root: `zig build test` executes every suite
 > above (189+ tests) and fails on any failure.
