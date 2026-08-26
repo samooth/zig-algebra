@@ -1,0 +1,16 @@
+.{
+    .name = .zig_kzg,
+    .version = "0.1.0",
+    .fingerprint = 0x77fb6611f26e6d,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_field = .{ .path = "../field" },
+        .zig_curve = .{ .path = "../curve" },
+        .zig_pairing = .{ .path = "../pairing" },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
