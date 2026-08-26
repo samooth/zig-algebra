@@ -267,6 +267,21 @@ pub fn build(b: *std.Build) void {
     const run_bench = b.addRunArtifact(bench_exe);
     bench_step.dependOn(&run_bench.step);
 
+    // kzg -> field, curve, pairing
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-kzg",
+        "libs/kzg/src/root.zig",
+        &.{
+            .{ "zig-field", field_mod },
+            .{ "zig-curve", curve_mod },
+            .{ "zig-pairing", pairing_mod },
+        },
+    );
+
     // Example: Schnorr signature over BLS12-381
     const example_step = b.step("example", "Run BLS12-381 Schnorr signature example");
     const ex_mod = b.createModule(.{
