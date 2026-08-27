@@ -33,7 +33,11 @@ runs:
         esac
         
         FILENAME="zig-${PLATFORM}-${ZIG_VERSION}.${EXT}"
-        URL="https://ziglang.org/download/${ZIG_VERSION}/${FILENAME}"
+        if [ "${ZIG_VERSION}" = "master" ]; then
+            URL="https://ziglang.org/builds/${FILENAME}"
+        else
+            URL="https://ziglang.org/download/${ZIG_VERSION}/${FILENAME}"
+        fi
         
         echo "Downloading Zig ${ZIG_VERSION} for ${PLATFORM} from ${URL}"
         
@@ -86,7 +90,11 @@ runs:
         $PLATFORM = "x86_64-windows"
         $EXT = "zip"
         $FILENAME = "zig-${PLATFORM}-${env:ZIG_VERSION}.${EXT}"
-        $URL = "https://ziglang.org/download/${env:ZIG_VERSION}/${FILENAME}"
+        if ("${env:ZIG_VERSION}" -eq "master") {
+            $URL = "https://ziglang.org/builds/${FILENAME}"
+        } else {
+            $URL = "https://ziglang.org/download/${env:ZIG_VERSION}/${FILENAME}"
+        }
         
         Write-Host "Downloading Zig ${env:ZIG_VERSION} for ${PLATFORM} from ${URL}"
         
