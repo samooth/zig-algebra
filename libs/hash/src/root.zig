@@ -180,7 +180,7 @@ test "Keccak vs SHA3 different" {
 
 test "Poseidon over F7" {
     const PoseidonF7 = poseidon.Poseidon(F7, 3, 8, 57, 5);
-    const p = PoseidonF7.initFromSeed("test");
+    const p = try PoseidonF7.initFromSeed("test");
 
     const a = F7.fromInt(1);
     const b = F7.fromInt(2);
@@ -193,7 +193,7 @@ test "Poseidon over F7" {
 
 test "MiMC over F7" {
     const MiMCF7 = mimc.MiMC(F7, 91, 5);
-    const m = MiMCF7.initFromSeed("test");
+    const m = try MiMCF7.initFromSeed("test");
 
     const a = F7.fromInt(1);
     const b = F7.fromInt(2);
@@ -202,6 +202,15 @@ test "MiMC over F7" {
     // Deterministic
     const h2 = m.hash2(a, b);
     try std.testing.expect(h.eql(h2));
+}
+
+test "Poseidon and MiMC reject oversized seeds" {
+    const PoseidonF7 = poseidon.Poseidon(F7, 3, 8, 57, 5);
+    const MiMCF7 = mimc.MiMC(F7, 91, 5);
+    const seed = try std.testing.allocator.alloc(u8, poseidon.MAX_SEED_LEN + 1);
+    defer std.testing.allocator.free(seed);
+    try std.testing.expectError(error.SeedTooLong, PoseidonF7.initFromSeed(seed));
+    try std.testing.expectError(error.SeedTooLong, MiMCF7.initFromSeed(seed));
 }
 
 test "streaming Blake3" {

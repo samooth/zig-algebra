@@ -41,7 +41,7 @@
 - [x] Exponer clear cofactor y aplicar el `suite_dst` en `hashToCurveWithCofactor` (`libs/curve/src/hash_to_curve.zig:213-239`).
 - [x] Añadir un vector oficial de `expand_message_xmd`; los tests de curva completa siguen pendientes.
 - [x] Eliminar bytes no inicializados y usar un hash real en `fieldFromCounter` de Poseidon/MiMC (`libs/hash/src/poseidon.zig:184-197`, `libs/hash/src/mimc.zig:67-75`).
-- [ ] Validar longitudes de seeds y round constants de Poseidon/MiMC.
+- [x] Validar longitudes de seeds y round constants de Poseidon/MiMC.
 - [x] Asegurar que la matriz MDS generada sea invertible.
 - [x] Corregir Blake2 keyed hashing y validar longitudes de clave (`libs/hash/src/blake2.zig:86-96,195-205`).
 - [x] Corregir SHAKE256 para producir el XOF estándar y manejar seeds de múltiplos exactos de 136 bytes (`libs/rng/src/shake256.zig:63-95`).

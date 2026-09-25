@@ -10,6 +10,8 @@ const traits = @import("zig-algebra-traits");
 ///
 /// `rounds`: number of Feistel rounds (typically ~220 for 128-bit security)
 /// `exponent`: typically 3, 5, or 7 (must be coprime to p-1)
+pub const MAX_SEED_LEN: usize = 1 << 20;
+
 pub fn MiMC(comptime F: type, comptime rounds: usize, comptime exponent: u64) type {
     traits.assertField(F);
 
@@ -24,7 +26,8 @@ pub fn MiMC(comptime F: type, comptime rounds: usize, comptime exponent: u64) ty
         }
 
         /// Generate round constants deterministically from seed.
-        pub fn initFromSeed(seed: []const u8) Self {
+        pub fn initFromSeed(seed: []const u8) !Self {
+            if (seed.len > MAX_SEED_LEN) return error.SeedTooLong;
             var rc: [rounds]F = undefined;
             var counter: u64 = 0;
             for (0..rounds) |i| {

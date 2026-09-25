@@ -95,13 +95,13 @@ pub fn main() !void {
 
     // Poseidon over F7
     const PoseidonF7 = hash.Poseidon(F7, 3, 8, 57, 5);
-    const p = PoseidonF7.initFromSeed("demo");
+    const p = try PoseidonF7.initFromSeed("demo");
     const pf = p.hash2(F7.fromInt(1), F7.fromInt(2));
     try stdout.print("\nPoseidon(F7)(1, 2) = {}\n", .{pf.value});
 
     // MiMC over F7
     const MiMCF7 = hash.MiMC(F7, 91, 5);
-    const m = MiMCF7.initFromSeed("demo");
+    const m = try MiMCF7.initFromSeed("demo");
     const mf = m.hash2(F7.fromInt(1), F7.fromInt(2));
     try stdout.print("MiMC(F7)(1, 2) = {}\n", .{mf.value});
 
