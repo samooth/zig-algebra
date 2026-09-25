@@ -31,14 +31,16 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
 
+    const example_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    example_module.addImport("zig-poly", poly_mod);
+    example_module.addImport("zig-algebra-traits", traits_mod);
     const example = b.addExecutable(.{
         .name = "poly-example",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+        .root_module = example_module,
     });
-    example.root_module.addImport("zig-poly", poly_mod);
     b.installArtifact(example);
 }

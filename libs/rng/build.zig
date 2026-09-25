@@ -47,6 +47,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     example_mod.addImport("zig-rng", rng_mod);
+    example_mod.addImport("zig-algebra-traits", traits_mod);
+    example_mod.addImport("zig-hash", hash_mod);
+    if (target.result.os.tag == .windows) example_mod.linkSystemLibrary("bcrypt", .{});
     const example = b.addExecutable(.{
         .name = "rng-example",
         .root_module = example_mod,

@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     example_module.addImport("zig-hash", hash_mod);
+    example_module.addImport("zig-algebra-traits", traits_mod);
     const example = b.addExecutable(.{
         .name = "hash-example",
         .root_module = example_module,

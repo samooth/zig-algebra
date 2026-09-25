@@ -34,6 +34,12 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    pub fn identity() Self {
+        return one();
+    }
+    pub fn inverse(a: Self) Self {
+        return inv(a);
+    }
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
         return pow(a, modulus - 2);
@@ -60,34 +66,32 @@ const F7 = struct {
     }
 };
 
-fn printHex(name: []const u8, bytes: []const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("{s}: ", .{name});
-    for (bytes) |b| try stdout.print("{x:0>2}", .{b});
-    try stdout.print("\n", .{});
+fn printHex(name: []const u8, bytes: []const u8) void {
+    std.debug.print("{s}: ", .{name});
+    for (bytes) |b| std.debug.print("{x:0>2}", .{b});
+    std.debug.print("\n", .{});
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("=== zig-rng example ===\n\n", .{});
+    std.debug.print("=== zig-rng example ===\n\n", .{});
 
     // --- ChaCha20 ---
-    try stdout.print("--- ChaCha20Rng ---\n", .{});
+    std.debug.print("--- ChaCha20Rng ---\n", .{});
     const seed = [_]u8{0x42} ** 32;
     var chacha = rng.ChaCha20Rng.initFromSeed(&seed);
 
-    try stdout.print("random u64:  {}\n", .{chacha.randomU64()});
-    try stdout.print("random u64:  {}\n", .{chacha.randomU64()});
-    try stdout.print("random u32:  {}\n", .{chacha.randomU32()});
-    try stdout.print("random bool: {}\n", .{chacha.randomBool()});
-    try stdout.print("bounded [0,100): {}\n", .{try chacha.randomU64Bounded(100)});
+    std.debug.print("random u64:  {}\n", .{chacha.randomU64()});
+    std.debug.print("random u64:  {}\n", .{chacha.randomU64()});
+    std.debug.print("random u32:  {}\n", .{chacha.randomU32()});
+    std.debug.print("random bool: {}\n", .{chacha.randomBool()});
+    std.debug.print("bounded [0,100): {}\n", .{try chacha.randomU64Bounded(100)});
 
     var buf: [32]u8 = undefined;
     chacha.randomBytes(&buf);
-    try printHex("random bytes", &buf);
+    printHex("random bytes", &buf);
 
     // --- Shake256 ---
-    try stdout.print("\n--- Shake256Rng ---\n", .{});
+    std.debug.print("\n--- Shake256Rng ---\n", .{});
     var shake = rng.Shake256Rng.init();
     shake.absorbSeed("my protocol seed");
 
@@ -97,39 +101,39 @@ pub fn main() !void {
 
     const s1 = try shake.squeeze(32, allocator);
     defer allocator.free(s1);
-    try printHex("squeeze 32", s1);
+    printHex("squeeze 32", s1);
 
     const s2 = try shake.squeeze(64, allocator);
     defer allocator.free(s2);
-    try printHex("squeeze 64", s2);
+    printHex("squeeze 64", s2);
 
     // --- Fisher-Yates ---
-    try stdout.print("\n--- Fisher-Yates shuffle ---\n", .{});
+    std.debug.print("\n--- Fisher-Yates shuffle ---\n", .{});
     var chacha2 = rng.ChaCha20Rng.initFromSeed(&seed);
     var deck = [_]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     try rng.shuffle(u8, rng.ChaCha20Rng, &chacha2, &deck);
-    try stdout.print("shuffled deck: ", .{});
-    for (deck) |c| try stdout.print("{} ", .{c});
-    try stdout.print("\n", .{});
+    std.debug.print("shuffled deck: ", .{});
+    for (deck) |c| std.debug.print("{} ", .{c});
+    std.debug.print("\n", .{});
 
     // --- Random permutation ---
-    try stdout.print("\n--- Random permutation ---\n", .{});
+    std.debug.print("\n--- Random permutation ---\n", .{});
     var chacha3 = rng.ChaCha20Rng.initFromSeed(&seed);
     const perm = try rng.randomPermutation(rng.ChaCha20Rng, &chacha3, 8, allocator);
     defer allocator.free(perm);
-    try stdout.print("permutation of [0..8): ", .{});
-    for (perm) |p| try stdout.print("{} ", .{p});
-    try stdout.print("\n", .{});
+    std.debug.print("permutation of [0..8): ", .{});
+    for (perm) |p| std.debug.print("{} ", .{p});
+    std.debug.print("\n", .{});
 
     // --- Rejection sampling for finite field ---
-    try stdout.print("\n--- Rejection sampling (F7) ---\n", .{});
+    std.debug.print("\n--- Rejection sampling (F7) ---\n", .{});
     var chacha4 = rng.ChaCha20Rng.initFromSeed(&seed);
-    try stdout.print("random field elements: ", .{});
+    std.debug.print("random field elements: ", .{});
     for (0..10) |_| {
         const f = rng.randomFieldElement(F7, rng.ChaCha20Rng, &chacha4);
-        try stdout.print("{} ", .{f.value});
+        std.debug.print("{} ", .{f.value});
     }
-    try stdout.print("\n", .{});
+    std.debug.print("\n", .{});
 
-    try stdout.print("\nAll RNG operations completed successfully!\n", .{});
+    std.debug.print("\nAll RNG operations completed successfully!\n", .{});
 }

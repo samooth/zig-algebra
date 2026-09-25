@@ -24,8 +24,8 @@ const F7 = struct {
         return .{ .value = 1 };
     }
 
-    pub fn fromInt(x: u64) Self {
-        return .{ .value = x % modulus };
+    pub fn fromInt(x: u256) Self {
+        return .{ .value = @intCast(x % @as(u256, modulus)) };
     }
 
     pub fn toInt(self: Self) u64 {
@@ -56,9 +56,16 @@ const F7 = struct {
         return fromInt(a.value * b.value);
     }
 
+    pub fn identity() Self {
+        return one();
+    }
+
+    pub fn inverse(a: Self) Self {
+        return inv(a);
+    }
+
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
-        // Fermat's little theorem: a^(p-2) mod p
         return pow(a, modulus - 2);
     }
 
@@ -66,7 +73,7 @@ const F7 = struct {
         return mul(a, inv(b));
     }
 
-    pub fn pow(base: Self, exp: u64) Self {
+    pub fn pow(base: Self, exp: u256) Self {
         var result = one();
         var b = base;
         var e = exp;
@@ -83,8 +90,7 @@ const F7 = struct {
     }
 
     pub fn random() Self {
-        var prng = std.Random.DefaultPrng.init(@intCast(std.time.milliTimestamp()));
-        return fromInt(prng.random().int(u64));
+        return fromInt(0x5eed);
     }
 
     pub fn format(
@@ -104,47 +110,55 @@ const F7 = struct {
 // ============================================================================
 
 const PolyF7 = struct {
-    const Self = @import("std").ArrayList(F7);
+    const Self = @This();
+    const List = std.ArrayList(F7);
     pub const BaseField = F7;
 
-    coeffs: Self,
+    coeffs: List,
 
     pub fn init(allocator: std.mem.Allocator) Self {
-        return Self.init(allocator);
+        _ = allocator;
+        return .{ .coeffs = .empty };
     }
 
-    pub fn fromCoeffs(coeffs: []const F7, allocator: std.mem.Allocator) !Self {
-        var result = Self.init(allocator);
-        try result.appendSlice(coeffs);
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        self.coeffs.deinit(allocator);
+    }
+
+    pub fn fromCoeffs(items: []const F7, allocator: std.mem.Allocator) !Self {
+        var result = init(allocator);
+        errdefer result.deinit(allocator);
+        try result.coeffs.appendSlice(allocator, items);
         return result;
     }
 
     pub fn degree(self: Self) usize {
-        var d = self.items.len;
-        while (d > 0 and self.items[d - 1].isZero()) d -= 1;
+        var d = self.coeffs.items.len;
+        while (d > 0 and self.coeffs.items[d - 1].isZero()) d -= 1;
         return if (d == 0) 0 else d - 1;
     }
 
     pub fn coeff(self: Self, i: usize) F7 {
-        return if (i < self.items.len) self.items[i] else F7.zero();
+        return if (i < self.coeffs.items.len) self.coeffs.items[i] else F7.zero();
     }
 
     pub fn add(a: Self, b: Self, allocator: std.mem.Allocator) !Self {
-        const max_len = @max(a.items.len, b.items.len);
-        var result = Self.init(allocator);
-        try result.resize(max_len);
+        const max_len = @max(a.coeffs.items.len, b.coeffs.items.len);
+        var result = init(allocator);
+        errdefer result.deinit(allocator);
+        try result.coeffs.resize(allocator, max_len);
         for (0..max_len) |i| {
-            result.items[i] = F7.add(a.coeff(i), b.coeff(i));
+            result.coeffs.items[i] = F7.add(a.coeff(i), b.coeff(i));
         }
         return result;
     }
 
     pub fn eval(self: Self, x: F7) F7 {
-        return traits.evalPolyHorner(F7, self.items, x);
+        return traits.evalPolyHorner(F7, self.coeffs.items, x);
     }
 
     pub fn eql(a: Self, b: Self) bool {
-        const max_len = @max(a.items.len, b.items.len);
+        const max_len = @max(a.coeffs.items.len, b.coeffs.items.len);
         for (0..max_len) |i| {
             if (!F7.eql(a.coeff(i), b.coeff(i))) return false;
         }
@@ -157,43 +171,41 @@ const PolyF7 = struct {
 // ============================================================================
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-
-    try stdout.print("=== zig-algebra-traits example ===\n\n", .{});
+    std.debug.print("=== zig-algebra-traits example ===\n\n", .{});
 
     // Verify F7 satisfies Field trait
     traits.assertField(F7);
-    try stdout.print("F7 satisfies Field trait\n", .{});
+    std.debug.print("F7 satisfies Field trait\n", .{});
 
     // Verify F7 satisfies Ring trait
     traits.assertRing(F7);
-    try stdout.print("F7 satisfies Ring trait\n", .{});
+    std.debug.print("F7 satisfies Ring trait\n", .{});
 
     // Basic operations
     const a = F7.fromInt(3);
     const b = F7.fromInt(5);
 
-    try stdout.print("a = {}, b = {}\n", .{ a, b });
-    try stdout.print("a + b = {}\n", .{F7.add(a, b)});
-    try stdout.print("a * b = {}\n", .{F7.mul(a, b)});
-    try stdout.print("a - b = {}\n", .{F7.sub(a, b)});
-    try stdout.print("-a = {}\n", .{F7.neg(a)});
-    try stdout.print("a^-1 = {}\n", .{F7.inv(a)});
-    try stdout.print("a / b = {}\n", .{F7.div(a, b)});
-    try stdout.print("a^3 = {}\n", .{F7.pow(a, 3)});
+    std.debug.print("a = {}, b = {}\n", .{ a, b });
+    std.debug.print("a + b = {}\n", .{F7.add(a, b)});
+    std.debug.print("a * b = {}\n", .{F7.mul(a, b)});
+    std.debug.print("a - b = {}\n", .{F7.sub(a, b)});
+    std.debug.print("-a = {}\n", .{F7.neg(a)});
+    std.debug.print("a^-1 = {}\n", .{F7.inv(a)});
+    std.debug.print("a / b = {}\n", .{F7.div(a, b)});
+    std.debug.print("a^3 = {}\n", .{F7.pow(a, 3)});
 
     // Test generic pow from traits
     const p = traits.pow(F7, a, 4);
-    try stdout.print("generic pow(a, 4) = {}\n", .{p});
+    std.debug.print("generic pow(a, 4) = {}\n", .{p});
 
     // Test sum
     const items = [_]F7{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) };
     const s = traits.sum(F7, &items);
-    try stdout.print("sum([1,2,3]) = {}\n", .{s});
+    std.debug.print("sum([1,2,3]) = {}\n", .{s});
 
     // Test product
     const pr = traits.product(F7, &items);
-    try stdout.print("product([1,2,3]) = {}\n", .{pr});
+    std.debug.print("product([1,2,3]) = {}\n", .{pr});
 
     // Polynomial example
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -201,12 +213,12 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const coeffs = [_]F7{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(1) }; // 1 + 2x + x^2
-    const poly = try PolyF7.fromCoeffs(&coeffs, allocator);
-    defer poly.deinit();
+    var poly = try PolyF7.fromCoeffs(&coeffs, allocator);
+    defer poly.deinit(allocator);
 
-    try stdout.print("\nPolynomial: 1 + 2x + x^2\n", .{});
-    try stdout.print("degree = {}\n", .{poly.degree()});
-    try stdout.print("eval(2) = {}\n", .{poly.eval(F7.fromInt(2))});
+    std.debug.print("\nPolynomial: 1 + 2x + x^2\n", .{});
+    std.debug.print("degree = {}\n", .{poly.degree()});
+    std.debug.print("eval(2) = {}\n", .{poly.eval(F7.fromInt(2))});
 
-    try stdout.print("\nAll trait assertions passed!\n", .{});
+    std.debug.print("\nAll trait assertions passed!\n", .{});
 }

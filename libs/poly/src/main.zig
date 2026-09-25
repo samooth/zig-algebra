@@ -37,6 +37,12 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    pub fn identity() Self {
+        return one();
+    }
+    pub fn inverse(a: Self) Self {
+        return inv(a);
+    }
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
         return pow(a, modulus - 2);
@@ -64,79 +70,78 @@ const F7 = struct {
 };
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("=== zig-poly example ===\n\n", .{});
+    std.debug.print("=== zig-poly example ===\n\n", .{});
 
     const Poly = poly.Polynomial(F7, 16);
 
     // --- Construction ---
-    try stdout.print("--- Construction ---\n", .{});
+    std.debug.print("--- Construction ---\n", .{});
     const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
-    try stdout.print("p(x) = {}\n", .{p});
-    try stdout.print("degree = {}\n", .{p.degree});
+    std.debug.print("p(x) = {}\n", .{p});
+    std.debug.print("degree = {}\n", .{p.degree});
 
     const q = Poly.fromCoeffs(&.{ F7.fromInt(4), F7.fromInt(5) });
-    try stdout.print("q(x) = {}\n", .{q});
+    std.debug.print("q(x) = {}\n", .{q});
 
     // --- Arithmetic ---
-    try stdout.print("\n--- Arithmetic ---\n", .{});
+    std.debug.print("\n--- Arithmetic ---\n", .{});
     const s = p.add(q);
-    try stdout.print("p + q = {}\n", .{s});
+    std.debug.print("p + q = {}\n", .{s});
 
     const d = p.sub(q);
-    try stdout.print("p - q = {}\n", .{d});
+    std.debug.print("p - q = {}\n", .{d});
 
     const m = p.mul(q);
-    try stdout.print("p * q = {}\n", .{m});
+    std.debug.print("p * q = {}\n", .{m});
 
     // --- Evaluation ---
-    try stdout.print("\n--- Evaluation ---\n", .{});
+    std.debug.print("\n--- Evaluation ---\n", .{});
     const x = F7.fromInt(2);
     const y = p.eval(x);
-    try stdout.print("p({}) = {}\n", .{ x.value, y.value });
+    std.debug.print("p({}) = {}\n", .{ x.value, y.value });
 
     // --- Division ---
-    try stdout.print("\n--- Division ---\n", .{});
+    std.debug.print("\n--- Division ---\n", .{});
     const dividend = Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(0), F7.fromInt(1) }); // x^2 - 1
     const divisor = Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(1) }); // x - 1
     const qr = dividend.divRem(divisor);
-    try stdout.print("(x^2 - 1) / (x - 1) = {}\n", .{qr.q});
-    try stdout.print("remainder = {}\n", .{qr.r});
+    std.debug.print("(x^2 - 1) / (x - 1) = {}\n", .{qr.q});
+    std.debug.print("remainder = {}\n", .{qr.r});
 
     // --- Derivative ---
-    try stdout.print("\n--- Derivative ---\n", .{});
+    std.debug.print("\n--- Derivative ---\n", .{});
     const deriv = p.derivative();
-    try stdout.print("p'(x) = {}\n", .{deriv});
+    std.debug.print("p'(x) = {}\n", .{deriv});
 
     // --- Composition ---
-    try stdout.print("\n--- Composition ---\n", .{});
+    std.debug.print("\n--- Composition ---\n", .{});
     const composed = p.compose(q);
-    try stdout.print("p(q(x)) = {}\n", .{composed});
+    std.debug.print("p(q(x)) = {}\n", .{composed});
 
     // --- Power ---
-    try stdout.print("\n--- Power ---\n", .{});
+    std.debug.print("\n--- Power ---\n", .{});
     const p3 = p.pow(3);
-    try stdout.print("p(x)^3 = {}\n", .{p3});
+    std.debug.print("p(x)^3 = {}\n", .{p3});
 
     // --- Lagrange Interpolation ---
-    try stdout.print("\n--- Lagrange Interpolation ---\n", .{});
+    std.debug.print("\n--- Lagrange Interpolation ---\n", .{});
     const xs = &[_]F7{ F7.fromInt(0), F7.fromInt(1), F7.fromInt(2) };
     const ys = &[_]F7{ F7.fromInt(1), F7.fromInt(3), F7.fromInt(5) };
     const interp = poly.lagrangeInterpolate(F7, 16, xs, ys);
-    try stdout.print("Interpolated: {}\n", .{interp});
+    std.debug.print("Interpolated: {}\n", .{interp});
     for (xs, ys) |xi, yi| {
         const yi_calc = interp.eval(xi);
-        try stdout.print("  f({}) = {} (expected {})\n", .{ xi.value, yi_calc.value, yi.value });
+        std.debug.print("  f({}) = {} (expected {})\n", .{ xi.value, yi_calc.value, yi.value });
     }
 
     // --- Vanishing Polynomial ---
-    try stdout.print("\n--- Vanishing Polynomial ---\n", .{});
+    std.debug.print("\n--- Vanishing Polynomial ---\n", .{});
     const points = &[_]F7{ F7.fromInt(1), F7.fromInt(2) };
     const vanish = poly.vanishingPolynomial(F7, 16, points);
-    try stdout.print("V(x) = {}\n", .{vanish});
+    std.debug.print("V(x) = {}\n", .{vanish});
     for (points) |pt| {
-        try stdout.print("  V({}) = {}\n", .{ pt.value, vanish.eval(pt).value });
+        std.debug.print("  V({}) = {}\n", .{ pt.value, vanish.eval(pt).value });
     }
 
-    try stdout.print("\nAll polynomial operations completed successfully!\n", .{});
+    std.debug.print("\nAll polynomial operations completed successfully!\n", .{});
 }
