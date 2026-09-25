@@ -16,13 +16,17 @@ const bigint = @import("bigint.zig");
 /// Legendre symbol `(a / p)`: `1` if `a` is a quadratic residue, `-1` if not,
 /// `0` if `a == 0`.
 ///
-/// Uses `a^((p-1)/2) == (a / p)` (Euler's criterion).
+/// Uses `a^((p-1)/2) == (a / p)` (Euler's criterion). The result selection
+/// is branch-free; callers should still avoid using it as a secret-dependent
+/// decision primitive.
 pub fn legendre(comptime F: type, a: F) i8 {
     const half = (F.odd_part << @intCast(F.two_adicity - 1));
     const r = a.pow(half);
-    if (r.eq(F.zero())) return 0;
-    if (r.eq(F.one())) return 1;
-    return -1;
+    const is_zero = @intFromBool(r.eq(F.zero()));
+    const is_one = @intFromBool(r.eq(F.one()));
+    const one_value: i8 = @intCast(is_one);
+    const nonzero_value: i8 = 1 - @as(i8, @intCast(is_zero));
+    return 2 * one_value - nonzero_value;
 }
 
 /// True if `a` is a quadratic residue (including 0).
@@ -33,9 +37,10 @@ pub fn isQuadraticResidue(comptime F: type, a: F) bool {
 /// Square root of `a`, if it exists. Uses the `p == 3 mod 4` shortcut when
 /// the two-adicity is 1, otherwise the full Tonelli–Shanks algorithm.
 ///
-/// Constant-time: the number of iterations is fixed (`two_adicity`), and all
-/// data-dependent choices are made with constant-time selects. The result is
-/// `null` iff `a` is not a quadratic residue.
+/// The Tonelli-Shanks loop has a fixed iteration count and uses
+/// constant-time selects internally. The optional success result still
+/// branches on whether `a` is a residue, so this API is not strictly
+/// constant-time for secret inputs.
 pub fn sqrt(comptime F: type, a: F) ?F {
     const s = F.two_adicity;
 
@@ -156,6 +161,8 @@ pub fn rootOfUnity(comptime F: type, order: usize) F {
 test "roots against reference semantics" {
     // M31: p = 2^31 - 1, two-adicity 1. The 2nd root is -1.
     const F = @import("field.zig").Field(2147483647);
+    try std.testing.expectEqual(@as(i8, 0), legendre(F, F.zero()));
+    try std.testing.expectEqual(@as(i8, -1), legendre(F, F.fromInt(3)));
     const w = primitiveRootOfUnity(F, 1);
     try std.testing.expect(w.mul(w).eq(F.one()));
     try std.testing.expect(w.eq(F.fromInt(2147483646))); // -1
