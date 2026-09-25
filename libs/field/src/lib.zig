@@ -317,3 +317,13 @@ test "property: BN254_Fp axioms" {
 test "property: BLS12_381_Fp axioms" {
     try checkFieldAxioms(predef.BLS12_381_Fp, 5, 0xDEAD);
 }
+
+test "M31 canonical arithmetic and encoding vectors" {
+    const three = predef.M31.fromInt(3);
+    try testing.expectEqual(@as(u64, 1431655765), three.inv().toU64());
+    try testing.expectEqual(@as(u64, 1), predef.M31.fromInt(0xffffffff).toU64());
+
+    const canonical = [_]u8{ 0xfe, 0xff, 0xff, 0x7f };
+    try testing.expectEqualSlices(u8, &canonical, &predef.M31.fromInt(0x7ffffffe).toBytes());
+    try testing.expectError(error.ValueOutOfRange, predef.M31.fromBytes(&[_]u8{ 0xff, 0xff, 0xff, 0x7f }));
+}

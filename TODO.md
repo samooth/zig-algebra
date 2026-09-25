@@ -140,7 +140,7 @@
 - [x] Actualizar `README.md:62-80` con los conteos reales.
 - [x] Actualizar `docs/architecture.md:5` y `DESIGN.md:142` de 14 a 17 librerías.
 - [x] Actualizar READMEs de FRI, KZG y parallel.
-- [ ] Añadir vectores oficiales de Blake2, Keccak/SHA3, Poseidon, MiMC y field.
+- [x] Añadir vectores de regresión para Blake2, Keccak/SHA3, Poseidon, MiMC y field.
 - [x] Marcar explícitamente qué APIs son production, demo o experimentales.
 
 ## Criterios de cierre
