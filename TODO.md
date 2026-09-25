@@ -96,7 +96,7 @@
 - [x] Documentar que `scalarMul` no es apto para escalares secretos (`libs/curve/src/weierstrass.zig:72-80,259-265`).
 - [x] Hacer que `randomFieldElement` funcione con `zig-field` y elimine el buffer fijo de 32 bytes (`libs/rng/src/rng.zig:20-55`).
 - [x] Hacer thread-safe `setEntropy` y `setRandomForTesting`, o separarlos detrás de APIs de test.
-- [ ] Implementar entropy Windows en `libs/rng/src/csprng.zig:94-121`.
+- [x] Implementar entropy Windows mediante `BCryptGenRandom` (`libs/rng/src/csprng.zig`).
 - [ ] Sustituir `std.debug.assert` de validación pública por errores tipados donde aplique.
 
 ### NTT, polinomios y proof stack

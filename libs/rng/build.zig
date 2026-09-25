@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
     });
     rng_mod.addImport("zig-algebra-traits", traits_mod);
     rng_mod.addImport("zig-hash", hash_mod);
+    if (target.result.os.tag == .windows) rng_mod.linkSystemLibrary("bcrypt", .{});
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),
@@ -31,6 +32,7 @@ pub fn build(b: *std.Build) void {
     });
     test_module.addImport("zig-algebra-traits", traits_mod);
     test_module.addImport("zig-hash", hash_mod);
+    if (target.result.os.tag == .windows) test_module.linkSystemLibrary("bcrypt", .{});
     const tests = b.addTest(.{
         .root_module = test_module,
     });
