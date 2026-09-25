@@ -177,15 +177,14 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
             // From std.crypto.ff: need_sub = overflow == (out < modulus)
             const out_lt_mod = ctLimbsCmpLt(&out, &MODULUS_LIMBS);
             const need_sub = (carry != 0) == out_lt_mod;
-            if (need_sub) {
-                var borrow: u64 = 0;
-                for (0..n) |i| {
-                    const z = @as(u128, out[i]) -% @as(u128, MODULUS_LIMBS[i]) -% borrow;
-                    out[i] = @truncate(z);
-                    borrow = @intFromBool(z > std.math.maxInt(u64));
-                }
+            var reduced: [n]u64 = undefined;
+            var borrow: u64 = 0;
+            for (0..n) |i| {
+                const z = @as(u128, out[i]) -% @as(u128, MODULUS_LIMBS[i]) -% borrow;
+                reduced[i] = @truncate(z);
+                borrow = @intFromBool(z > std.math.maxInt(u64));
             }
-            return out;
+            return ctSelectLimbs(need_sub, reduced, out);
         }
 
         /// `a - b mod p` (constant-time).
@@ -201,16 +200,14 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
                 out[i] = diff -% borrow;
                 borrow = borrow_from_diff | new_borrow; // FIX: use OR instead of +
             }
-            // Conditionally add modulus if borrow.
-            if (borrow != 0) {
-                var carry: u64 = 0;
-                for (0..n) |i| {
-                    const z = @as(u128, out[i]) + @as(u128, MODULUS_LIMBS[i]) + carry;
-                    out[i] = @truncate(z);
-                    carry = @truncate(z >> 64);
-                }
+            var reduced: [n]u64 = undefined;
+            var carry: u64 = 0;
+            for (0..n) |i| {
+                const z = @as(u128, out[i]) + @as(u128, MODULUS_LIMBS[i]) + carry;
+                reduced[i] = @truncate(z);
+                carry = @truncate(z >> 64);
             }
-            return out;
+            return ctSelectLimbs(borrow != 0, reduced, out);
         }
 
         /// `-a mod p` (constant-time).
@@ -257,21 +254,17 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
             // Result is in t[0..n-1]; t[n] is the overflow limb (0 or 1).
             // Result is < 2p; at most one conditional subtraction needed.
             var out: [n]u64 = t[0..n].*;
-            var extra: u64 = t[n];
+            const extra: u64 = t[n];
 
-            // Constant-time conditional subtraction (at most 1 iteration).
-            // need_sub = extra != 0 OR out >= MODULUS
             const need_sub = (extra != 0) | (!ctLimbsCmpLt(&out, &MODULUS_LIMBS));
-            if (need_sub) {
-                var borrow: u64 = 0;
-                for (0..n) |i| {
-                    const z = @as(u128, out[i]) -% @as(u128, MODULUS_LIMBS[i]) -% borrow;
-                    out[i] = @truncate(z);
-                    borrow = @intFromBool(z > std.math.maxInt(u64));
-                }
-                extra = @as(u64, @truncate(extra -% borrow));
+            var reduced: [n]u64 = undefined;
+            var borrow: u64 = 0;
+            for (0..n) |i| {
+                const z = @as(u128, out[i]) -% @as(u128, MODULUS_LIMBS[i]) -% borrow;
+                reduced[i] = @truncate(z);
+                borrow = @intFromBool(z > std.math.maxInt(u64));
             }
-            return out;
+            return ctSelectLimbs(need_sub, reduced, out);
         }
 
         // ============================================================
