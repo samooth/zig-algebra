@@ -59,25 +59,25 @@ kzg                   (→ field, curve, pairing)
 | Library | Description | Tests |
 |---------|-------------|-------|
 | [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | — |
-| [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 15 |
-| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Keccak, Poseidon, MiMC) | 15 |
+| [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 18 |
+| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Keccak, Poseidon, MiMC) | 16 |
 | [transcript](libs/transcript/) | Fiat-Shamir transcripts for non-interactive proofs | 10 |
-| [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing) | 7 |
+| [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing) | 10 |
 | [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256) | 12 |
-| [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 58+ |
-| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 53 |
-| [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 83 |
-| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 tower + BN254 tower & direct (all verified bilinear; sparse Miller + split final exp) | 47 |
-| [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | 10 |
-| [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 11 |
-| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 12 |
+| [field](libs/field/) | Prime field arithmetic with Montgomery arithmetic | 69 |
+| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), tower fields, Binius | 68 |
+| [curve](libs/curve/) | Elliptic curves (Weierstrass, BN254, BLS12-381, Pasta) | 92 |
+| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 tower + BN254 tower & direct (all verified bilinear; sparse Miller + split final exp) | 54 |
+| [ntt](libs/ntt/) | Number-Theoretic Transform (Cooley-Tukey iterative) | 11 |
+| [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 14 |
+| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 20 |
 | [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 9 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 2 |
-| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 4 |
-| [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM) | 10 |
+| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 5 |
+| [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM) | 6 |
 
-> Run everything from the repo root: `zig build test` executes every suite
-> above (189+ tests) and fails on any failure.
+> The standalone counts above are the current per-library totals. The root
+> `zig build test` suite currently executes 313 tests.
 
 ## Quick Start
 

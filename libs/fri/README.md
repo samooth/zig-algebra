@@ -2,6 +2,11 @@
 
 FRI v2 over a 2-adic multiplicative subgroup with Merkle commitments. The API uses logarithms for domain and degree bounds and is compatible with Zig 0.16.0.
 
+> **Status:** maintained implementation with regression tests for the v2
+> configuration, folding, path-depth, and soundness boundaries. It is not a
+> substitute for an independent cryptographic audit; deployments should review
+> `SECURITY.md` and select query/blowup parameters for their threat model.
+
 ## Features
 
 - **Antipodal-pair FRI** — commitments hash `(f(x), f(-x))` and fold by squaring

@@ -137,9 +137,9 @@
 - [ ] Eliminar la autodependencia `zig_algebra`.
 - [ ] Hacer reproducibles los paquetes path de los submódulos.
 - [ ] Reconciliar versiones `0.3.0`/`0.3.1` y el advisory FRI.
-- [ ] Actualizar `README.md:62-80` con los conteos reales.
-- [ ] Actualizar `docs/architecture.md:5` y `DESIGN.md:142` de 14 a 17 librerías.
-- [ ] Actualizar READMEs de FRI, KZG y parallel.
+- [x] Actualizar `README.md:62-80` con los conteos reales.
+- [x] Actualizar `docs/architecture.md:5` y `DESIGN.md:142` de 14 a 17 librerías.
+- [x] Actualizar READMEs de FRI, KZG y parallel.
 - [ ] Añadir vectores oficiales de Blake2, Keccak/SHA3, Poseidon, MiMC y field.
 - [ ] Marcar explícitamente qué APIs son production, demo o experimentales.
 

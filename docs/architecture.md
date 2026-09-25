@@ -2,20 +2,22 @@
 
 ## Overview
 
-`zig-algebra` is a monorepo containing 14 independent algebraic libraries that form the mathematical foundation for cryptographic protocols. The libraries are organized in layers, where each layer depends only on lower layers.
+`zig-algebra` is a monorepo containing 17 independent algebraic libraries that form the mathematical foundation for cryptographic protocols. The libraries are organized in layers, where each layer depends only on lower layers.
 
 ## Layer Architecture
 
 ```
 Layer 0: algebra-traits          (compile-time trait contracts)
     │
-Layer 1: bigint, hash, rng       (primitives)
-    │
+Layer 1: bigint, hash, rng, transcript
+    │                             (primitives and Fiat-Shamir)
 Layer 2: field, binary-field     (concrete field implementations)
     │
 Layer 3: curve, merkle           (curves & data structures)
     │
-Layer 4: ntt, poly               (algorithms over fields)
+Layer 4: ntt, poly, linalg       (algorithms over fields)
+    │
+Proof stack: fri, kzg            (proximity and polynomial commitments)
     │
 Utils:  parallel, serialization  (infrastructure)
 ```
