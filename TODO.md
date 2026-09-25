@@ -116,7 +116,7 @@
 - [x] Añadir `zig-field` al módulo FRI de `build.zig:335-342`.
 - [x] Añadir `zig-field` al build standalone de FRI (`libs/fri/build.zig:29-46`).
 - [x] Hacer que el test raíz incluya los tests externos de field, curve y PCS.
-- [ ] Reparar los ejemplos que usan `std.io.getStdOut`:
+- [x] Reparar los ejemplos que usan `std.io.getStdOut`:
   - `libs/algebra-traits/src/main.zig:160`
   - `libs/bigint/src/main.zig:7`
   - `libs/hash/src/main.zig:62,71`
@@ -126,8 +126,8 @@
 - [ ] Reparar `libs/ntt/build.zig:43` o eliminar el ejemplo inexistente.
 - [ ] Añadir `zig-field` al ejemplo de linalg.
 - [ ] Reparar la API obsoleta de `libs/pairing/src/main.zig`.
-- [ ] Reparar `PolyF7.init()` recursivo y `deinit()` inexistente en `libs/algebra-traits/src/main.zig:112-114,205`.
-- [ ] Añadir `isZero` al F7 del ejemplo de hash.
+- [x] Reparar `PolyF7.init()` recursivo y `deinit()` inexistente en `libs/algebra-traits/src/main.zig:112-114,205`.
+- [x] Añadir `isZero` al F7 del ejemplo de hash.
 - [ ] Convertir `zig build -Doptimize=ReleaseFast` en un smoke test real.
 - [x] Ejecutar todos los tests también con `ReleaseFast`.
 

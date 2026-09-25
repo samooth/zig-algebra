@@ -32,6 +32,12 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    pub fn identity() Self {
+        return one();
+    }
+    pub fn inverse(a: Self) Self {
+        return inv(a);
+    }
     pub fn inv(a: Self) Self {
         std.debug.assert(!a.isZero());
         return pow(a, modulus - 2);
@@ -58,52 +64,48 @@ const F7 = struct {
     }
 };
 
-fn printHex(name: []const u8, bytes: []const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("{s}: ", .{name});
-    for (bytes) |b| {
-        try stdout.print("{x:0>2}", .{b});
-    }
-    try stdout.print("\n", .{});
+fn printHex(name: []const u8, bytes: []const u8) void {
+    std.debug.print("{s}: ", .{name});
+    for (bytes) |b| std.debug.print("{x:0>2}", .{b});
+    std.debug.print("\n", .{});
 }
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("=== zig-hash example ===\n\n", .{});
+    std.debug.print("=== zig-hash example ===\n\n", .{});
 
     const msg = "hello world";
 
     // Blake3
     const b3 = hash.hashBlake3(msg);
-    try printHex("Blake3(\"hello world\")", &b3);
+    printHex("Blake3(\"hello world\")", &b3);
 
     // Blake2b
     const b2b = hash.hashBlake2b256(msg);
-    try printHex("Blake2b256(\"hello world\")", &b2b);
+    printHex("Blake2b256(\"hello world\")", &b2b);
 
     // Blake2s
     const b2s = hash.hashBlake2s256(msg);
-    try printHex("Blake2s256(\"hello world\")", &b2s);
+    printHex("Blake2s256(\"hello world\")", &b2s);
 
     // Keccak-256
     const k = hash.hashKeccak256(msg);
-    try printHex("Keccak256(\"hello world\")", &k);
+    printHex("Keccak256(\"hello world\")", &k);
 
     // SHA3-256
     const s3 = hash.hashSha3_256(msg);
-    try printHex("SHA3-256(\"hello world\")", &s3);
+    printHex("SHA3-256(\"hello world\")", &s3);
 
     // Poseidon over F7
     const PoseidonF7 = hash.Poseidon(F7, 3, 8, 57, 5);
     const p = try PoseidonF7.initFromSeed("demo");
     const pf = p.hash2(F7.fromInt(1), F7.fromInt(2));
-    try stdout.print("\nPoseidon(F7)(1, 2) = {}\n", .{pf.value});
+    std.debug.print("\nPoseidon(F7)(1, 2) = {}\n", .{pf.value});
 
     // MiMC over F7
     const MiMCF7 = hash.MiMC(F7, 91, 5);
     const m = try MiMCF7.initFromSeed("demo");
     const mf = m.hash2(F7.fromInt(1), F7.fromInt(2));
-    try stdout.print("MiMC(F7)(1, 2) = {}\n", .{mf.value});
+    std.debug.print("MiMC(F7)(1, 2) = {}\n", .{mf.value});
 
     // Streaming example
     var hasher = hash.Blake3.init();
@@ -112,7 +114,7 @@ pub fn main() !void {
     hasher.update("the lazy dog");
     var stream_out: [32]u8 = undefined;
     hasher.finalize(&stream_out);
-    try printHex("\nBlake3(streaming)", &stream_out);
+    printHex("\nBlake3(streaming)", &stream_out);
 
-    try stdout.print("\nAll hashes computed successfully!\n", .{});
+    std.debug.print("\nAll hashes computed successfully!\n", .{});
 }
