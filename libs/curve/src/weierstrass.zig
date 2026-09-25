@@ -259,7 +259,8 @@ pub fn ProjectivePoint(comptime F: type, comptime a: F, comptime b: F) type {
         /// Scalar multiplication via 4-bit windowed left-to-right ladder in
         /// Jacobian coordinates (no inversions in the loop).
         ///
-        /// Non-CT (branches on scalar bits); NOT for secret scalars.
+        /// Non-CT: control flow depends on scalar bits. It is intended for
+        /// public scalars and must not be used with secret key material.
         pub fn scalarMul(self: Self, scalar: anytype) Self {
             const exp: u512 = scalar;
             return scalarMulWindowed(Self, self, exp);
