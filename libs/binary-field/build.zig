@@ -16,6 +16,12 @@ pub fn build(b: *std.Build) void {
     });
     const hash_mod = hash_dep.module("zig-hash");
 
+    const merkle_dep = b.dependency("zig_merkle", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const merkle_mod = merkle_dep.module("zig-merkle");
+
     const binary_field_mod = b.addModule("zig-binary-field", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -23,6 +29,7 @@ pub fn build(b: *std.Build) void {
     });
     binary_field_mod.addImport("zig-algebra-traits", traits_mod);
     binary_field_mod.addImport("zig-hash", hash_mod);
+    binary_field_mod.addImport("zig-merkle", merkle_mod);
 
     const test_step = b.step("test", "Run unit tests");
 
@@ -33,6 +40,7 @@ pub fn build(b: *std.Build) void {
     });
     test_module.addImport("zig-algebra-traits", traits_mod);
     test_module.addImport("zig-hash", hash_mod);
+    test_module.addImport("zig-merkle", merkle_mod);
     const root_test = b.addTest(.{
         .root_module = test_module,
     });

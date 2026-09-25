@@ -143,6 +143,7 @@ pub fn build(b: *std.Build) void {
         &.{
             .{ "zig-algebra-traits", traits_mod },
             .{ "zig-hash", hash_mod },
+            .{ "zig-merkle", merkle_mod },
         },
     );
 

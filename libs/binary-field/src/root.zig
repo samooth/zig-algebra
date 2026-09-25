@@ -20,6 +20,7 @@ pub const tower = @import("tower.zig");
 pub const polynomial = @import("polynomial.zig");
 pub const pack = @import("pack.zig");
 pub const sumcheck = @import("sumcheck.zig");
+pub const pcs = @import("pcs.zig");
 
 // Re-export common types
 pub const BinaryField = field.BinaryField;
@@ -43,6 +44,8 @@ pub const novelNorms = pack.novelNorms;
 pub const novelEval = pack.novelEval;
 
 pub const Sumcheck = sumcheck.Sumcheck;
+pub const MlePcs = pcs.MlePcs;
+pub const CommittedMlePcs = pcs.CommittedMlePcs;
 
 test {
     std.testing.refAllDecls(@This());

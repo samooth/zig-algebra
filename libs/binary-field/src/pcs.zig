@@ -245,11 +245,7 @@ pub fn CommittedMlePcs(comptime F: type, comptime E: type) type {
             const leaves = try allocator.alloc(Hash.Digest, table.len);
             defer allocator.free(leaves);
             for (table, 0..) |v, i| leaves[i] = hashElement(v);
-            // Convert []Hash.Digest to []const []const u8 for MerkleTree.init
-            const leaves_slices = try allocator.alloc([]const u8, table.len);
-            defer allocator.free(leaves_slices);
-            for (leaves, 0..) |leaf, i| leaves_slices[i] = leaf[0..];
-            return MerkleTree.init(allocator, leaves_slices);
+            return MerkleTree.initFromHashes(allocator, leaves);
         }
 
         /// Prover: evaluate `f` at `r` and open every committed leaf.

@@ -108,7 +108,7 @@
 - [x] Evitar overflow en `Polynomial.pow` (`libs/poly/src/poly.zig:297-309`).
 - [x] Manejar `vector.powers(..., 0)` (`libs/poly/src/vector.zig:19-24`).
 - [ ] Revisar límites y cleanup de `Sumcheck`, `MlePcs` y `CommittedMlePcs`.
-- [ ] Exportar `pcs.zig` desde `libs/binary-field/src/root.zig:17-49` si FRI-PCS es parte del API público.
+- [x] Exportar `pcs.zig` y corregir el commitment de `CommittedMlePcs` (`libs/binary-field/src/root.zig`, `libs/binary-field/src/pcs.zig`).
 - [ ] Añadir tests de recursos y rechazos en OOM de las asignaciones parciales.
 
 ### Builds y ejemplos

@@ -10,6 +10,9 @@
         .zig_hash = .{
             .path = "../hash",
         },
+        .zig_merkle = .{
+            .path = "../merkle",
+        },
     },
     .paths = .{
         "build.zig",
