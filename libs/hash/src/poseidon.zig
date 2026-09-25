@@ -16,6 +16,8 @@ const traits = @import("zig-algebra-traits");
 /// `full_rounds`: total full S-box rounds (RF = Rf)
 /// `partial_rounds`: partial S-box rounds (RP = Rp)
 /// `alpha`: S-box exponent (typically 5 for prime fields where gcd(5, p-1)=1)
+pub const MAX_SEED_LEN: usize = 1 << 20;
+
 pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize, comptime partial_rounds: usize, comptime alpha: u64) type {
     traits.assertField(F);
 
@@ -37,7 +39,8 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
         }
 
         /// Generate round constants and MDS matrix deterministically from a seed string.
-        pub fn initFromSeed(seed: []const u8) Self {
+        pub fn initFromSeed(seed: []const u8) !Self {
+            if (seed.len > MAX_SEED_LEN) return error.SeedTooLong;
             var rc: [total_rounds][t]F = undefined;
             var mds: [t][t]F = undefined;
 
