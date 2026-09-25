@@ -53,6 +53,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     example_module.addImport("zig-pairing", pairing_mod);
+    example_module.addImport("zig-curve", curve_mod);
     const example = b.addExecutable(.{
         .name = "pairing-example",
         .root_module = example_module,
