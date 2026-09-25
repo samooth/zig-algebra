@@ -38,7 +38,7 @@
 - [ ] Añadir un test que compare el generador con el KAT canónico de `libs/pairing/src/bls12_381.zig:465-468`.
 - [x] Corregir `expandMessageXmd` según RFC 9380 (`libs/curve/src/hash_to_curve.zig:14-42`).
 - [x] Implementar hash-to-field uniforme y encoding de longitud/DST (`libs/curve/src/hash_to_curve.zig:45-71`).
-- [ ] Implementar clear cofactor y encoding completo de suite en `hashToCurve` (`libs/curve/src/hash_to_curve.zig:174-197`).
+- [x] Exponer clear cofactor y aplicar el `suite_dst` en `hashToCurveWithCofactor` (`libs/curve/src/hash_to_curve.zig:213-239`).
 - [x] Añadir un vector oficial de `expand_message_xmd`; los tests de curva completa siguen pendientes.
 - [x] Eliminar bytes no inicializados y usar un hash real en `fieldFromCounter` de Poseidon/MiMC (`libs/hash/src/poseidon.zig:184-197`, `libs/hash/src/mimc.zig:67-75`).
 - [ ] Validar longitudes de seeds y round constants de Poseidon/MiMC.
