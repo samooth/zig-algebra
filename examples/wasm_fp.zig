@@ -1,33 +1,33 @@
 //! Minimal WASM export: BLS12-381 field arithmetic for JS/TS interop.
 //!
-//! Build: zig build-exe -target wasm32-freestanding -O ReleaseFast
-//! Usage from JS:
-//!   const wasm = await WebAssembly.instantiate(wasmBytes, {});
-//!   const { fp_mul, fp_add } = wasm.instance.exports;
-//!
-//! Values are passed as pairs of u64 (lo, hi) representing 128-bit chunks.
-//! For full 381-bit values, use the linear memory model.
+//! Each operation writes the complete canonical `Fp.NUM_BYTES` result to a
+//! caller-provided pointer. `fp_inv` returns 1 on success and 0 for zero input.
 
 const std = @import("std");
 const zf = @import("zig-field");
 
 const Fp = zf.BLS12_381_Fp;
 
-export fn fp_add(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64) u64 {
-    const a = Fp.fromInt(@as(u128, a_hi) << 64 | a_lo);
-    const b = Fp.fromInt(@as(u128, b_hi) << 64 | b_lo);
-    return @truncate(a.add(b).toInt());
+fn readFp(lo: u64, hi: u64) Fp {
+    return Fp.fromInt(@as(u128, hi) << 64 | lo);
 }
 
-export fn fp_mul(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64) u64 {
-    const a = Fp.fromInt(@as(u128, a_hi) << 64 | a_lo);
-    const b = Fp.fromInt(@as(u128, b_hi) << 64 | b_lo);
-    const prod = a.mul(b);
-    return @truncate(prod.toInt());
+fn writeFp(out: [*]u8, value: Fp) void {
+    const bytes = value.toBytes();
+    @memcpy(out[0..Fp.NUM_BYTES], &bytes);
 }
 
-export fn fp_inv(a_lo: u64, a_hi: u64) u64 {
-    const a = Fp.fromInt(@as(u128, a_hi) << 64 | a_lo);
-    const inv = a.inv();
-    return @truncate(inv.toInt());
+export fn fp_add(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64, out: [*]u8) void {
+    writeFp(out, readFp(a_lo, a_hi).add(readFp(b_lo, b_hi)));
+}
+
+export fn fp_mul(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64, out: [*]u8) void {
+    writeFp(out, readFp(a_lo, a_hi).mul(readFp(b_lo, b_hi)));
+}
+
+export fn fp_inv(a_lo: u64, a_hi: u64, out: [*]u8) i32 {
+    const value = readFp(a_lo, a_hi);
+    if (value.isZero()) return 0;
+    writeFp(out, value.inv());
+    return 1;
 }
