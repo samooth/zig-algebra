@@ -205,21 +205,28 @@ pub fn MerkleTree(comptime H: type) type {
 
             const depth = std.math.log2(self.leaf_count);
             const siblings = try allocator.alloc([HASH_LEN]u8, depth);
-            const flags = try allocator.alloc(bool, depth);
-            errdefer allocator.free(siblings);
-            errdefer allocator.free(flags);
+            var flags: ?[]bool = null;
+            var transfer = false;
+            defer {
+                if (!transfer) {
+                    if (flags) |value| allocator.free(value);
+                    allocator.free(siblings);
+                }
+            }
+            flags = try allocator.alloc(bool, depth);
 
             var pos = self.leaf_count + index;
             var level: usize = 0;
             while (pos > 1) {
                 const sibling = if (pos % 2 == 0) pos + 1 else pos - 1;
                 siblings[level] = self.nodes[sibling];
-                flags[level] = (pos % 2 != 0); // true if sibling is on the left
+                flags.?[level] = (pos % 2 != 0);
                 pos >>= 1;
                 level += 1;
             }
 
-            return .{ .siblings = siblings, .is_left_sibling = flags };
+            transfer = true;
+            return .{ .siblings = siblings, .is_left_sibling = flags.? };
         }
 
         /// Verify an inclusion proof.

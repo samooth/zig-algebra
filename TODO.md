@@ -107,9 +107,9 @@
 - [x] Proteger `Polynomial.x()` para `max_degree == 0` (`libs/poly/src/poly.zig:61-67`).
 - [x] Evitar overflow en `Polynomial.pow` (`libs/poly/src/poly.zig:297-309`).
 - [x] Manejar `vector.powers(..., 0)` (`libs/poly/src/vector.zig:19-24`).
-- [ ] Revisar límites y cleanup de `Sumcheck`, `MlePcs` y `CommittedMlePcs`.
+- [x] Revisar límites, validación y cleanup de `Sumcheck`, `MlePcs` y `CommittedMlePcs` (`libs/binary-field/src/sumcheck.zig`, `libs/binary-field/src/pcs.zig`).
 - [x] Exportar `pcs.zig` y corregir el commitment de `CommittedMlePcs` (`libs/binary-field/src/root.zig`, `libs/binary-field/src/pcs.zig`).
-- [ ] Añadir tests de recursos y rechazos en OOM de las asignaciones parciales.
+- [x] Añadir tests de recursos y rechazos en OOM de las asignaciones parciales de Sumcheck, MlePcs, CommittedMlePcs y Merkle.
 
 ### Builds y ejemplos
 
