@@ -148,7 +148,7 @@
 - [ ] No existe ningún `TODO` de seguridad critiques sin test de regresión.
 - [x] `zig build test` pasa sin depender de tests no conectados al build raíz.
 - [x] `zig build stark`, WASM y ejemplos compilan.
-- [ ] Ningún test tarda indefinidamente por rejection sampling.
+- [ ] Ningún test tarda indefinidamente por rejection sampling (RNG ya está acotado; field/transcript requieren revisión).
 - [ ] No hay asserts eliminados en ReleaseFast que dejen pathways fuera de rango.
 - [ ] Los puntos externos validan on-curve, subgroup y encoding.
 - [ ] Los serializadores tienen límites de recursos y liberan memoria en todos los errores.

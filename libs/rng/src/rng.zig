@@ -17,15 +17,19 @@ pub fn RngTrait(comptime T: type) type {
     };
 }
 
+pub const MAX_REJECTION_ATTEMPTS: usize = 1024;
+
 /// Generate a uniformly random field element using rejection sampling.
 ///
 /// The algorithm draws random integers until one falls in `[0, p)` where `p`
-/// is the field modulus.  This is statistically unbiased and allocation-free.
+/// is the field modulus. This is statistically unbiased and allocation-free;
+/// pathological sources fail after `MAX_REJECTION_ATTEMPTS` with
+/// `error.RejectionSamplingFailed`.
 ///
 /// # Type Parameters
 /// - `F`:  A type satisfying the `Field` trait (must expose `fromInt`, `order`, `eql`).
 /// - `R`:  A type satisfying the `Rng` trait (must expose `randomBytes`).
-pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) F {
+pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) !F {
     traits.assertField(F);
     RngTrait(R).assert();
 
@@ -43,7 +47,8 @@ pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) F {
     const order_wide: u512 = @intCast(order);
     var buf: [byte_len]u8 = undefined;
 
-    while (true) {
+    var attempts: usize = 0;
+    while (attempts < MAX_REJECTION_ATTEMPTS) : (attempts += 1) {
         rng.randomBytes(&buf);
         var val: u512 = 0;
         for (0..byte_len) |i| {
@@ -56,11 +61,13 @@ pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) F {
             return F.fromInt(@as(u256, @truncate(val)));
         }
     }
+    return error.RejectionSamplingFailed;
 }
 
 /// Generate a uniformly random unsigned integer in `[0, max)` using rejection sampling.
 ///
-/// Works for any `R` with `randomBytes`.  `max` must be > 0.
+/// Works for any `R` with `randomBytes`. `max` must be > 0. A source that
+/// never produces an accepted value fails after `MAX_REJECTION_ATTEMPTS`.
 pub fn randomU64Bounded(comptime R: type, rng: *R, max: u64) !u64 {
     RngTrait(R).assert();
     if (max == 0) return error.InvalidBound;
@@ -70,11 +77,13 @@ pub fn randomU64Bounded(comptime R: type, rng: *R, max: u64) !u64 {
     const mask = if (bits == 64) ~@as(u64, 0) else (@as(u64, 1) << bits) - 1;
     var buf: [8]u8 = undefined;
 
-    while (true) {
+    var attempts: usize = 0;
+    while (attempts < MAX_REJECTION_ATTEMPTS) : (attempts += 1) {
         rng.randomBytes(&buf);
         const val = std.mem.readInt(u64, &buf, .little) & mask;
         if (val < max) return val;
     }
+    return error.RejectionSamplingFailed;
 }
 
 /// Fisher-Yates shuffle: permute `items` in-place uniformly at random.

@@ -15,6 +15,7 @@ const std = @import("std");
 
 /// Number of ChaCha rounds (20 for standard ChaCha20).
 const ROUNDS: u32 = 20;
+const MAX_REJECTION_ATTEMPTS: usize = 1024;
 
 /// ChaCha20 state: 16 x u32 words.
 /// Layout: [constant; constant; key(8); counter(1); nonce(3)]
@@ -161,9 +162,11 @@ pub const ChaCha20Rng = struct {
         // Rejection sampling: find smallest n such that 2^n >= max
         const bits: u8 = @intCast(64 - @clz(max - 1));
         const mask = if (bits == 64) ~@as(u64, 0) else (@as(u64, 1) << @intCast(bits)) - 1;
-        while (true) {
+        var attempts: usize = 0;
+        while (attempts < MAX_REJECTION_ATTEMPTS) : (attempts += 1) {
             const v = self.randomU64() & mask;
             if (v < max) return v;
         }
+        return error.RejectionSamplingFailed;
     }
 };
