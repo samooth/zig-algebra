@@ -15,6 +15,14 @@ pub const HashToFieldError = error{
     DstTooLong,
 };
 
+pub const HashToCurveError = error{
+    SqrtFailed,
+    OutputTooLong,
+    DstTooLong,
+    SumIsInfinity,
+    CofactorClearedToInfinity,
+};
+
 /// Expand message according to RFC 9380 expand_message_xmd with SHA-256.
 pub fn expandMessageXmd(
     msg: []const u8,
@@ -216,7 +224,7 @@ pub fn hashToCurve(
     comptime b: F,
     msg: []const u8,
     dst: []const u8,
-) (error{ SqrtFailed, OutputTooLong, DstTooLong, SumIsInfinity }!CurvePoint(F)) {
+) HashToCurveError!CurvePoint(F) {
     const us = try hashToField(F, msg, dst, 2);
 
     const p1 = try mapToCurveSvdW(F, a, b, us[0]);
@@ -228,6 +236,22 @@ pub fn hashToCurve(
     const sum = ep1.add(ep2);
     if (sum.infinity) return error.SumIsInfinity;
     return .{ .x = sum.x, .y = sum.y };
+}
+
+pub fn hashToCurveWithCofactor(
+    comptime F: type,
+    comptime a: F,
+    comptime b: F,
+    msg: []const u8,
+    suite_dst: []const u8,
+    comptime cofactor: u512,
+) HashToCurveError!CurvePoint(F) {
+    const point = try hashToCurve(F, a, b, msg, suite_dst);
+    const AffinePoint = @import("weierstrass.zig").AffinePoint(F, a, b);
+    const affine = AffinePoint{ .x = point.x, .y = point.y, .infinity = false };
+    const cleared = affine.scalarMul(cofactor);
+    if (cleared.infinity) return error.CofactorClearedToInfinity;
+    return .{ .x = cleared.x, .y = cleared.y };
 }
 
 // ============================================================================

@@ -135,6 +135,21 @@ test "mapToCurveSvdW BLS12-381 various inputs" {
     }
 }
 
+test "hashToCurveWithCofactor clears the BLS12-381 G1 cofactor" {
+    const bls = @import("zig-curve").bls12_381;
+    const p = try h2c.hashToCurveWithCofactor(
+        bls.Fp,
+        bls.G1_a,
+        bls.G1_b,
+        "test",
+        "BLS12381G1_XMD:SHA-256_SSWU_RO_",
+        @as(u512, 0x396c8c005555e1568c00aaab0000aaab),
+    );
+    const y2 = p.y.mul(p.y);
+    const x3 = p.x.mul(p.x).mul(p.x);
+    std.debug.assert(y2.eql(x3.add(bls.G1_b)));
+}
+
 test "hashToCurve BLS12-381" {
     const bls = @import("zig-curve").bls12_381;
     const p = try h2c.hashToCurve(bls.Fp, bls.G1_a, bls.G1_b, "test", "BLS12381_G1_XMD:SHA-256_SSWU_RO_");
