@@ -29,18 +29,31 @@ pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) F {
     traits.assertField(F);
     RngTrait(R).assert();
 
-    const order = F.order;
-    const byte_len = (std.math.log2(order) + 8) / 8;
-    var buf: [32]u8 = undefined; // enough for any practical field
+    const order = comptime blk: {
+        if (@hasDecl(F, "MODULUS")) break :blk F.MODULUS;
+        break :blk F.order;
+    };
+    const byte_len = comptime blk: {
+        if (@hasDecl(F, "NUM_BYTES")) break :blk F.NUM_BYTES;
+        const bits = std.math.log2_int(@TypeOf(order), order) + 1;
+        break :blk (bits + 7) / 8;
+    };
+    std.debug.assert(byte_len > 0 and byte_len <= 64);
+
+    const order_wide: u512 = @intCast(order);
+    var buf: [byte_len]u8 = undefined;
 
     while (true) {
-        rng.randomBytes(buf[0..byte_len]);
-        var val: u256 = 0;
+        rng.randomBytes(&buf);
+        var val: u512 = 0;
         for (0..byte_len) |i| {
             val = (val << 8) | buf[i];
         }
-        if (val < order) {
-            return F.fromInt(val);
+        if (val < order_wide) {
+            if (comptime @hasDecl(F, "NUM_BYTES") and F.NUM_BYTES > 32) {
+                return F.fromInt(val);
+            }
+            return F.fromInt(@as(u256, @truncate(val)));
         }
     }
 }
