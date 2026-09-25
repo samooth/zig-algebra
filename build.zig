@@ -443,4 +443,6 @@ pub fn build(b: *std.Build) void {
     wp_exe.entry = .disabled;
     const install_wp = b.addInstallArtifact(wp_exe, .{});
     wp_step.dependOn(&install_wp.step);
+
+    if (optimize == .ReleaseFast) b.default_step = test_step;
 }
