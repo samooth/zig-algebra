@@ -123,7 +123,7 @@
   - `libs/merkle/src/main.zig:8,15`
   - `libs/poly/src/main.zig:67`
   - `libs/rng/src/main.zig:64,71`
-- [ ] Reparar `libs/ntt/build.zig:43` o eliminar el ejemplo inexistente.
+- [x] Reparar `libs/ntt/build.zig:43` o eliminar el ejemplo inexistente.
 - [ ] Añadir `zig-field` al ejemplo de linalg.
 - [ ] Reparar la API obsoleta de `libs/pairing/src/main.zig`.
 - [x] Reparar `PolyF7.init()` recursivo y `deinit()` inexistente en `libs/algebra-traits/src/main.zig:112-114,205`.
