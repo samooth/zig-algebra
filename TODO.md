@@ -141,7 +141,7 @@
 - [x] Actualizar `docs/architecture.md:5` y `DESIGN.md:142` de 14 a 17 librerías.
 - [x] Actualizar READMEs de FRI, KZG y parallel.
 - [ ] Añadir vectores oficiales de Blake2, Keccak/SHA3, Poseidon, MiMC y field.
-- [ ] Marcar explícitamente qué APIs son production, demo o experimentales.
+- [x] Marcar explícitamente qué APIs son production, demo o experimentales.
 
 ## Criterios de cierre
 

@@ -79,6 +79,18 @@ kzg                   (→ field, curve, pairing)
 > The standalone counts above are the current per-library totals. The root
 > `zig build test` suite currently executes 313 tests.
 
+## API Status
+
+| Status | Libraries and APIs |
+|--------|--------------------|
+| **Production candidate** | `algebra-traits`, `bigint`, `field`, `curve`, `hash`, `rng`, `transcript`, `merkle`, `ntt`, `poly`, `linalg`, `parallel`, `serialization` |
+| **Security-sensitive / experimental** | `binary-field`, `pairing`, `fri`, `kzg`; review `SECURITY.md`, threat models, and deployment parameters before use |
+| **Demo only** | Files under `examples/` and library `main.zig` programs; they are not protocol implementations or audited deployments |
+
+“Production candidate” means covered by the repository tests and compatibility
+checks; it does not claim an independent cryptographic audit or constant-time
+guarantee.
+
 ## Quick Start
 
 Each library can be used independently via path dependencies:
