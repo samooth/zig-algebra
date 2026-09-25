@@ -698,7 +698,7 @@ test "bn254_tower: cyclotomicSqr matches generic sqr" {
     try testing.expect(cyclotomicSqr(easy).eql(easy.sqr()));
 }
 
-test "bn254_tower: DEBUG window4 == binary" {
+test "bn254_tower: window4 exponentiation matches binary" {
     const g1 = zc.bn254.G1_generator;
     const g2 = zc.bn254.G2_generator;
     const f = millerDense(g1, g2);
@@ -706,10 +706,10 @@ test "bn254_tower: DEBUG window4 == binary" {
     const easy = fp6.mul(f.inv());
     const a = powByLimbsCyclo(easy, &HARD_PART_LIMBS);
     const b = powByLimbsWindow4(easy, &HARD_PART_LIMBS);
-    std.debug.print("\nWIN4==BIN: {}\n", .{a.eql(b)});
+    try testing.expect(a.eql(b));
 }
 
-test "bn254_tower: BISECT addition-step line ratio" {
+test "bn254_tower: sparse addition line ratio has no w component" {
     const g1 = zc.bn254.G1_generator;
     const g2 = zc.bn254.G2_generator;
 
@@ -720,7 +720,7 @@ test "bn254_tower: BISECT addition-step line ratio" {
 
     const n = g2.y.sub(tq.y);
     const d = g2.x.sub(tq.x);
-    var sparse = mulByLine(Fp12T.one(), Fp2.fromBase(g1.y).mul(d), n.neg().mul(Fp2.fromBase(g1.x)), n.mul(tq.x).sub(d.mul(tq.y)));
+    const sparse = mulByLine(Fp12T.one(), Fp2.fromBase(g1.y).mul(d), n.neg().mul(Fp2.fromBase(g1.x)), n.mul(tq.x).sub(d.mul(tq.y)));
 
     const embT = embedTwist(tq.x, tq.y);
     var Px = Fp12T.zero();
@@ -730,26 +730,22 @@ test "bn254_tower: BISECT addition-step line ratio" {
     const dense = lineFunc(embT, embedTwist(g2.x, g2.y), .{ .X = Px, .Y = Py });
 
     const ratio = sparse.mul(dense.inv());
-    std.debug.print("\nADD-STEP ratio in Fp6 (c1==0): {}\n", .{ratio.c1.isZero()});
+    try testing.expect(ratio.c1.isZero());
 }
 
-test "bn254_tower: BISECT psi-commutes with group ops" {
+test "bn254_tower: twist embedding commutes with doubling" {
     const g2 = zc.bn254.G2_generator;
     // walk several multiples to hit generic points
     var t = TwistAffine{ .x = g2.x, .y = g2.y };
     const emb0 = embedTwist(g2.x, g2.y);
     var emb = emb0;
-    var ok = true;
     for (0..8) |_| {
         t = twistDbl(t);
         emb = denseDouble(emb);
         const e2 = embedTwist(t.x, t.y);
-        if (!e2.X.eql(emb.X) or !e2.Y.eql(emb.Y)) {
-            ok = false;
-            break;
-        }
+        try testing.expect(e2.X.eql(emb.X));
+        try testing.expect(e2.Y.eql(emb.Y));
     }
-    std.debug.print("\nPSI-COMM dbl: {}\n", .{ok});
 }
 
 test "bn254_tower: known-answer vs py_ecc reference" {
