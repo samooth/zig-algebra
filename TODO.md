@@ -77,8 +77,8 @@
 ### Pairings, KZG y WASM
 
 - [x] Implementar `Fp6.inv` correctamente (`libs/pairing/src/root.zig:123-127`).
-- [ ] Unificar la API de BN254: `bn254.zig`, `bn254_direct.zig` y `bn254_tower.zig`.
-- [ ] Añadir KAT EIP-197 al path BN254 que sea público.
+- [x] Unificar la API de BN254: `bn254_tower_pairing` es la ruta canónica y las implementaciones legacy/direct quedan explícitas.
+- [x] Añadir KAT EIP-197 al path BN254 público mediante el KAT existente en `bn254_tower.zig`.
 - [x] Manejar correctamente el punto infinito en KZG (`libs/kzg/src/root.zig:189-196`).
 - [x] Rechazar polinomios vacíos y commitments/witness inválidos.
 - [ ] Añadir subgroup checks a pairing y WASM.

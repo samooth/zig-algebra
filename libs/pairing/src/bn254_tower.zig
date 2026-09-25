@@ -53,6 +53,12 @@ pub const ZETA: Fp2 = OMEGA.sqr();
 
 pub const Fp6T = tower.Fp6(Fp2, GAMMA);
 pub const Fp12T = tower.Fp12(Fp6T);
+pub const Fp6 = Fp6T;
+pub const Fp12 = Fp12T;
+pub const Fr = zc.bn254.Fr;
+pub const G1Point = zc.bn254.G1;
+pub const G2Point = zc.bn254.G2;
+pub const gt_one = Fp12T.one();
 
 // ---------------------------------------------------------------------------
 // Sparse helpers (internal)
@@ -150,6 +156,10 @@ fn ecAdd12(Ap: EmbPoint, Bp: EmbPoint) EmbPoint {
 
 /// Optimal ate Miller loop returning the exact rational gnum/gden.
 pub const NumDen = struct { num: Fp12T, den: Fp12T };
+
+pub fn millerLoop(p: G1Point, q: G2Point) Fp12T {
+    return millerLoopPair(p, q).num;
+}
 
 pub fn millerLoopPair(p: zc.bn254.G1, q: zc.bn254.G2) NumDen {
     return millerLoopPairOpt(p, q, true);
