@@ -231,10 +231,41 @@ pub fn Ipa(comptime F: type) type {
             commitment: F,
             proof: *const Proof,
         ) !void {
-            _ = self;
-            _ = commitment;
-            _ = proof;
-            return error.Unsupported;
+            if (proof.l.len != proof.r.len) return error.InvalidProof;
+            const log_n = proof.l.len;
+            if (log_n >= @bitSizeOf(usize)) return error.InvalidProof;
+            if (self.n != (@as(usize, 1) << @intCast(log_n))) return error.InvalidProof;
+
+            var g_current = try self.allocator.alloc(F, self.n);
+            defer self.allocator.free(g_current);
+            @memcpy(g_current, self.g);
+            var h_current = try self.allocator.alloc(F, self.n);
+            defer self.allocator.free(h_current);
+            @memcpy(h_current, self.h);
+
+            var current = commitment;
+            var n = self.n;
+            for (0..log_n) |round| {
+                const x = challenge(proof.l[round], proof.r[round], round);
+                if (x.isZero()) return error.InvalidProof;
+                const x_inv = x.inv();
+                const x_sq = x.mul(x);
+                const x_inv_sq = x_inv.mul(x_inv);
+                current = current.add(proof.l[round].mul(x_sq));
+                current = current.add(proof.r[round].mul(x_inv_sq));
+
+                const half = n / 2;
+                for (0..half) |i| {
+                    g_current[i] = g_current[i].mul(x_inv).add(g_current[half + i].mul(x));
+                    h_current[i] = h_current[i].mul(x).add(h_current[half + i].mul(x_inv));
+                }
+                n = half;
+            }
+
+            const expected = proof.a0.mul(g_current[0])
+                .add(proof.b0.mul(h_current[0]))
+                .add(proof.a0.mul(proof.b0).mul(self.u));
+            if (!current.eql(expected)) return error.VerificationFailed;
         }
 
         // -- Helpers ---------------------------------------------------------

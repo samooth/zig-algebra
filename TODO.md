@@ -64,8 +64,8 @@
 ### IPA, Merkle y serialización
 
 - [x] Marcar explícitamente `Ipa.verify` como no disponible hasta corregir su verifier (`libs/field/src/ipa.zig:220-274`).
-- [x] Marcar `Ipa.verifyWithCommitment` como no disponible hasta corregir sus desafíos posicionales (`libs/field/src/ipa.zig:276-346`).
-- [ ] Reactivar los tests IPA actualmente desactivados (`libs/field/tests/ipa_test.zig:4-17`).
+- [x] Corregir `verifyWithCommitment` usando los desafíos de cada ronda (`libs/field/src/ipa.zig:228-282`).
+- [x] Reactivar los tests IPA actualmente desactivados (`libs/field/tests/ipa_test.zig:4-17`).
 - [x] Hacer que `MerkleTree.verify` vincule el índice al path (`libs/merkle/src/merkle_tree.zig:210-248`).
 - [x] Hacer coherentes root, leaf count y proofs de MMR (`libs/merkle/src/mmr.zig:140-232`).
 - [x] Hacer que `SparseMerkleTree` soporte realmente profundidad 256 (`libs/merkle/src/sparse_merkle.zig:30-44,75-112`).
