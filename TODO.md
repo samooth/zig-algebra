@@ -124,7 +124,7 @@
   - `libs/poly/src/main.zig:67`
   - `libs/rng/src/main.zig:64,71`
 - [x] Reparar `libs/ntt/build.zig:43` o eliminar el ejemplo inexistente.
-- [ ] Añadir `zig-field` al ejemplo de linalg.
+- [x] Añadir `zig-field` al ejemplo de linalg.
 - [ ] Reparar la API obsoleta de `libs/pairing/src/main.zig`.
 - [x] Reparar `PolyF7.init()` recursivo y `deinit()` inexistente en `libs/algebra-traits/src/main.zig:112-114,205`.
 - [x] Añadir `isZero` al F7 del ejemplo de hash.
