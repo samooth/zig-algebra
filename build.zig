@@ -26,6 +26,10 @@ fn lib(
         mod.addImport(imp[0], imp[1]);
         test_module.addImport(imp[0], imp[1]);
     }
+    if (target.result.os.tag == .windows and std.mem.eql(u8, module_name, "zig-rng")) {
+        mod.linkSystemLibrary("bcrypt", .{});
+        test_module.linkSystemLibrary("bcrypt", .{});
+    }
     const tests = b.addTest(.{
         .name = module_name ++ "-tests",
         .root_module = test_module,

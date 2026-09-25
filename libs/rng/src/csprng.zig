@@ -8,6 +8,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const posix = std.posix;
+const windows = std.os.windows;
+
+extern "bcrypt" fn BCryptGenRandom(
+    algorithm: windows.HANDLE,
+    buffer: [*]u8,
+    buffer_len: u32,
+    flags: u32,
+) windows.NTSTATUS;
 
 /// Thread-safe, process-wide ChaCha20 CSPRNG seeded from the OS.
 var csprng: std.Random.DefaultCsprng = undefined;
@@ -121,7 +129,14 @@ fn osEntropy(out: []u8) void {
         return;
     }
     if (builtin.os.tag == .windows) {
-        @panic("secure entropy unavailable: no Windows getrandom binding");
+        var offset: usize = 0;
+        while (offset < out.len) {
+            const chunk: usize = @min(out.len - offset, std.math.maxInt(u32));
+            const status = BCryptGenRandom(null, out.ptr + offset, @intCast(chunk), 0x00000002);
+            if (status != .SUCCESS) @panic("secure entropy unavailable");
+            offset += chunk;
+        }
+        return;
     }
     const file = std.fs.openFileAbsolute("/dev/urandom", .{}) catch @panic("secure entropy unavailable");
     defer file.close();
