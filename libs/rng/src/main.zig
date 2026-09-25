@@ -80,7 +80,7 @@ pub fn main() !void {
     try stdout.print("random u64:  {}\n", .{chacha.randomU64()});
     try stdout.print("random u32:  {}\n", .{chacha.randomU32()});
     try stdout.print("random bool: {}\n", .{chacha.randomBool()});
-    try stdout.print("bounded [0,100): {}\n", .{chacha.randomU64Bounded(100)});
+    try stdout.print("bounded [0,100): {}\n", .{try chacha.randomU64Bounded(100)});
 
     var buf: [32]u8 = undefined;
     chacha.randomBytes(&buf);
@@ -107,7 +107,7 @@ pub fn main() !void {
     try stdout.print("\n--- Fisher-Yates shuffle ---\n", .{});
     var chacha2 = rng.ChaCha20Rng.initFromSeed(&seed);
     var deck = [_]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-    rng.shuffle(u8, rng.ChaCha20Rng, &chacha2, &deck);
+    try rng.shuffle(u8, rng.ChaCha20Rng, &chacha2, &deck);
     try stdout.print("shuffled deck: ", .{});
     for (deck) |c| try stdout.print("{} ", .{c});
     try stdout.print("\n", .{});
