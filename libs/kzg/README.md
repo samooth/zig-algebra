@@ -2,6 +2,11 @@
 
 Kate-Zaverucha-Goldberg (KZG) polynomial commitments over BN254. Uses verified optimal ate pairing and Pippenger MSM from the zig-algebra ecosystem.
 
+> **Status:** development and test API. The pairing and curve paths have
+> subgroup and encoding checks, but the built-in setup is synthetic. Do not use
+> `Setup.generate` for production; use a verified powers-of-tau transcript and
+> validate all external points and encodings at the protocol boundary.
+
 ## Features
 
 - **Polynomial commitments** — commit to polynomial via `[τ^i]G1` trusted setup
@@ -37,7 +42,7 @@ const allocator = std.heap.page_allocator;
 
 // Generate synthetic trusted setup (TEST ONLY — use proper ceremony for production)
 var setup = try zk.Setup.generate(allocator, zk.Fr.fromInt(42), 16);
-defer setup.deinit();
+defer setup.deinit(allocator);
 
 // Polynomial: p(x) = 2 + x + 3x^2
 const coeffs = [_]zk.Fr{ zk.Fr.fromInt(2), zk.Fr.fromInt(1), zk.Fr.fromInt(3) };
@@ -47,11 +52,10 @@ const commitment = try zk.commit(&setup, allocator, &coeffs);
 
 // Open at z = 5
 const z = zk.Fr.fromInt(5);
-const proof = try zk.prove(&setup, allocator, &coeffs, z);
-defer {} // witness is a value copy
+const opening = try zk.prove(&setup, allocator, &coeffs, z);
 
 // Verify: e(C - [y]G1, [τ]G2) == e(W, G2)
-const ok = zk.verify(&setup, commitment, z, proof.y, proof.witness);
+const ok = zk.verify(&setup, commitment, z, opening.y, opening.witness);
 try std.testing.expect(ok);
 ```
 

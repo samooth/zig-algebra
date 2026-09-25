@@ -139,7 +139,7 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
 
 ## Semantic Versioning
 
-- v0.1.0: Initial release — all 14 libs with verified tests
+- v0.1.0: Initial release — all 17 libs with verified tests
 - Future: bump MAJOR on breaking API changes, MINOR on new features
 
 ## BN254 optimal ate pairing (tower) — algorithm notes
