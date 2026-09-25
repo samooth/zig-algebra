@@ -1,6 +1,6 @@
 .{
     .name = .zig_linalg,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0x9ef4514e780f2af7,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{

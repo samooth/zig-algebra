@@ -1,6 +1,6 @@
 .{
     .name = .zig_pairing,
-    .version = "0.1.0",
+    .version = "0.3.0",
     .fingerprint = 0xfb86aaa4a01a5e5c,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{

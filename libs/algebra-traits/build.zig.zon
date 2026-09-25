@@ -1,6 +1,6 @@
 .{
     .name = .zig_algebra_traits,
-    .version = "0.1.0",
+    .version = "0.2.0",
     .fingerprint = 0xdf27aba32e2a53ca,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
