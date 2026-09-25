@@ -34,6 +34,18 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
         const Multilinear = Polynomial.Multilinear(E);
         const SC = SumcheckMod.Sumcheck(E);
 
+        fn checkedTableLen(k: usize) !usize {
+            if (k >= @bitSizeOf(usize)) return error.InvalidArity;
+            return @as(usize, 1) << @intCast(k);
+        }
+
+        fn validateInputs(k: usize, table_len: usize, r: []const E) !usize {
+            const n = try checkedTableLen(k);
+            if (r.len != k) return error.InvalidPointLength;
+            if (table_len != n) return error.InvalidTableLength;
+            return n;
+        }
+
         pub const Proof = struct {
             value: E,
             sumcheck: SC.Proof,
@@ -54,7 +66,9 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
         /// Deterministic transcript seed binding the query point `r`. The
         /// point is hashed (Blake3) so the seed has fixed size regardless of
         /// the extension degree and number of variables.
-        pub fn seedFor(k: usize, r: []const E) [32]u8 {
+        pub fn seedFor(k: usize, r: []const E) ![32]u8 {
+            if (k >= @bitSizeOf(usize)) return error.InvalidArity;
+            if (r.len != k) return error.InvalidPointLength;
             var h = std.crypto.hash.Blake3.init(.{});
             h.update("zig-stark:mle-seed");
             var b: [E.SIZE]u8 = undefined;
@@ -75,13 +89,17 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
             k: usize,
             r: []const E,
         ) ![][]E {
-            std.debug.assert(r.len == k);
-            const n = @as(usize, 1) << @intCast(k);
+            if (r.len != k) return error.InvalidPointLength;
+            const n = try checkedTableLen(k);
             const tables = try allocator.alloc([]E, k);
-            errdefer allocator.free(tables);
+            var initialized: usize = 0;
+            errdefer {
+                for (tables[0..initialized]) |table| allocator.free(table);
+                allocator.free(tables);
+            }
             for (0..k) |j| {
                 tables[j] = try allocator.alloc(E, n);
-                errdefer allocator.free(tables[j]);
+                initialized += 1;
                 const rj = r[j];
                 for (0..n) |i| {
                     const bit: u8 = @intFromBool((i >> @intCast(j)) & 1 == 1);
@@ -114,8 +132,8 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
             table: []const F,
             r: []const E,
         ) !EvalSumcheck {
-            std.debug.assert(table.len == (@as(usize, 1) << @intCast(k)));
-            const e = try allocator.alloc(E, table.len);
+            const n = try validateInputs(k, table.len, r);
+            const e = try allocator.alloc(E, n);
             defer allocator.free(e);
             for (table, 0..) |v, i| e[i] = lift(v);
 
@@ -133,7 +151,7 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
             tables[0] = e;
             for (0..k) |j| tables[j + 1] = kt[j];
 
-            const seed = seedFor(k, r);
+            const seed = try seedFor(k, r);
             const sp = try SC.proveSeeded(allocator, k, tables, &seed);
             return .{ .value = value, .sumcheck = sp };
         }
@@ -160,8 +178,8 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
             r: []const E,
             proof: Proof,
         ) !bool {
-            std.debug.assert(table.len == (@as(usize, 1) << @intCast(k)));
-            const e = try allocator.alloc(E, table.len);
+            const n = try validateInputs(k, table.len, r);
+            const e = try allocator.alloc(E, n);
             defer allocator.free(e);
             for (table, 0..) |v, i| e[i] = lift(v);
 
@@ -176,7 +194,7 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
             tables[0] = e;
             for (0..k) |j| tables[j + 1] = kt[j];
 
-            const seed = seedFor(k, r);
+            const seed = try seedFor(k, r);
             const ok = try SC.verifySeeded(allocator, k, tables, proof.sumcheck, &seed);
             if (!ok) return false;
 
@@ -210,6 +228,17 @@ pub fn CommittedMlePcs(comptime F: type, comptime E: type) type {
         const Blake3 = CoreHash.Blake3;
         const MerkleTree = CoreMerkle.MerkleTree(Blake3);
         const MerkleVerify = CoreMerkle.verify;
+
+        fn checkedTableLen(k: usize) !usize {
+            if (k >= @bitSizeOf(usize)) return error.InvalidArity;
+            return @as(usize, 1) << @intCast(k);
+        }
+
+        fn validateInputs(k: usize, r: []const E) !usize {
+            const n = try checkedTableLen(k);
+            if (r.len != k) return error.InvalidPointLength;
+            return n;
+        }
 
         pub const Proof = struct {
             value: E,
@@ -255,19 +284,25 @@ pub fn CommittedMlePcs(comptime F: type, comptime E: type) type {
             table: []const F,
             r: []const E,
         ) !Proof {
-            const n = @as(usize, 1) << @intCast(k);
-            std.debug.assert(table.len == n);
-            const es = try M.evalSumcheck(allocator, k, table, r);
+            const n = try validateInputs(k, r);
+            if (table.len != n) return error.InvalidTableLength;
+            var es = try M.evalSumcheck(allocator, k, table, r);
+            errdefer es.sumcheck.deinit(allocator);
 
             var tree = try commit(allocator, table);
             defer tree.deinit();
             const paths = try allocator.alloc([]Hash.Digest, n);
-            errdefer allocator.free(paths);
+            var paths_initialized: usize = 0;
+            errdefer {
+                for (paths[0..paths_initialized]) |path| allocator.free(path);
+                allocator.free(paths);
+            }
             for (0..n) |i| {
                 const proof = try tree.prove(i, allocator);
                 defer proof.deinit(allocator);
                 // Copy const siblings to mutable slice
                 paths[i] = try allocator.alloc(Hash.Digest, proof.siblings.len);
+                paths_initialized += 1;
                 @memcpy(paths[i], proof.siblings);
             }
 
@@ -289,11 +324,18 @@ pub fn CommittedMlePcs(comptime F: type, comptime E: type) type {
             r: []const E,
             proof: Proof,
         ) !bool {
-            const n = @as(usize, 1) << @intCast(k);
+            const n = try validateInputs(k, r);
             if (proof.entries.len != n or proof.paths.len != n) return false;
             if (proof.sumcheck.rounds.len != k) return false;
+            const coefficient_count = k + 2;
+            for (proof.sumcheck.rounds) |coeffs| {
+                if (coeffs.len != coefficient_count) return false;
+            }
+            for (proof.paths) |path| {
+                if (path.len != k) return false;
+            }
 
-            const seed = M.seedFor(k, r);
+            const seed = try M.seedFor(k, r);
             const rr = (try SC.runRounds(allocator, &seed, proof.sumcheck.claimed_sum, proof.sumcheck.rounds)) orelse return false;
             defer allocator.free(rr.challenges);
 
@@ -567,4 +609,38 @@ test "extension committed pcs round trips for k=1..4" {
         defer proof.deinit(alloc);
         try std.testing.expect(try CPe.verifyEval(alloc, root, k, r[0..k], proof));
     }
+}
+
+test "MlePcs rejects malformed dimensions and points" {
+    const alloc = std.testing.allocator;
+    const table = [_]Gf16{ fe(1), fe(2), fe(3), fe(4), fe(5), fe(6), fe(7), fe(8) };
+    const r = [_]Gf16{ fe(3), fe(7), fe(1) };
+    const short_table = table[0..1];
+    try std.testing.expectError(error.InvalidTableLength, P.proveEval(alloc, 3, short_table, &r));
+    try std.testing.expectError(error.InvalidPointLength, P.proveEval(alloc, 3, &table, r[0..2]));
+    try std.testing.expectError(error.InvalidArity, P.proveEval(alloc, @bitSizeOf(usize), &table, &r));
+    try std.testing.expectError(error.InvalidPointLength, P.seedFor(2, r[0..1]));
+    try std.testing.expectError(error.InvalidPointLength, P.kernelTables(alloc, 2, r[0..1]));
+    try std.testing.expectError(error.InvalidPointLength, CP.proveEval(alloc, 3, &table, r[0..2]));
+}
+
+fn proveMleWithAllocator(allocator: std.mem.Allocator) !void {
+    const table = [_]Gf16{ fe(1), fe(2), fe(3), fe(4), fe(5), fe(6), fe(7), fe(8) };
+    const r = [_]Gf16{ fe(3), fe(7), fe(1) };
+    var proof = try P.proveEval(allocator, 3, &table, &r);
+    defer proof.deinit(allocator);
+}
+
+fn proveCommittedWithAllocator(allocator: std.mem.Allocator) !void {
+    const table = [_]Gf16{ fe(1), fe(2), fe(3), fe(4), fe(5), fe(6), fe(7), fe(8) };
+    const r = [_]Gf16{ fe(3), fe(7), fe(1) };
+    var tree = try CP.commit(allocator, &table);
+    defer tree.deinit();
+    var proof = try CP.proveEval(allocator, 3, &table, &r);
+    defer proof.deinit(allocator);
+}
+
+test "MlePcs cleans up all allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, proveMleWithAllocator, .{});
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, proveCommittedWithAllocator, .{});
 }

@@ -22,6 +22,20 @@ pub fn Sumcheck(comptime F: type) type {
         const Self = @This();
         const Sha256 = std.crypto.hash.sha2.Sha256;
         const Multilinear = Polynomial.Multilinear(F);
+        const MAX_INTERPOLATION_POINTS: usize = 64;
+
+        fn checkedTableLen(k: usize) !usize {
+            if (k >= @bitSizeOf(usize)) return error.InvalidArity;
+            return @as(usize, 1) << @intCast(k);
+        }
+
+        fn validateTables(k: usize, tables: []const []const F) !usize {
+            const n = try checkedTableLen(k);
+            for (tables) |table| {
+                if (table.len != n) return error.InvalidTableLength;
+            }
+            return n;
+        }
 
         pub const Proof = struct {
             claimed_sum: F,
@@ -126,9 +140,14 @@ pub fn Sumcheck(comptime F: type) type {
             points: []const F,
             values: []const F,
         ) ![]F {
-            std.debug.assert(points.len == values.len);
+            if (points.len != values.len) return error.InvalidLength;
             const n = points.len;
-            std.debug.assert(n <= 64);
+            if (n > MAX_INTERPOLATION_POINTS) return error.DegreeTooLarge;
+            for (points, 0..) |point, i| {
+                for (points[0..i]) |previous| {
+                    if (point.eq(previous)) return error.DuplicatePoint;
+                }
+            }
 
             const coeffs = try allocator.alloc(F, n);
             errdefer allocator.free(coeffs);
@@ -237,27 +256,40 @@ pub fn Sumcheck(comptime F: type) type {
             seed: ?[]const u8,
             pool: ?*const Pool,
         ) !Proof {
-            const n = @as(usize, 1) << @intCast(k);
-            for (tables) |t| std.debug.assert(t.len == n);
+            const n = try validateTables(k, tables);
             var dmax: usize = 0;
-            for (terms) |tm| dmax = @max(dmax, tm.indices.len);
-            std.debug.assert(dmax + 1 <= 64);
+            for (terms) |tm| {
+                for (tm.indices) |index| {
+                    if (index >= tables.len) return error.InvalidTableIndex;
+                }
+                if (tm.indices.len >= MAX_INTERPOLATION_POINTS) return error.DegreeTooLarge;
+                dmax = @max(dmax, tm.indices.len);
+            }
 
             const h = computeCombinationSum(n, tables, terms);
             var transcript = if (seed) |s| Transcript.initBytes(s) else Transcript.init(h);
 
             const m = tables.len;
             var cur = try allocator.alloc([]F, m);
-            defer allocator.free(cur);
+            var initialized: usize = 0;
+            defer {
+                for (cur[0..initialized]) |ct| allocator.free(ct);
+                allocator.free(cur);
+            }
             for (0..m) |j| {
                 cur[j] = try allocator.dupe(F, tables[j]);
-            }
-            defer {
-                for (cur) |ct| allocator.free(ct);
+                initialized += 1;
             }
 
             const rounds = try allocator.alloc([]F, k);
-            errdefer allocator.free(rounds);
+            var rounds_initialized: usize = 0;
+            var rounds_owned = false;
+            defer {
+                if (!rounds_owned) {
+                    for (rounds[0..rounds_initialized]) |coeffs| allocator.free(coeffs);
+                    allocator.free(rounds);
+                }
+            }
 
             var len = n;
             var i: usize = 0;
@@ -305,12 +337,14 @@ pub fn Sumcheck(comptime F: type) type {
                     // reduced afterwards.
                     const nw = @min(p.num_workers, half);
                     const partials = try allocator.alloc([]F, nw);
+                    var partials_initialized: usize = 0;
                     defer {
-                        for (partials) |pt| allocator.free(pt);
+                        for (partials[0..partials_initialized]) |pt| allocator.free(pt);
                         allocator.free(partials);
                     }
                     for (partials) |*pt| {
                         pt.* = try allocator.alloc(F, dmax + 1);
+                        partials_initialized += 1;
                         @memset(pt.*, F.zero());
                     }
                     const chunk = (half + nw - 1) / nw;
@@ -375,6 +409,7 @@ pub fn Sumcheck(comptime F: type) type {
 
                 const coeffs = try interpolateCoeffs(allocator, points, values);
                 rounds[i] = coeffs;
+                rounds_initialized += 1;
 
                 const r_i = transcript.absorb(coeffs);
                 for (cur) |ct| {
@@ -387,6 +422,7 @@ pub fn Sumcheck(comptime F: type) type {
                 len = half;
             }
 
+            rounds_owned = true;
             return .{ .claimed_sum = h, .rounds = rounds };
         }
 
@@ -448,6 +484,7 @@ pub fn Sumcheck(comptime F: type) type {
 
             const bytes = try hook(allocator, cur_flat, len, m, coeffs, indices, offsets, dmax, half);
             if (bytes) |bv| {
+                errdefer allocator.free(bv);
                 const out = try allocator.alloc(F, dmax + 1);
                 for (0..dmax + 1) |t| {
                     const v: u128 = if (bytes_per_value == 1)
@@ -480,24 +517,32 @@ pub fn Sumcheck(comptime F: type) type {
             seed: ?[]const u8,
         ) !Proof {
             const m = tables.len;
-            const n = @as(usize, 1) << @intCast(k);
-            for (tables) |t| std.debug.assert(t.len == n);
-            std.debug.assert(m + 1 <= 64);
+            const n = try validateTables(k, tables);
+            if (m >= MAX_INTERPOLATION_POINTS) return error.DegreeTooLarge;
 
             const h = computeClaimedSum(n, tables);
             var transcript = if (seed) |s| Transcript.initBytes(s) else Transcript.init(h);
 
             var cur = try allocator.alloc([]F, m);
-            defer allocator.free(cur);
+            var initialized: usize = 0;
+            defer {
+                for (cur[0..initialized]) |ct| allocator.free(ct);
+                allocator.free(cur);
+            }
             for (0..m) |j| {
                 cur[j] = try allocator.dupe(F, tables[j]);
-            }
-            defer {
-                for (cur) |ct| allocator.free(ct);
+                initialized += 1;
             }
 
             const rounds = try allocator.alloc([]F, k);
-            errdefer allocator.free(rounds);
+            var rounds_initialized: usize = 0;
+            var rounds_owned = false;
+            defer {
+                if (!rounds_owned) {
+                    for (rounds[0..rounds_initialized]) |coeffs| allocator.free(coeffs);
+                    allocator.free(rounds);
+                }
+            }
 
             var len = n;
             var i: usize = 0;
@@ -526,6 +571,7 @@ pub fn Sumcheck(comptime F: type) type {
 
                 const coeffs = try interpolateCoeffs(allocator, points, values);
                 rounds[i] = coeffs;
+                rounds_initialized += 1;
 
                 const r_i = transcript.absorb(coeffs);
                 for (cur) |ct| {
@@ -538,6 +584,7 @@ pub fn Sumcheck(comptime F: type) type {
                 len = half;
             }
 
+            rounds_owned = true;
             return .{ .claimed_sum = h, .rounds = rounds };
         }
 
@@ -561,8 +608,8 @@ pub fn Sumcheck(comptime F: type) type {
             seed: ?[]const u8,
         ) !bool {
             const m = tables.len;
-            const n = @as(usize, 1) << @intCast(k);
-            for (tables) |t| std.debug.assert(t.len == n);
+            _ = try validateTables(k, tables);
+            if (m >= MAX_INTERPOLATION_POINTS) return false;
             if (proof.rounds.len != k) return false;
             for (proof.rounds) |coeffs| {
                 if (coeffs.len != m + 1) return false;
@@ -797,4 +844,47 @@ test "GpuMode off/auto/on control the accelerator hook" {
     Accel.mode = .on;
     Accel.gf256_values = null;
     try std.testing.expectError(error.GpuUnavailable, T256.proveCombination(alloc, 2, &tables, &terms, null));
+}
+
+test "sumcheck rejects malformed dimensions, points, and indices" {
+    const alloc = std.testing.allocator;
+    const t0 = [_]Gf16{ fe(1), fe(2), fe(3), fe(4) };
+    const short_table = [_]Gf16{fe(1)};
+    const tables = [_][]const Gf16{&t0};
+    const short_tables = [_][]const Gf16{&short_table};
+    try std.testing.expectError(error.InvalidTableLength, T.prove(alloc, 2, &short_tables));
+    try std.testing.expectError(error.InvalidArity, T.prove(alloc, @bitSizeOf(usize), &tables));
+
+    const mismatched_points = [_]Gf16{ fe(0), fe(1) };
+    const mismatched_values = [_]Gf16{fe(1)};
+    try std.testing.expectError(error.InvalidLength, T.interpolateCoeffs(alloc, &mismatched_points, &mismatched_values));
+    const duplicate_points = [_]Gf16{ fe(2), fe(2) };
+    const duplicate_values = [_]Gf16{ fe(3), fe(4) };
+    try std.testing.expectError(error.DuplicatePoint, T.interpolateCoeffs(alloc, &duplicate_points, &duplicate_values));
+
+    const bad_index_terms = [_]T.Term{.{ .coeff = fe(1), .indices = &.{1} }};
+    try std.testing.expectError(error.InvalidTableIndex, T.proveCombination(alloc, 2, &tables, &bad_index_terms, null));
+    const too_many_indices = [_]usize{0} ** 64;
+    const bad_degree_terms = [_]T.Term{.{ .coeff = fe(1), .indices = &too_many_indices }};
+    try std.testing.expectError(error.DegreeTooLarge, T.proveCombination(alloc, 2, &tables, &bad_degree_terms, null));
+}
+
+fn proveWithAllocator(allocator: std.mem.Allocator) !void {
+    const t0 = [_]Gf16{ fe(1), fe(2), fe(3), fe(4) };
+    const tables = [_][]const Gf16{&t0};
+    var proof = try T.prove(allocator, 2, &tables);
+    defer proof.deinit(allocator);
+}
+
+fn proveCombinationWithAllocator(allocator: std.mem.Allocator) !void {
+    const t0 = [_]Gf16{ fe(1), fe(2), fe(3), fe(4) };
+    const tables = [_][]const Gf16{&t0};
+    const terms = [_]T.Term{.{ .coeff = fe(2), .indices = &.{0} }};
+    var proof = try T.proveCombination(allocator, 2, &tables, &terms, null);
+    defer proof.deinit(allocator);
+}
+
+test "sumcheck cleans up all allocation failures" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, proveWithAllocator, .{});
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, proveCombinationWithAllocator, .{});
 }
