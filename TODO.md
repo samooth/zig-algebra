@@ -91,7 +91,7 @@
 
 ### Constant-time y seguridad de entradas
 
-- [ ] Eliminar ramas dependientes de secretos en `Montgomery.add/sub/mul` (`libs/field/src/montgomery.zig:167-213,225-274`).
+- [x] Eliminar ramas dependientes de secretos en `Montgomery.add/sub/mul` (`libs/field/src/montgomery.zig:167-213,225-274`).
 - [ ] Revisar las afirmaciones constant-time de `roots.sqrt` (`libs/field/src/roots.zig:64-112`).
 - [ ] Documentar que `scalarMul` no es apto para escalares secretos (`libs/curve/src/weierstrass.zig:72-80,259-265`).
 - [ ] Hacer que `randomFieldElement` funcione con `zig-field` y elimine el buffer fijo de 32 bytes (`libs/rng/src/rng.zig:20-45`).
