@@ -20,6 +20,7 @@ pub const csprng = @import("csprng.zig");
 pub const ChaCha20Rng = chacha20.ChaCha20Rng;
 pub const Shake256Rng = shake256.Shake256Rng;
 pub const RngTrait = rng.RngTrait;
+pub const MAX_REJECTION_ATTEMPTS = rng.MAX_REJECTION_ATTEMPTS;
 pub const randomFieldElement = rng.randomFieldElement;
 pub const randomU64Bounded = rng.randomU64Bounded;
 pub const shuffle = rng.shuffle;
@@ -92,6 +93,13 @@ const F7 = struct {
     }
     pub fn random() Self {
         return fromInt(1);
+    }
+};
+
+const RejectingRng = struct {
+    pub fn randomBytes(self: *@This(), bytes: []u8) void {
+        _ = self;
+        @memset(bytes, 0xff);
     }
 };
 
@@ -208,7 +216,7 @@ test "randomPermutation" {
 test "randomFieldElement F7" {
     var chacha = ChaCha20Rng.initFromSeed(&[_]u8{0x11} ** 32);
     for (0..50) |_| {
-        const f = randomFieldElement(F7, ChaCha20Rng, &chacha);
+        const f = try randomFieldElement(F7, ChaCha20Rng, &chacha);
         try std.testing.expect(f.value < 7);
     }
 }
@@ -230,4 +238,10 @@ test "randomU64Bounded edge cases" {
     try std.testing.expectEqual(@as(u64, 0), try randomU64Bounded(ChaCha20Rng, &chacha, 2));
     try std.testing.expectError(error.InvalidBound, randomU64Bounded(ChaCha20Rng, &chacha, 0));
     try std.testing.expectError(error.InvalidBound, chacha.randomU64Bounded(0));
+}
+
+test "rejection sampling fails after a bounded number of attempts" {
+    var rejecting = RejectingRng{};
+    try std.testing.expectError(error.RejectionSamplingFailed, randomU64Bounded(RejectingRng, &rejecting, 100));
+    try std.testing.expectError(error.RejectionSamplingFailed, randomFieldElement(F7, RejectingRng, &rejecting));
 }

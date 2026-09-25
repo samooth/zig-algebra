@@ -130,7 +130,7 @@ pub fn main() !void {
     var chacha4 = rng.ChaCha20Rng.initFromSeed(&seed);
     std.debug.print("random field elements: ", .{});
     for (0..10) |_| {
-        const f = rng.randomFieldElement(F7, rng.ChaCha20Rng, &chacha4);
+        const f = try rng.randomFieldElement(F7, rng.ChaCha20Rng, &chacha4);
         std.debug.print("{} ", .{f.value});
     }
     std.debug.print("\n", .{});
