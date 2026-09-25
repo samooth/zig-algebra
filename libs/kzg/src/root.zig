@@ -163,6 +163,7 @@ pub fn verify(
     witness: G1,
 ) bool {
     if (!commitment.isOnCurve() or !witness.isOnCurve()) return false;
+    if (!tp.isG1InSubgroup(commitment) or !tp.isG1InSubgroup(witness)) return false;
     const yg1 = toProj(g1MulFr(zc.bn254.G1_generator, y));
     const c_proj = toProj(commitment).add(yg1.neg());
 

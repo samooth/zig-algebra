@@ -60,6 +60,16 @@ pub const G1Point = zc.bn254.G1;
 pub const G2Point = zc.bn254.G2;
 pub const gt_one = Fp12T.one();
 
+const SUBGROUP_ORDER: u512 = @as(u512, zc.bn254.Fr.MODULUS);
+
+pub fn isG1InSubgroup(p: G1Point) bool {
+    return p.infinity or (p.isOnCurve() and p.scalarMul(SUBGROUP_ORDER).infinity);
+}
+
+pub fn isG2InSubgroup(q: G2Point) bool {
+    return q.infinity or (q.isOnCurve() and q.scalarMul(SUBGROUP_ORDER).infinity);
+}
+
 // ---------------------------------------------------------------------------
 // Sparse helpers (internal)
 // ---------------------------------------------------------------------------
@@ -158,6 +168,7 @@ fn ecAdd12(Ap: EmbPoint, Bp: EmbPoint) EmbPoint {
 pub const NumDen = struct { num: Fp12T, den: Fp12T };
 
 pub fn millerLoop(p: G1Point, q: G2Point) Fp12T {
+    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
     return millerLoopPair(p, q).num;
 }
 
@@ -414,6 +425,7 @@ pub fn pairing(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
 /// were missing Miller squarings in the accumulator plus inverted w-slot
 /// signs on chord lines; both fixed.
 pub fn pairingSparse(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
+    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
     return finalExponentiateSplit(millerLoopPair(p, q).num);
 }
 
@@ -421,6 +433,7 @@ pub fn pairingSparse(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
 /// per step) but independently verified bilinear; used in tests to
 /// cross-check `pairing`.
 pub fn pairingDense(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
+    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
     return finalExponentiateSplit(millerDense(p, q));
 }
 
@@ -469,6 +482,12 @@ test "bn254_tower: untwist lands on E(Fp12): y^2 = x^3 + 4" {
 test "bn254_tower: non-degenerate" {
     const e = pairing(zc.bn254.G1_generator, zc.bn254.G2_generator);
     try testing.expect(!e.eql(Fp12T.one()));
+}
+
+test "bn254_tower: rejects off-curve pairing inputs" {
+    const bad_g1 = zc.bn254.G1.generator(Fp.one(), Fp.one());
+    try testing.expect(!isG1InSubgroup(bad_g1));
+    try testing.expect(pairing(bad_g1, zc.bn254.G2_generator).eql(Fp12T.one()));
 }
 
 test "bn254_tower: bilinear small scalars" {
