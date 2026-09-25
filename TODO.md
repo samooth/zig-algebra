@@ -11,9 +11,9 @@
 - [x] `zig build test --summary all` termina correctamente en Debug.
 - [x] `zig build test --summary all -Doptimize=ReleaseFast` termina correctamente.
 - [x] `zig build stark` compila y ejecuta el prover.
-- [ ] `zig build -Doptimize=ReleaseFast` realiza un build real y no un no-op.
+- [x] `zig build -Doptimize=ReleaseFast` realiza un build real y no un no-op.
 - [x] `zig fmt --check` pasa sobre los archivos modificados.
-- [ ] Cada submódulo permite `cd libs/<name> && zig build test`.
+- [x] Cada submódulo permite `cd libs/<name> && zig build test`.
 - [ ] La matriz Linux/macOS/Windows y WASM pasa en CI.
 - [ ] El worktree no contiene artefactos temporales no versionados.
 
@@ -29,13 +29,13 @@
 - [x] Hacer cleanup seguro en errores de `layer_evals`, `residual`, `layers_meta` y `queries` (`libs/fri/src/root.zig:275-279,333-343,441-465`).
 - [x] Actualizar `examples/stark_prover.zig:182-204` a la API v2.
 - [x] Actualizar `libs/fri/README.md:39-78`.
-- [ ] Reconciliar `SECURITY.md:3-55` con la versión real y con una implementación verificada.
+- [x] Reconciliar `SECURITY.md:3-55` con la versión real y con una implementación verificada.
 - [x] Añadir tests de soundness para degree bound, random data, tampering, paths truncados y commitment shape.
 
 ### Constantes y algoritmos criptográficos
 
 - [x] Sustituir el generador BLS12-381 G1 de `libs/curve/src/bls12_381.zig:26-32` por el valor canónico.
-- [ ] Añadir un test que compare el generador con el KAT canónico de `libs/pairing/src/bls12_381.zig:465-468`.
+- [x] Añadir un test que compare el generador con el KAT canónico de `libs/pairing/src/bls12_381.zig:465-468`.
 - [x] Corregir `expandMessageXmd` según RFC 9380 (`libs/curve/src/hash_to_curve.zig:14-42`).
 - [x] Implementar hash-to-field uniforme y encoding de longitud/DST (`libs/curve/src/hash_to_curve.zig:45-71`).
 - [x] Exponer clear cofactor y aplicar el `suite_dst` en `hashToCurveWithCofactor` (`libs/curve/src/hash_to_curve.zig:213-239`).
@@ -146,8 +146,8 @@
 ## Criterios de cierre
 
 - [ ] No existe ningún `TODO` de seguridad critiques sin test de regresión.
-- [ ] `zig build test` pasa sin depender de tests no conectados al build raíz.
-- [ ] `zig build stark`, WASM y ejemplos compilan.
+- [x] `zig build test` pasa sin depender de tests no conectados al build raíz.
+- [x] `zig build stark`, WASM y ejemplos compilan.
 - [ ] Ningún test tarda indefinidamente por rejection sampling.
 - [ ] No hay asserts eliminados en ReleaseFast que dejen pathways fuera de rango.
 - [ ] Los puntos externos validan on-curve, subgroup y encoding.
