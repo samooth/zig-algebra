@@ -128,7 +128,7 @@
 - [x] Reparar la API obsoleta de `libs/pairing/src/main.zig`.
 - [x] Reparar `PolyF7.init()` recursivo y `deinit()` inexistente en `libs/algebra-traits/src/main.zig:112-114,205`.
 - [x] Añadir `isZero` al F7 del ejemplo de hash.
-- [ ] Convertir `zig build -Doptimize=ReleaseFast` en un smoke test real.
+- [x] Convertir `zig build -Doptimize=ReleaseFast` en un smoke test real mediante el step raíz de tests.
 - [x] Ejecutar todos los tests también con `ReleaseFast`.
 
 ### Empaquetado y documentación
