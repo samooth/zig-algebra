@@ -45,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     example_module.addImport("zig-linalg", linalg_mod);
+    example_module.addImport("zig-field", field_mod);
     const example = b.addExecutable(.{
         .name = "linalg-example",
         .root_module = example_module,
