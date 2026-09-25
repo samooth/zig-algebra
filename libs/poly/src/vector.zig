@@ -19,6 +19,7 @@ pub fn inner(comptime T: type, a: []const T, b: []const T) T {
 pub fn powers(comptime T: type, allocator: std.mem.Allocator, base: T, n: usize) ![]T {
     var out = try allocator.alloc(T, n);
     errdefer allocator.free(out);
+    if (n == 0) return out;
     out[0] = T.one();
     for (1..n) |i| out[i] = out[i - 1].mul(base);
     return out;

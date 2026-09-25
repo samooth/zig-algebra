@@ -489,6 +489,17 @@ test "BigField randomBounded" {
     }
 }
 
+test "randomBounded boundary values" {
+    var prng = std.Random.DefaultPrng.init(7);
+    const rnd = prng.random();
+
+    try std.testing.expect(zf.M31.randomBounded(rnd, 1).isZero());
+    for (0..8) |_| {
+        try std.testing.expect(zf.M31.randomBounded(rnd, zf.M31.MODULUS).toInt() < zf.M31.MODULUS);
+        try std.testing.expect(zf.BN254_Fp.randomBounded(rnd, zf.BN254_Fp.MODULUS).toInt() < zf.BN254_Fp.MODULUS);
+    }
+}
+
 test "SmallField isNegative" {
     const F = zf.M31;
     const half = F.MODULUS / 2;

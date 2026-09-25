@@ -26,47 +26,10 @@ const PI = [24]u5{
 };
 
 pub fn keccakF1600(state: *[25]u64) void {
-    var a = state.*;
-    var b: [25]u64 = undefined;
-    var c: [5]u64 = undefined;
-    var d: [5]u64 = undefined;
-
-    for (0..24) |round| {
-        // Theta
-        for (0..5) |x| {
-            c[x] = a[x] ^ a[x + 5] ^ a[x + 10] ^ a[x + 15] ^ a[x + 20];
-        }
-        for (0..5) |x| {
-            d[x] = c[(x + 4) % 5] ^ std.math.rotr(u64, c[(x + 1) % 5], 63);
-        }
-        for (0..25) |i| {
-            a[i] ^= d[i % 5];
-        }
-
-        // Rho and Pi
-        b[0] = a[0];
-        var x: u5 = 1;
-        var y_coord: u5 = 0;
-        for (0..24) |i| {
-            b[PI[i]] = std.math.rotr(u64, a[x + 5 * y_coord], RHO[i]);
-            const new_x = y_coord;
-            const new_y = (2 * x + 3 * y_coord) % 5;
-            x = new_x;
-            y_coord = new_y;
-        }
-
-        // Chi
-        for (0..5) |y| {
-            for (0..5) |x2| {
-                a[x2 + 5 * y] = b[x2 + 5 * y] ^ (~b[(x2 + 1) % 5 + 5 * y] & b[(x2 + 2) % 5 + 5 * y]);
-            }
-        }
-
-        // Iota
-        a[0] ^= RC[round];
-    }
-
-    state.* = a;
+    const KeccakF = std.crypto.core.keccak.KeccakF(1600);
+    var permutation: KeccakF = .{ .st = state.* };
+    permutation.permute();
+    state.* = permutation.st;
 }
 
 fn absorb(state: *[25]u64, buf: []u8, rate: usize, input: []const u8) void {

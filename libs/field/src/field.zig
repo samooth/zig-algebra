@@ -274,10 +274,8 @@ fn SmallField(comptime modulus: comptime_int) type {
         pub fn randomBounded(rnd: std.Random, bound: u64) Self {
             std.debug.assert(bound > 0);
             const limit = @min(bound, MODULUS);
-            while (true) {
-                const v = rnd.int(u64);
-                if (v < limit) return .{ .value = v };
-            }
+            if (limit == 1) return zero();
+            return .{ .value = rnd.uintLessThan(u64, limit) };
         }
 
         // -- Basic arithmetic ---------------------------------------------
@@ -926,11 +924,16 @@ fn BigField(comptime modulus: comptime_int) type {
         pub fn randomBounded(rnd: std.Random, bound: u512) Self {
             std.debug.assert(bound > 0);
             const limit = @min(bound, @as(u512, MODULUS));
+            if (limit == 1) return zero();
+            var bits: usize = 0;
+            var value = limit - 1;
+            while (value != 0) : (value >>= 1) bits += 1;
+            const mask: u512 = if (bits == 512)
+                std.math.maxInt(u512)
+            else
+                (@as(u512, 1) << @intCast(bits)) - 1;
             while (true) {
-                var buf: [NUM_BYTES]u8 = undefined;
-                rnd.bytes(&buf);
-                var v: u512 = 0;
-                for (buf, 0..) |b, i| v |= @as(u512, b) << @intCast(8 * i);
+                const v = rnd.int(u512) & mask;
                 if (v < limit) return .{ .limbs = Mont.toMontgomery(intToLimbs(v)) };
             }
         }
@@ -1136,23 +1139,16 @@ fn BigField(comptime modulus: comptime_int) type {
         /// Returns true if the canonical representative is > MODULUS/2.
         /// Uses limb-wise comparison. NOT constant-time (early-exit on MSB difference).
         pub fn isNegative(self: Self) bool {
-            const half = Mont.MODULUS_LIMBS;
-            // Add 1 to half (in-place, ignoring carry for simplicity)
-            var half_plus_1 = half;
-            half_plus_1[0] +%= 1;
-            // Compare self.limbs >= half_plus_1
-            return !Mont.ctLimbsCmpLt(&self.limbs, &half_plus_1);
+            return self.toU512() > MODULUS / 2;
         }
 
-        /// Lexicographic comparison of canonical representatives (Montgomery form).
+        /// Lexicographic comparison of canonical representatives.
         /// Returns -1, 0, or 1. NOT constant-time.
         pub fn lexicographicCmp(self: Self, other: Self) i2 {
-            var i: usize = NUM_LIMBS;
-            while (i > 0) {
-                i -= 1;
-                if (self.limbs[i] < other.limbs[i]) return -1;
-                if (self.limbs[i] > other.limbs[i]) return 1;
-            }
+            const a = self.toU512();
+            const b = other.toU512();
+            if (a < b) return -1;
+            if (a > b) return 1;
             return 0;
         }
 

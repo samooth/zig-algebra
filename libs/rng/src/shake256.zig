@@ -63,14 +63,14 @@ pub const Shake256Rng = struct {
     /// Finalize absorption and switch to squeezing mode.
     pub fn finalize(self: *Self) void {
         std.debug.assert(!self.finalized);
-        // SHAKE256 padding: 0x1F (domain separator for SHAKE) then 0x80
+        if (self.buf_len == RATE) self.absorbBlock();
         self.buf[self.buf_len] = 0x1F;
         self.buf_len += 1;
         @memset(self.buf[self.buf_len..], 0);
         self.buf[RATE - 1] |= 0x80;
         self.absorbBlock();
         self.finalized = true;
-        self.squeeze_avail = 0;
+        self.fillSqueezeBlock();
     }
 
     /// Squeeze `len` pseudorandom bytes.
@@ -82,10 +82,7 @@ pub const Shake256Rng = struct {
         while (off < len) {
             if (self.squeeze_avail == 0) {
                 keccak.keccakF1600(&self.state);
-                for (0..RATE / 8) |i| {
-                    std.mem.writeInt(u64, self.squeeze_buf[i * 8 ..][0..8], self.state[i], .little);
-                }
-                self.squeeze_avail = RATE;
+                self.fillSqueezeBlock();
             }
             const take = @min(self.squeeze_avail, len - off);
             const start = RATE - self.squeeze_avail;
@@ -121,10 +118,7 @@ pub const Shake256Rng = struct {
         while (off < out.len) {
             if (self.squeeze_avail == 0) {
                 keccak.keccakF1600(&self.state);
-                for (0..RATE / 8) |i| {
-                    std.mem.writeInt(u64, self.squeeze_buf[i * 8 ..][0..8], self.state[i], .little);
-                }
-                self.squeeze_avail = RATE;
+                self.fillSqueezeBlock();
             }
             const take = @min(self.squeeze_avail, out.len - off);
             const start = RATE - self.squeeze_avail;
@@ -132,6 +126,13 @@ pub const Shake256Rng = struct {
             off += take;
             self.squeeze_avail -= take;
         }
+    }
+
+    fn fillSqueezeBlock(self: *Self) void {
+        for (0..RATE / 8) |i| {
+            std.mem.writeInt(u64, self.squeeze_buf[i * 8 ..][0..8], self.state[i], .little);
+        }
+        self.squeeze_avail = RATE;
     }
 
     fn absorbBlock(self: *Self) void {

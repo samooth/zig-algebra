@@ -65,12 +65,18 @@ pub fn MiMC(comptime F: type, comptime rounds: usize, comptime exponent: u64) ty
 }
 
 fn fieldFromCounter(comptime F: type, seed: []const u8, counter: u64) F {
-    var buf: [40]u8 = undefined;
-    @memcpy(buf[0..seed.len], seed);
-    std.mem.writeInt(u64, buf[seed.len..][0..8], counter, .little);
-    var val: u256 = 0;
-    for (0..32) |i| {
-        val = (val << 8) | buf[i % buf.len];
-    }
-    return F.fromInt(val);
+    var hasher = std.crypto.hash.Blake3.init(.{});
+    hasher.update("zig-hash:algebraic-constant");
+    var seed_len: [8]u8 = undefined;
+    std.mem.writeInt(u64, &seed_len, @intCast(seed.len), .little);
+    hasher.update(&seed_len);
+    hasher.update(seed);
+    var counter_bytes: [8]u8 = undefined;
+    std.mem.writeInt(u64, &counter_bytes, counter, .little);
+    hasher.update(&counter_bytes);
+    var digest: [32]u8 = undefined;
+    hasher.final(&digest);
+    var value: u256 = 0;
+    for (digest) |byte| value = (value << 8) | byte;
+    return F.fromInt(value);
 }

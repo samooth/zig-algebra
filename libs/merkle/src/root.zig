@@ -108,6 +108,12 @@ test "MerkleTree proof serialization" {
     }
 }
 
+test "MerkleTree proof deserialization rejects oversized count" {
+    var buf: [4]u8 = undefined;
+    std.mem.writeInt(u32, &buf, std.math.maxInt(u32), .little);
+    try std.testing.expectError(error.InvalidProof, MerkleProof.deserialize(&buf, std.testing.allocator));
+}
+
 test "MerkleTree with non-power-of-2 leaves" {
     const Tree = MerkleTree(Blake3);
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -188,6 +194,37 @@ test "MMR prove and verify" {
     }
 }
 
+test "MMR proof matches root for a non-power-of-two leaf count" {
+    const M = MMR(Blake3);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var m = try M.init(allocator);
+    defer m.deinit();
+    try m.append("a");
+    try m.append("b");
+    try m.append("c");
+
+    const root = try m.root();
+    const proof = try m.prove(1, allocator);
+    defer proof.deinit(allocator);
+
+    var current = Blake3.hashBytes("b");
+    for (proof.siblings, proof.is_left_sibling) |sibling, is_left| {
+        var concat: [64]u8 = undefined;
+        if (is_left) {
+            @memcpy(concat[0..32], &sibling);
+            @memcpy(concat[32..], &current);
+        } else {
+            @memcpy(concat[0..32], &current);
+            @memcpy(concat[32..], &sibling);
+        }
+        current = Blake3.hashBytes(&concat);
+    }
+    try std.testing.expectEqualSlices(u8, &root, &current);
+}
+
 test "SparseMerkleTree update and prove" {
     const SMT = SparseMerkleTree(Blake3, 8);
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -199,6 +236,7 @@ test "SparseMerkleTree update and prove" {
 
     try smt.update(5, "value_at_5");
     try smt.update(10, "value_at_10");
+    try std.testing.expectError(error.IndexOutOfRange, smt.update(@as(u256, 1) << 8, "out_of_range"));
 
     const root = smt.root();
 
@@ -209,6 +247,21 @@ test "SparseMerkleTree update and prove" {
     const proof10 = try smt.prove(10, allocator);
     defer proof10.deinit(allocator);
     try std.testing.expect(SMT.verify(root, 10, "value_at_10", proof10));
+}
+
+test "SparseMerkleTree supports depth 256" {
+    const SMT = SparseMerkleTree(Blake3, 256);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var smt = try SMT.init(allocator);
+    defer smt.deinit();
+    try smt.update(42, "value");
+    const root = smt.root();
+    const proof = try smt.prove(42, allocator);
+    defer proof.deinit(allocator);
+    try std.testing.expect(SMT.verify(root, 42, "value", proof));
 }
 
 test "SparseMerkleTree non-membership" {

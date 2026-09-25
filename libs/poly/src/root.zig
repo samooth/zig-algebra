@@ -110,6 +110,15 @@ test "Polynomial construction and degree" {
     try std.testing.expect(c.isConstant());
 }
 
+test "Polynomial and vector handle zero-length cases" {
+    const Constant = Polynomial(F7, 0);
+    try std.testing.expect(Constant.x().isZero());
+
+    const values = try powers(F7, std.testing.allocator, F7.one(), 0);
+    defer std.testing.allocator.free(values);
+    try std.testing.expectEqual(@as(usize, 0), values.len);
+}
+
 test "Polynomial addition" {
     const Poly = Polynomial(F7, 8);
 

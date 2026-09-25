@@ -78,20 +78,28 @@ pub fn BigInt(comptime max_limbs: usize) type {
         pub fn fromI64(x: i64) Self {
             var r = Self{};
             if (x == 0) return r;
-            const ux = @abs(x);
-            r.limbs[0] = @intCast(ux);
+            const magnitude: u64 = if (x < 0)
+                @as(u64, @intCast(-(x + 1))) + 1
+            else
+                @intCast(x);
+            r.limbs[0] = magnitude;
             r.len = 1;
             r.negative = x < 0;
             return r;
         }
 
         /// Construct from an unsigned 128-bit integer.
-        pub fn fromU128(x: u128) Self {
+        pub fn fromU128(x: u128) !Self {
             var r = Self{};
             if (x == 0) return r;
+            if (max_limbs < 2 and (x >> 64) != 0) return error.Overflow;
             r.limbs[0] = @truncate(x);
-            r.limbs[1] = @truncate(x >> 64);
-            r.len = if (r.limbs[1] == 0) 1 else 2;
+            if (max_limbs >= 2) {
+                r.limbs[1] = @truncate(x >> 64);
+                r.len = if (r.limbs[1] == 0) 1 else 2;
+            } else {
+                r.len = 1;
+            }
             return r;
         }
 
@@ -414,53 +422,25 @@ pub fn BigInt(comptime max_limbs: usize) type {
                 return .{ .q = Self.zero(), .r = r };
             }
 
-            // Simplified long division for multi-limb divisor
             var q = Self.zero();
-            var remainder = mag_a;
-
-            const b_msb = mag_b.limbs[mag_b.len - 1];
-
-            const n = mag_b.len;
-            const m = mag_a.len - n;
-
-            var i: usize = m + 1;
-            while (i > 0) {
-                i -= 1;
-                const rem_slice = remainder.limbs[i .. i + n + 1];
-                const rem_hi = @as(DoubleLimb, rem_slice[n]) << 64 | rem_slice[n - 1];
-                var qhat: Limb = @truncate(@min(rem_hi / b_msb, std.math.maxInt(Limb)));
-
-                // Adjust qhat
-                while (true) {
-                    var prod = Self.zero();
-                    var carry: Limb = 0;
-                    for (0..n) |j| {
-                        const p = limb.mulWide(mag_b.limbs[j], qhat);
-                        const s = limb.addWithCarry(p.lo, carry, 0);
-                        prod.limbs[j] = s.sum;
-                        carry = p.hi + s.cout;
-                    }
-                    prod.limbs[n] = carry;
-                    prod.len = n + 1;
-                    prod.normalize();
-
-                    var subtrahend = Self.zero();
-                    for (0..n + 1) |j| {
-                        subtrahend.limbs[i + j] = prod.limbs[j];
-                    }
-                    subtrahend.len = i + n + 1;
-                    subtrahend.normalize();
-
-                    if (remainder.geqMag(subtrahend)) {
-                        remainder = remainder.subMag(subtrahend);
-                        q.limbs[i] = qhat;
-                        break;
-                    }
-                    qhat -= 1;
+            var remainder = Self.zero();
+            var bit_index = mag_a.bitLen();
+            while (bit_index > 0) {
+                bit_index -= 1;
+                remainder = remainder.shl(1) catch return error.Overflow;
+                const word = bit_index / limb.LimbBits;
+                const bit = @as(Limb, 1) << @intCast(bit_index % limb.LimbBits);
+                if ((mag_a.limbs[word] & bit) != 0) {
+                    remainder.limbs[0] |= 1;
+                    if (remainder.len == 0) remainder.len = 1;
+                }
+                if (remainder.geqMag(mag_b)) {
+                    remainder = remainder.subMag(mag_b);
+                    q.limbs[word] |= bit;
                 }
             }
 
-            q.len = m + 1;
+            q.len = (mag_a.bitLen() + limb.LimbBits - 1) / limb.LimbBits;
             q.negative = self.negative != other.negative;
             q.normalize();
             remainder.negative = self.negative;

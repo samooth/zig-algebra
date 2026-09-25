@@ -59,7 +59,7 @@ pub inline fn subWithBorrow(a: Limb, b: Limb, bin: u1) struct { diff: Limb, bout
     const d = @as(DoubleLimb, a) -% @as(DoubleLimb, b) -% @as(DoubleLimb, bin);
     return .{
         .diff = @truncate(d),
-        .bout = if (a < b + bin) 1 else 0,
+        .bout = @intFromBool(a < b or (a == b and bin == 1)),
     };
 }
 

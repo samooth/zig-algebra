@@ -50,30 +50,38 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
                 }
             }
 
-            // Generate MDS matrix (Cauchy matrix for invertibility)
-            // M[i][j] = 1 / (x_i + y_j) where x_i and y_j are distinct
-            // Ensure x_i + y_j != 0 by retrying if we get zero
-            for (0..t) |i| {
-                for (0..t) |j| {
-                    var attempt: u64 = 0;
-                    while (true) : (attempt += 1) {
-                        const xi = fieldFromCounter(F, seed, counter);
-                        counter += 1;
-                        const yj = fieldFromCounter(F, seed, counter);
-                        counter += 1;
-                        const sum = F.add(xi, yj);
-                        if (!sum.isZero()) {
-                            mds[i][j] = F.inv(sum);
-                            break;
-                        }
-                        // If sum is zero, try again (max 10 attempts to avoid infinite loop)
-                        if (attempt >= 10) {
-                            // Fallback: use a simple non-zero value
-                            mds[i][j] = F.one();
+            var x: [t]F = undefined;
+            var y: [t]F = undefined;
+            for (0..t) |i| x[i] = F.fromInt(i + 1);
+            for (0..t) |j| {
+                var candidate = F.fromInt(t + j + 1).neg();
+                var attempt: usize = 0;
+                while (attempt < 256) : (attempt += 1) {
+                    var valid = true;
+                    for (x) |xi| {
+                        if (xi.add(candidate).isZero()) {
+                            valid = false;
                             break;
                         }
                     }
+                    if (valid) {
+                        for (y[0..j]) |previous| {
+                            if (previous.eql(candidate)) {
+                                valid = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (valid) {
+                        y[j] = candidate;
+                        break;
+                    }
+                    candidate = candidate.add(F.one());
                 }
+                std.debug.assert(attempt < 256);
+            }
+            for (0..t) |i| {
+                for (0..t) |j| mds[i][j] = F.inv(x[i].add(y[j]));
             }
 
             return init(rc, mds);
@@ -183,16 +191,18 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
 
 /// Deterministically generate a field element from a counter.
 fn fieldFromCounter(comptime F: type, seed: []const u8, counter: u64) F {
-    // Simple hash-based generation: Blake3(seed || counter) -> field element
-    var buf: [40]u8 = undefined;
-    @memcpy(buf[0..seed.len], seed);
-    std.mem.writeInt(u64, buf[seed.len..][0..8], counter, .little);
-
-    // Use a simple deterministic reduction
-    // In practice, you'd use a proper hash-to-field
-    var val: u256 = 0;
-    for (0..32) |i| {
-        val = (val << 8) | buf[i % buf.len];
-    }
-    return F.fromInt(val);
+    var hasher = std.crypto.hash.Blake3.init(.{});
+    hasher.update("zig-hash:algebraic-constant");
+    var seed_len: [8]u8 = undefined;
+    std.mem.writeInt(u64, &seed_len, @intCast(seed.len), .little);
+    hasher.update(&seed_len);
+    hasher.update(seed);
+    var counter_bytes: [8]u8 = undefined;
+    std.mem.writeInt(u64, &counter_bytes, counter, .little);
+    hasher.update(&counter_bytes);
+    var digest: [32]u8 = undefined;
+    hasher.final(&digest);
+    var value: u256 = 0;
+    for (digest) |byte| value = (value << 8) | byte;
+    return F.fromInt(value);
 }
