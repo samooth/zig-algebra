@@ -10,3 +10,4 @@ zig-out/
 *.swo
 *~
 .opencode/
+zig-pkg/
