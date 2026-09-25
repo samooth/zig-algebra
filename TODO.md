@@ -85,7 +85,7 @@
 - [x] Evitar panic en `pairing_compute` con puntos de baja orden.
 - [x] Corregir `examples/wasm_fp.zig` para escribir el resultado canónico completo en memoria.
 - [x] Retornar error controlado para `fp_inv(0)`.
-- [ ] Actualizar el smoke test WASM para comprobar high words, subgroup y vectores oficiales.
+- [x] Actualizar el smoke test WASM para comprobar high words, subgroup y vectores oficiales.
 
 ## P1 — alta prioridad
 
