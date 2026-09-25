@@ -81,8 +81,8 @@
 - [x] Añadir KAT EIP-197 al path BN254 público mediante el KAT existente en `bn254_tower.zig`.
 - [x] Manejar correctamente el punto infinito en KZG (`libs/kzg/src/root.zig:189-196`).
 - [x] Rechazar polinomios vacíos y commitments/witness inválidos.
-- [ ] Añadir subgroup checks a pairing y WASM.
-- [ ] Evitar panic en `pairing_compute` con puntos de baja orden.
+- [x] Añadir subgroup checks a pairing y WASM.
+- [x] Evitar panic en `pairing_compute` con puntos de baja orden.
 - [ ] Corregir `examples/wasm_fp.zig:16-32` para devolver el resultado completo, no solo low word.
 - [ ] Retornar error controlado para `fp_inv(0)`.
 - [ ] Actualizar el smoke test WASM para comprobar high words, subgroup y vectores oficiales.

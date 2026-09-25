@@ -12,7 +12,8 @@
 const std = @import("std");
 const zf = @import("zig-field");
 const zc = @import("zig-curve");
-const tp = @import("zig-pairing").bn254_tower_pairing;
+const pairing_api = @import("zig-pairing");
+const tp = pairing_api.bn254_tower_pairing;
 
 const Fp = zf.BN254_Fp;
 const Fp2 = zf.BN254_Fp2;
@@ -39,6 +40,7 @@ fn readG1(buf: [*]const u8) !G1 {
     const y = try readFp(buf + FP_BYTES);
     const pt = G1.generator(x, y);
     if (!pt.isOnCurve()) return error.InvalidG1;
+    if (!pairing_api.bn254_pairing.isG1InSubgroup(pt)) return error.InvalidG1;
     if (x.isZero() and y.isZero()) return error.InvalidG1; // reject infinity wire form
     return pt;
 }
@@ -51,6 +53,7 @@ fn readG2(buf: [*]const u8) !G2 {
     const C2 = @TypeOf(@as(G2, undefined).x);
     const pt = G2.generator(C2.new(xc0, xc1), C2.new(yc0, yc1));
     if (!pt.isOnCurve()) return error.InvalidG2;
+    if (!pairing_api.bn254_pairing.isG2InSubgroup(pt)) return error.InvalidG2;
     return pt;
 }
 

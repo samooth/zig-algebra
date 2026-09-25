@@ -68,6 +68,16 @@ pub const G2Point = zc.bls12_381.G2;
 
 pub const gt_one = Fp12.one();
 
+const SUBGROUP_ORDER: u512 = @as(u512, zc.bls12_381.Fr.MODULUS);
+
+pub fn isG1InSubgroup(p: G1Point) bool {
+    return p.infinity or (p.isOnCurve() and p.scalarMul(SUBGROUP_ORDER).infinity);
+}
+
+pub fn isG2InSubgroup(q: G2Point) bool {
+    return q.infinity or (q.isOnCurve() and q.scalarMul(SUBGROUP_ORDER).infinity);
+}
+
 // ---------------------------------------------------------------------------
 // Sparse line multiplication
 // ---------------------------------------------------------------------------
@@ -153,7 +163,7 @@ fn additionCoefficients(t: G2Point, q: G2Point, px: Fp, py: Fp) struct { A: Fp2,
 /// base field Fp, which the final exponentiation annihilates. For negative
 /// x the result is conjugated.
 pub fn millerLoop(p: G1Point, q: G2Point) Fp12 {
-    std.debug.assert(!q.infinity);
+    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12.one();
     if (p.infinity) return Fp12.one();
 
     var f = Fp12.one();
