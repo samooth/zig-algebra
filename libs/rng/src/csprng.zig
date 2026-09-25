@@ -23,6 +23,8 @@ var host_seed_len: usize = 0;
 /// Inject entropy from the host. Web builds must call this before the first
 /// `bytes` call, or it panics.
 pub fn setEntropy(entropy: []const u8) void {
+    lockBytes();
+    defer unlockBytes();
     std.debug.assert(entropy.len <= host_seed.len);
     @memcpy(host_seed[0..entropy.len], entropy);
     host_seed_len = entropy.len;
@@ -35,17 +37,19 @@ const locking = !builtin.single_threaded;
 var test_rng: ?*std.Random = null;
 
 pub fn setRandomForTesting(rng: ?*std.Random) void {
+    lockBytes();
+    defer unlockBytes();
     test_rng = rng;
 }
 
 /// Fill `out` with cryptographically secure random bytes.
 pub fn bytes(out: []u8) void {
+    lockBytes();
+    defer unlockBytes();
     if (test_rng) |rng| {
         std.Random.bytes(rng.*, out);
         return;
     }
-    lockBytes();
-    defer unlockBytes();
     if (!seeded) {
         var seed: [std.Random.DefaultCsprng.secret_seed_length]u8 = undefined;
         osEntropy(&seed);
@@ -57,11 +61,11 @@ pub fn bytes(out: []u8) void {
 
 /// Generate a random value of type T. Uses the CSPRNG.
 pub fn random(comptime T: type) T {
+    lockBytes();
+    defer unlockBytes();
     if (test_rng) |rng| {
         return std.Random.int(rng.*, T);
     }
-    lockBytes();
-    defer unlockBytes();
     if (!seeded) {
         var seed: [std.Random.DefaultCsprng.secret_seed_length]u8 = undefined;
         osEntropy(&seed);
