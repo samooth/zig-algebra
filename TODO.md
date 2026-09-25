@@ -97,7 +97,8 @@
 - [x] Hacer que `randomFieldElement` funcione con `zig-field` y elimine el buffer fijo de 32 bytes (`libs/rng/src/rng.zig:20-55`).
 - [x] Hacer thread-safe `setEntropy` y `setRandomForTesting`, o separarlos detrás de APIs de test.
 - [x] Implementar entropy Windows mediante `BCryptGenRandom` (`libs/rng/src/csprng.zig`).
-- [ ] Sustituir `std.debug.assert` de validación pública por errores tipados donde aplique.
+- [x] Sustituir asserts de validación pública de los bounds RNG por errores tipados (`libs/rng/src/rng.zig`, `libs/rng/src/chacha20.zig`).
+- [ ] Sustituir los asserts de validación pública restantes por errores tipados.
 
 ### NTT, polinomios y proof stack
 

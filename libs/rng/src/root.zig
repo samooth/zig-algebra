@@ -114,7 +114,7 @@ test "ChaCha20Rng different seeds produce different output" {
 test "ChaCha20Rng randomU64Bounded" {
     var chacha = ChaCha20Rng.initFromSeed(&[_]u8{0xAB} ** 32);
     for (0..100) |_| {
-        const v = chacha.randomU64Bounded(100);
+        const v = try chacha.randomU64Bounded(100);
         try std.testing.expect(v < 100);
     }
 }
@@ -181,7 +181,7 @@ test "Shake256Rng squeezeInto allocation-free" {
 test "Fisher-Yates shuffle" {
     var chacha = ChaCha20Rng.initFromSeed(&[_]u8{0x99} ** 32);
     var items = [_]u32{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-    shuffle(u32, ChaCha20Rng, &chacha, &items);
+    try shuffle(u32, ChaCha20Rng, &chacha, &items);
 
     // Verify all elements are still present (no duplicates or losses)
     var seen = std.StaticBitSet(10).initEmpty();
@@ -226,6 +226,8 @@ test "randomBool" {
 
 test "randomU64Bounded edge cases" {
     var chacha = ChaCha20Rng.initFromSeed(&[_]u8{0x33} ** 32);
-    try std.testing.expectEqual(@as(u64, 0), randomU64Bounded(ChaCha20Rng, &chacha, 1));
-    try std.testing.expectEqual(@as(u64, 0), randomU64Bounded(ChaCha20Rng, &chacha, 2));
+    try std.testing.expectEqual(@as(u64, 0), try randomU64Bounded(ChaCha20Rng, &chacha, 1));
+    try std.testing.expectEqual(@as(u64, 0), try randomU64Bounded(ChaCha20Rng, &chacha, 2));
+    try std.testing.expectError(error.InvalidBound, randomU64Bounded(ChaCha20Rng, &chacha, 0));
+    try std.testing.expectError(error.InvalidBound, chacha.randomU64Bounded(0));
 }

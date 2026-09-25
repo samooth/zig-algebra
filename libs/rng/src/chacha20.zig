@@ -155,8 +155,8 @@ pub const ChaCha20Rng = struct {
     }
 
     /// Generate a uniformly random value in `[0, max)` using rejection sampling.
-    pub fn randomU64Bounded(self: *Self, max: u64) u64 {
-        std.debug.assert(max > 0);
+    pub fn randomU64Bounded(self: *Self, max: u64) !u64 {
+        if (max == 0) return error.InvalidBound;
         if (max == 1) return 0;
         // Rejection sampling: find smallest n such that 2^n >= max
         const bits: u8 = @intCast(64 - @clz(max - 1));

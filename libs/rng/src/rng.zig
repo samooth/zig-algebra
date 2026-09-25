@@ -61,9 +61,9 @@ pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) F {
 /// Generate a uniformly random unsigned integer in `[0, max)` using rejection sampling.
 ///
 /// Works for any `R` with `randomBytes`.  `max` must be > 0.
-pub fn randomU64Bounded(comptime R: type, rng: *R, max: u64) u64 {
+pub fn randomU64Bounded(comptime R: type, rng: *R, max: u64) !u64 {
     RngTrait(R).assert();
-    std.debug.assert(max > 0);
+    if (max == 0) return error.InvalidBound;
     if (max == 1) return 0;
 
     const bits: u6 = @intCast(64 - @clz(max - 1));
@@ -82,12 +82,12 @@ pub fn randomU64Bounded(comptime R: type, rng: *R, max: u64) u64 {
 /// # Type Parameters
 /// - `T`:  Element type.
 /// - `R`:  RNG type satisfying `RngTrait`.
-pub fn shuffle(comptime T: type, comptime R: type, rng: *R, items: []T) void {
+pub fn shuffle(comptime T: type, comptime R: type, rng: *R, items: []T) !void {
     RngTrait(R).assert();
     var i: usize = items.len;
     while (i > 1) {
         i -= 1;
-        const j = randomU64Bounded(R, rng, @intCast(i + 1));
+        const j = try randomU64Bounded(R, rng, @intCast(i + 1));
         const tmp = items[i];
         items[i] = items[j];
         items[j] = tmp;
@@ -101,7 +101,7 @@ pub fn randomPermutation(comptime R: type, rng: *R, n: usize, allocator: std.mem
     const perm = try allocator.alloc(usize, n);
     errdefer allocator.free(perm);
     for (0..n) |i| perm[i] = i;
-    shuffle(usize, R, rng, perm);
+    try shuffle(usize, R, rng, perm);
     return perm;
 }
 
