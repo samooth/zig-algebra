@@ -466,6 +466,8 @@ test "bls12_381: known-answer vs py_ecc reference" {
     // Canonical generators (IETF BLS signatures / py_ecc).
     const g1k = zc.bls12_381.G1.generator(Fp.fromInt(0x17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb), Fp.fromInt(0x8b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1));
     const g2k = zc.bls12_381.G2.generator(Fp2.new(Fp.fromInt(0x24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8), Fp.fromInt(0x13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e)), Fp2.new(Fp.fromInt(0xce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801), Fp.fromInt(0x606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be)));
+    try std.testing.expect(zc.bls12_381.G1_generator.eql(g1k));
+    try std.testing.expect(zc.bls12_381.G2_generator.eql(g2k));
 
     var want = Fp12.zero();
     want.c0.c0 = Fp2.new(Fp.fromInt(0x2b62ad302f9ec67dff95bdb104dfef29d46bd561cdaaf850890a65b52f417421632e99a72f323a6455daa96e84d4f003), Fp.fromInt(0x153ce14a76a53e205ba8f275ef1137c56a566f638b52d34ba3bf3bf22f277d70f76316218c0dfd583a394b8448d2be7f));
