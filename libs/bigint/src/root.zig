@@ -60,7 +60,7 @@ test "BigInt addition" {
     try std.testing.expect(sum.eql(Big.fromU64(579)));
 
     // Large number addition
-    const x = Big.fromU128(0xFFFFFFFFFFFFFFFF_FFFFFFFFFFFFFFFF);
+    const x = try Big.fromU128(0xFFFFFFFFFFFFFFFF_FFFFFFFFFFFFFFFF);
     const y = Big.fromU64(1);
     const z = try x.add(y);
     try std.testing.expect(z.limbs[0] == 0);
@@ -91,8 +91,8 @@ test "BigInt multiplication" {
     try std.testing.expect(prod.eql(Big.fromU64(12345 * 6789)));
 
     // Large multiplication
-    const x = Big.fromU128(0xFFFFFFFFFFFFFFFF);
-    const y = Big.fromU128(0xFFFFFFFFFFFFFFFF);
+    const x = try Big.fromU128(0xFFFFFFFFFFFFFFFF);
+    const y = try Big.fromU128(0xFFFFFFFFFFFFFFFF);
     const z = try x.mul(y);
     try std.testing.expect(z.limbs[0] == 1); // (2^64-1)^2 = 2^128 - 2^65 + 1
     try std.testing.expect(z.limbs[1] == 0xFFFFFFFFFFFFFFFE);
@@ -238,6 +238,26 @@ test "BigInt bit operations" {
 
     const bxor = a.bitXor(b);
     try std.testing.expect(bxor.eql(Big.fromU64(0b0110)));
+}
+
+test "BigInt multi-limb division" {
+    const Big = BigInt(2);
+    const a = try Big.fromU128((@as(u128, 1) << 127) + 123);
+    const b = try Big.fromU128((@as(u128, 1) << 64) + 5);
+    const qr = try a.divRem(b);
+    try std.testing.expect(qr.q.eql(try Big.fromU128(0x7FFFFFFFFFFFFFFD)));
+    try std.testing.expect(qr.r.eql(try Big.fromU128(0x800000000000008A)));
+}
+
+test "BigInt constructors handle signed minimum and one-limb limits" {
+    const Big = BigInt(8);
+    const min = Big.fromI64(std.math.minInt(i64));
+    try std.testing.expect(min.isNegative());
+    try std.testing.expect(min.abs().eql(Big.fromU64(1 << 63)));
+
+    const One = BigInt(1);
+    _ = try One.fromU128(std.math.maxInt(u64));
+    try std.testing.expectError(error.Overflow, One.fromU128(@as(u128, 1) << 64));
 }
 
 test "modInverse accessible via Gcd re-export" {

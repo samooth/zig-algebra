@@ -11,6 +11,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const bigint_mod = b.addModule("zig-bigint", .{
+        .root_source_file = b.path("../bigint/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const field_mod = b.addModule("zig-field", .{
+        .root_source_file = b.path("../field/src/lib.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    field_mod.addImport("zig-bigint", bigint_mod);
+
     // Local merkle dependency
     const hash_mod = b.addModule("zig-hash", .{
         .root_source_file = b.path("../hash/src/root.zig"),
@@ -33,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-transcript", .module = transcript_mod },
             .{ .name = "zig-merkle", .module = merkle_mod },
+            .{ .name = "zig-field", .module = field_mod },
         },
     });
 
@@ -43,6 +56,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-transcript", .module = transcript_mod },
             .{ .name = "zig-merkle", .module = merkle_mod },
+            .{ .name = "zig-field", .module = field_mod },
         },
     });
     const tests = b.addTest(.{ .root_module = test_module });

@@ -54,6 +54,15 @@ test "BN254_Fp2 extension identities" {
     try std.testing.expect(u.mul(u).eq(zf.BN254_Fp2.fromBase(zf.BN254_Fp.one().neg())));
 }
 
+test "CubicExtension inverse and serialization" {
+    const Ext = zf.CubicExtension(zf.M31, zf.M31.fromInt(5));
+    const value = Ext.new(zf.M31.fromInt(3), zf.M31.fromInt(4), zf.M31.fromInt(5));
+    try std.testing.expect(value.mul(value.inv()).eq(Ext.one()));
+    const bytes = value.toBytes();
+    const decoded = try Ext.fromBytes(&bytes);
+    try std.testing.expect(decoded.eq(value));
+}
+
 test "Roots of unity" {
     // Only test fast path (t <= M31.two_adicity = 1)
     // Slow path (t > 1) is too slow in Debug mode

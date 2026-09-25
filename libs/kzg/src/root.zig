@@ -21,6 +21,7 @@ pub const Fp12T = tp.Fp12T;
 pub const KzgError = error{
     DegreeExceedsSetup,
     InvalidPoint,
+    InvalidPolynomial,
     OutOfMemory,
 };
 
@@ -80,6 +81,7 @@ fn g2MulFr(p: G2, s: Fr) G2 {
 }
 
 fn toProj(p: G1) G1Proj {
+    if (p.infinity) return G1Proj.zero();
     return .{ .x = p.x, .y = p.y, .z = Fp.one() };
 }
 
@@ -94,6 +96,7 @@ pub fn commit(
     allocator: std.mem.Allocator,
     coeffs: []const Fr,
 ) KzgError!G1 {
+    if (coeffs.len == 0) return KzgError.InvalidPolynomial;
     if (coeffs.len > setup.g1_pows.len) return KzgError.DegreeExceedsSetup;
     const r = try msmG1(allocator, setup.g1_pows[0..coeffs.len], coeffs);
     return affine(r);
@@ -116,8 +119,8 @@ pub fn witnessCoeffs(
     allocator: std.mem.Allocator,
     coeffs: []const Fr,
     z: Fr,
-) ![]Fr {
-    std.debug.assert(coeffs.len >= 1);
+) KzgError![]Fr {
+    if (coeffs.len == 0) return KzgError.InvalidPolynomial;
     // Horner-based division: b[i-1] = coeffs[i] + z*b[i]
     const n = coeffs.len;
     const b = try allocator.alloc(Fr, n);
@@ -143,6 +146,7 @@ pub fn prove(
     z: Fr,
 ) KzgError!struct { witness: G1, y: Fr } {
     if (coeffs.len > setup.g1_pows.len) return KzgError.DegreeExceedsSetup;
+    if (coeffs.len == 0) return KzgError.InvalidPolynomial;
     const y = evaluate(coeffs, z);
     const q = try witnessCoeffs(allocator, coeffs, z);
     defer allocator.free(q);
@@ -158,15 +162,21 @@ pub fn verify(
     y: Fr,
     witness: G1,
 ) bool {
-    // Check: e(C - [y]G1, G2gen) == e(W, [tau]G2 - [z]G2gen)
+    if (!commitment.isOnCurve() or !witness.isOnCurve()) return false;
     const yg1 = toProj(g1MulFr(zc.bn254.G1_generator, y));
     const c_proj = toProj(commitment).add(yg1.neg());
 
     const zg2 = g2MulFr(setup.g2_gen, z);
     const tau_side = setup.g2_tau.add(zg2.neg()); // affine sub
 
-    const lhs = tp.pairing(affine(c_proj), setup.g2_gen);
-    const rhs = tp.pairing(witness, tau_side);
+    const lhs = if (c_proj.isZero())
+        Fp12T.one()
+    else
+        tp.pairing(affine(c_proj), setup.g2_gen);
+    const rhs = if (witness.infinity or tau_side.infinity)
+        Fp12T.one()
+    else
+        tp.pairing(witness, tau_side);
     return lhs.eql(rhs);
 }
 
@@ -187,8 +197,7 @@ fn msmG1(
 }
 
 fn affine(p: G1Proj) G1 {
-    // Normalise Jacobian -> affine via field inversion.
-    if (p.isZero()) return G1.generator(Fp.zero(), Fp.zero());
+    if (p.isZero()) return G1.zero();
     const zi = p.z.inv();
     const zi2 = zi.mul(zi);
     const zi3 = zi2.mul(zi);
@@ -200,6 +209,18 @@ fn affine(p: G1Proj) G1 {
 // ============================================================================
 
 const stdt = std.testing;
+
+test "kzg: constant and empty-polynomial edge cases" {
+    var setup = try Setup.generate(stdt.allocator, Fr.fromInt(7), 4);
+    defer setup.deinit();
+
+    const constant = [_]Fr{Fr.fromInt(9)};
+    const commitment = try commit(&setup, stdt.allocator, &constant);
+    try stdt.expect(commitment.eql(g1MulFr(zc.bn254.G1_generator, Fr.fromInt(9))));
+    try stdt.expectError(KzgError.InvalidPolynomial, commit(&setup, stdt.allocator, &.{}));
+    try stdt.expectError(KzgError.InvalidPolynomial, prove(&setup, stdt.allocator, &.{}, Fr.fromInt(2)));
+    try stdt.expectError(KzgError.InvalidPolynomial, witnessCoeffs(stdt.allocator, &.{}, Fr.fromInt(2)));
+}
 
 test "kzg: commit matches manual sum for degree 1" {
     var setup = try Setup.generate(stdt.allocator, Fr.fromInt(7), 8);
@@ -266,4 +287,6 @@ test "kzg: different opening point fails with same witness" {
 
     // verify at a DIFFERENT z with same witness/eval must fail
     try stdt.expect(!verify(&setup, C, Fr.fromInt(9), pf.y, pf.witness));
+    const invalid = G1.generator(Fp.one(), Fp.one());
+    try stdt.expect(!verify(&setup, invalid, Fr.fromInt(5), pf.y, pf.witness));
 }

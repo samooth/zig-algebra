@@ -121,10 +121,19 @@ pub fn Fp6(comptime BaseFp2: type, comptime non_residue: BaseFp2) type {
             return .{ .c0 = c0, .c1 = c1, .c2 = c2 };
         }
         pub fn inv(a: Self) Self {
-            // Simplified inversion using norm
-            // For proper implementation, use extended Euclidean algorithm
-            // This is a placeholder - proper implementation needed
-            return .{ .c0 = a.c0, .c1 = a.c1.neg(), .c2 = a.c2.neg() };
+            std.debug.assert(!a.isZero());
+            const t0 = a.c0.mul(a.c0).sub(non_residue.mul(a.c1.mul(a.c2)));
+            const t1 = non_residue.mul(a.c2.mul(a.c2)).sub(a.c0.mul(a.c1));
+            const t2 = a.c1.mul(a.c1).sub(a.c0.mul(a.c2));
+            const denom = a.c0.mul(t0)
+                .add(non_residue.mul(a.c2.mul(t1)))
+                .add(non_residue.mul(a.c1.mul(t2)));
+            const denom_inv = denom.inv();
+            return .{
+                .c0 = t0.mul(denom_inv),
+                .c1 = t1.mul(denom_inv),
+                .c2 = t2.mul(denom_inv),
+            };
         }
         pub fn div(a: Self, b: Self) Self {
             return a.mul(b.inv());
@@ -309,6 +318,9 @@ const F7 = struct {
     pub fn isZero(self: Self) bool {
         return self.value == 0;
     }
+    pub fn isOne(self: Self) bool {
+        return self.value == 1;
+    }
     pub fn random() Self {
         return fromInt(1);
     }
@@ -369,6 +381,7 @@ test "Fp6 basic structure" {
     try std.testing.expect(prod.c1.isZero());
     try std.testing.expect(prod.c2.c1.eql(F7.fromInt(1))); // u
     try std.testing.expect(prod.c2.c0.eql(F7.fromInt(0)));
+    try std.testing.expect(a.mul(a.inv()).isOne());
 }
 
 test "BLS12-381 generator points exist" {

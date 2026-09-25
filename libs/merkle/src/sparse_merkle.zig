@@ -30,7 +30,7 @@ const HASH_LEN = 32;
 pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
     if (DEPTH > 256) @compileError("SparseMerkleTree: DEPTH must be <= 256");
 
-    const CacheKey = struct { level: u8, index: u256 };
+    const CacheKey = struct { level: usize, index: u256 };
 
     return struct {
         const Self = @This();
@@ -59,8 +59,8 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
 
             const smt: Self = .{
                 .default_hashes = default_hashes,
-                .leaves = std.hash_map.AutoHashMapUnmanaged(u256, [HASH_LEN]u8){},
-                .cache = std.hash_map.AutoHashMapUnmanaged(CacheKey, [HASH_LEN]u8){},
+                .leaves = std.hash_map.AutoHashMapUnmanaged(u256, [HASH_LEN]u8).empty,
+                .cache = std.hash_map.AutoHashMapUnmanaged(CacheKey, [HASH_LEN]u8).empty,
                 .allocator = allocator,
             };
 
@@ -72,15 +72,21 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
             self.cache.deinit(self.allocator);
         }
 
+        fn validIndex(index: u256) bool {
+            if (comptime DEPTH == 256) return true;
+            return index < (@as(u256, 1) << @intCast(DEPTH));
+        }
+
         /// Update a leaf at `index` with `value`.
         pub fn update(self: *Self, index: u256, value: []const u8) !void {
+            if (!validIndex(index)) return error.IndexOutOfRange;
             const leaf_hash = H.hashBytes(value);
             try self.leaves.put(self.allocator, index, leaf_hash);
 
             // Recompute path from leaf to root
             var current_hash = leaf_hash;
             var current_index = index;
-            var level: u8 = @intCast(DEPTH);
+            var level: usize = DEPTH;
 
             while (level > 0) {
                 level -= 1;
@@ -103,7 +109,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
         }
 
         /// Get the hash of a node at (level, index), using defaults for empty subtrees.
-        fn getNodeHash(self: Self, level: u8, index: u256) [HASH_LEN]u8 {
+        fn getNodeHash(self: Self, level: usize, index: u256) [HASH_LEN]u8 {
             if (level == DEPTH) {
                 // Leaf level
                 return self.leaves.get(index) orelse self.default_hashes[DEPTH];
@@ -119,6 +125,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
         /// Generate a proof of inclusion (or non-membership) for `index`.
         /// Returns the sibling hashes along the path from leaf to root.
         pub fn prove(self: Self, index: u256, allocator: std.mem.Allocator) !MerkleProof {
+            if (!validIndex(index)) return error.IndexOutOfRange;
             var siblings = try allocator.alloc([HASH_LEN]u8, DEPTH);
             var flags = try allocator.alloc(bool, DEPTH);
             errdefer allocator.free(siblings);
@@ -127,7 +134,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
             var current_index = index;
             for (0..DEPTH) |i| {
                 const sibling_index = current_index ^ 1;
-                siblings[i] = self.getNodeHash(@intCast(DEPTH - i), sibling_index);
+                siblings[i] = self.getNodeHash(DEPTH - i, sibling_index);
                 flags[i] = (current_index & 1 != 0); // true if current is right child
                 current_index >>= 1;
             }
@@ -137,6 +144,7 @@ pub fn SparseMerkleTree(comptime H: type, comptime DEPTH: usize) type {
 
         /// Verify a proof against a root.
         pub fn verify(root_hash: [HASH_LEN]u8, index: u256, value: []const u8, proof: MerkleProof) bool {
+            if (!validIndex(index) or proof.siblings.len != DEPTH or proof.is_left_sibling.len != DEPTH) return false;
             var current = H.hashBytes(value);
             var current_index = index;
 

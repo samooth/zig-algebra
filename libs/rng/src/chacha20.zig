@@ -60,6 +60,7 @@ pub const ChaCha20Rng = struct {
     buffer: [64]u8,
     /// Number of valid bytes remaining in `buffer`.
     available: u8,
+    exhausted: bool,
 
     const Self = @This();
 
@@ -85,6 +86,7 @@ pub const ChaCha20Rng = struct {
             .state = s,
             .buffer = undefined,
             .available = 0,
+            .exhausted = false,
         };
     }
 
@@ -103,13 +105,13 @@ pub const ChaCha20Rng = struct {
 
     /// Refill the internal buffer with a fresh keystream block.
     fn refill(self: *Self) void {
+        if (self.exhausted) @panic("ChaCha20 counter exhausted");
         blockFunction(&self.state, &self.buffer);
         self.available = 64;
-        // Increment counter (word 12)
-        self.state[12] +%= 1;
-        if (self.state[12] == 0) {
-            // Handle 64-bit counter overflow (word 12 + 13)
-            self.state[13] +%= 1;
+        if (self.state[12] == std.math.maxInt(u32)) {
+            self.exhausted = true;
+        } else {
+            self.state[12] += 1;
         }
     }
 
@@ -157,8 +159,8 @@ pub const ChaCha20Rng = struct {
         std.debug.assert(max > 0);
         if (max == 1) return 0;
         // Rejection sampling: find smallest n such that 2^n >= max
-        const bits: u6 = @intCast(64 - @clz(max - 1));
-        const mask = if (bits == 64) ~@as(u64, 0) else (@as(u64, 1) << bits) - 1;
+        const bits: u8 = @intCast(64 - @clz(max - 1));
+        const mask = if (bits == 64) ~@as(u64, 0) else (@as(u64, 1) << @intCast(bits)) - 1;
         while (true) {
             const v = self.randomU64() & mask;
             if (v < max) return v;

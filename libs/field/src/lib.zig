@@ -11,9 +11,7 @@ pub const field = @import("field.zig");
 pub const extension = @import("extension.zig");
 pub const predef = @import("predef/predef.zig");
 
-const ntt_ = @import("zig-ntt");
-const merkle_ = @import("zig-merkle");
-const commitment_ = @import("zig-commitment");
+const ipa_ = @import("ipa.zig");
 
 pub const Field = field.Field;
 pub const QuadraticExtension = extension.QuadraticExtension;
@@ -36,15 +34,6 @@ pub const BLS12_381_Fp2 = predef.BLS12_381_Fp2;
 pub const CM31 = extension.CM31;
 pub const QM31 = extension.QM31;
 pub const BN254_Fp2 = extension.BN254_Fp2;
-
-// NTT / INTT (from zig-ntt)
-pub const bitReverse = ntt_.bitReverse;
-pub const ntt = ntt_.ntt;
-pub const intt = ntt_.intt;
-pub const precomputeTwiddles = ntt_.precomputeTwiddles;
-pub const freeTwiddles = ntt_.freeTwiddles;
-pub const nttWithTwiddles = ntt_.nttWithTwiddles;
-pub const inttWithTwiddles = ntt_.inttWithTwiddles;
 
 // M31-specific Vec8 SIMD NTT (stays in zig-field)
 pub const Vec8NttM31 = struct {
@@ -249,8 +238,8 @@ pub fn MerkleTree(comptime F: type) type {
     return MerkleTreeImpl;
 }
 
-// IPA (Inner Product Argument) from zig-commitment
-pub const Ipa = commitment_.Ipa;
+// IPA (Inner Product Argument)
+pub const Ipa = ipa_.Ipa;
 
 // M31 Vec8 SIMD NTT
 pub const nttVec8M31 = Vec8NttM31.nttVec8M31;

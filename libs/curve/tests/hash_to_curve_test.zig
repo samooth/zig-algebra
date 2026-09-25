@@ -6,7 +6,7 @@ const bn254 = @import("zig-curve").bn254;
 const pasta = @import("zig-curve").pasta;
 
 test "hashToField BN254_Fp produces valid elements" {
-    const us = h2c.hashToField(bn254.Fp, "hello world", "BN254_G1_XMD:SHA-256_SSWU_RO_", 2);
+    const us = try h2c.hashToField(bn254.Fp, "hello world", "BN254_G1_XMD:SHA-256_SSWU_RO_", 2);
     const bytes0 = us[0].toBytes();
     const bytes1 = us[1].toBytes();
     std.debug.assert(bytes0.len == 32);
@@ -14,15 +14,15 @@ test "hashToField BN254_Fp produces valid elements" {
 }
 
 test "hashToField is deterministic" {
-    const us1 = h2c.hashToField(bn254.Fp, "test", "dst", 2);
-    const us2 = h2c.hashToField(bn254.Fp, "test", "dst", 2);
+    const us1 = try h2c.hashToField(bn254.Fp, "test", "dst", 2);
+    const us2 = try h2c.hashToField(bn254.Fp, "test", "dst", 2);
     std.debug.assert(us1[0].eql(us2[0]));
     std.debug.assert(us1[1].eql(us2[1]));
 }
 
 test "hashToField different messages produce different elements" {
-    const us1 = h2c.hashToField(bn254.Fp, "message1", "dst", 1);
-    const us2 = h2c.hashToField(bn254.Fp, "message2", "dst", 1);
+    const us1 = try h2c.hashToField(bn254.Fp, "message1", "dst", 1);
+    const us2 = try h2c.hashToField(bn254.Fp, "message2", "dst", 1);
     std.debug.assert(!us1[0].eql(us2[0]));
 }
 

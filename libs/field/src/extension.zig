@@ -74,6 +74,25 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
             return fromBase(BaseField.fromInt(x));
         }
 
+        pub const NUM_BYTES: usize = 2 * BaseField.NUM_BYTES;
+
+        pub fn toBytes(self: Self) [NUM_BYTES]u8 {
+            var out: [NUM_BYTES]u8 = undefined;
+            const c0 = self.c0.toBytes();
+            const c1 = self.c1.toBytes();
+            @memcpy(out[0..BaseField.NUM_BYTES], &c0);
+            @memcpy(out[BaseField.NUM_BYTES..], &c1);
+            return out;
+        }
+
+        pub fn fromBytes(bytes: []const u8) !Self {
+            if (bytes.len != NUM_BYTES) return error.InvalidLength;
+            return .{
+                .c0 = BaseField.fromBytes(bytes[0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
+                .c1 = BaseField.fromBytes(bytes[BaseField.NUM_BYTES..]) catch return error.InvalidFieldElement,
+            };
+        }
+
         pub fn zero() Self {
             return .{ .c0 = BaseField.zero(), .c1 = BaseField.zero() };
         }
@@ -331,6 +350,7 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         // If 3 divides p-1, check n^((p-1)/3) != 1.
         // If 3 does not divide p-1, every element is a cubic residue (map x->x^3 is bijective).
         const p_minus_1 = BaseField.MODULUS - 1;
+        if (p_minus_1 % 3 != 0) @compileError("CubicExtension requires a base field with p == 1 (mod 3)");
         if (p_minus_1 % 3 == 0) {
             const exp = p_minus_1 / 3;
             const result = non_residue.pow(exp);
@@ -361,6 +381,28 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         }
         pub fn fromInt(x: anytype) Self {
             return fromBase(BaseField.fromInt(x));
+        }
+
+        pub const NUM_BYTES: usize = 3 * BaseField.NUM_BYTES;
+
+        pub fn toBytes(self: Self) [NUM_BYTES]u8 {
+            var out: [NUM_BYTES]u8 = undefined;
+            const c0 = self.c0.toBytes();
+            const c1 = self.c1.toBytes();
+            const c2 = self.c2.toBytes();
+            @memcpy(out[0..BaseField.NUM_BYTES], &c0);
+            @memcpy(out[BaseField.NUM_BYTES..][0..BaseField.NUM_BYTES], &c1);
+            @memcpy(out[2 * BaseField.NUM_BYTES ..], &c2);
+            return out;
+        }
+
+        pub fn fromBytes(bytes: []const u8) !Self {
+            if (bytes.len != NUM_BYTES) return error.InvalidLength;
+            return .{
+                .c0 = BaseField.fromBytes(bytes[0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
+                .c1 = BaseField.fromBytes(bytes[BaseField.NUM_BYTES..][0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
+                .c2 = BaseField.fromBytes(bytes[2 * BaseField.NUM_BYTES ..]) catch return error.InvalidFieldElement,
+            };
         }
 
         pub fn zero() Self {
@@ -453,6 +495,7 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
             return .{
                 .c0 = BaseField.ctSelect(on, a.c0, b.c0),
                 .c1 = BaseField.ctSelect(on, a.c1, b.c1),
+                .c2 = BaseField.ctSelect(on, a.c2, b.c2),
             };
         }
 

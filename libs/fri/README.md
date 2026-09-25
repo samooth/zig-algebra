@@ -1,14 +1,14 @@
 # zig-fri
 
-Fast Reed-Solomon Interactive Oracle Proof of Proximity (FRI) for STARKs. Implements index-pairing FRI over arbitrary domains with Merkle tree commitments.
+FRI v2 over a 2-adic multiplicative subgroup with Merkle commitments. The API uses logarithms for domain and degree bounds and is compatible with Zig 0.16.0.
 
 ## Features
 
-- **Index-pairing FRI** — query phase reuses folded pairs for efficiency
-- **Arbitrary domain sizes** — power-of-two domains supported
+- **Antipodal-pair FRI** — commitments hash `(f(x), f(-x))` and fold by squaring
+- **Explicit degree bound** — initial and residual bounds are validated
 - **Fiat-Shamir transcript** — non-interactive via transcript challenges
 - **Merkle tree commitments** — using zig-merkle with Blake3
-- **Configurable soundness** — tune num_queries for desired security level
+- **Configurable soundness** — tune `num_queries` for the desired security level
 
 ## Installation
 
@@ -34,28 +34,29 @@ exe.root_module.addImport("zig-fri", zf.module("zig-fri"));
 ```zig
 const zfri = @import("zig-fri");
 const Transcript = @import("zig-transcript").Transcript;
-const M31 = @import("zig-field").M31;
+const F = @import("zig-field").Goldilocks;
 
 const config = zfri.Config{
-    .domain_size = 128,
-    .final_length = 8,
+    .log_domain = 7,
+    .log_initial_degree = 6,
+    .log_final = 5,
+    .log_residual_degree = 4,
     .num_queries = 20,
 };
 
-// Prover: compute evaluations of polynomial
-var p_evals: [128]M31 = undefined;
-for (0..128) |i| {
-    const xi = M31.fromInt(i);
-    p_evals[i] = xi.sqr().add(xi).add(M31.one());
+const domain = zfri.Domain(F).init(F, config.log_domain);
+var evaluations: [128]F = undefined;
+for (0..evaluations.len) |i| {
+    const x = domain.at(i);
+    evaluations[i] = x.sqr().add(x).add(F.one());
 }
 
 var pt = Transcript.init("fri-demo");
-var proof = try zfri.prove(M31, allocator, &pt, &p_evals, config);
+var proof = try zfri.prove(F, allocator, &pt, &evaluations, config);
 defer proof.deinit(allocator);
 
-// Verifier
 var vt = Transcript.init("fri-demo");
-const ok = try zfri.verify(M31, &vt, &proof, config);
+const ok = try zfri.verify(F, &vt, &proof, config);
 try std.testing.expect(ok);
 ```
 
@@ -63,19 +64,26 @@ try std.testing.expect(ok);
 
 | Function | Description |
 |----------|-------------|
-| `prove(F, allocator, transcript, p_evals, config)` | Generate FRI proof for evaluations |
-| `verify(F, transcript, proof, config)` | Verify FRI proof |
-| `numRounds(config)` | Compute number of folding rounds |
+| `Domain(F).init(F, log_n)` | Build the natural-order multiplicative subgroup |
+| `prove(F, allocator, transcript, evaluations, config)` | Generate a FRI proof |
+| `verify(F, transcript, proof, config)` | Verify a FRI proof |
+| `Config.rounds()` | Compute and validate the number of folds |
 
 ## Config
 
 ```zig
 const Config = struct {
-    domain_size: usize,    // Must be power of 2
-    final_length: usize = 16,  // Final layer size (power of 2)
-    num_queries: usize = 100,  // Security parameter
+    log_domain: u6,
+    log_initial_degree: u6,
+    log_final: u6,
+    log_residual_degree: u6,
+    num_queries: usize,
 };
 ```
+
+`log_domain` is the logarithm of the initial domain size. The relation
+`log_initial_degree - rounds == log_residual_degree` is mandatory, and the
+residual degree bound must be strictly smaller than `2^log_final`.
 
 ## Running Tests
 
@@ -85,11 +93,11 @@ zig build test
 
 ## Design Notes
 
-- Uses index-pairing FRI: each query collects pairs (even, odd) at each fold level
-- Challenges derived via transcript.challengeField() — deterministic given same transcript label
-- Merkle tree built over hashPairs(even, odd) at each layer
-- Final polynomial evaluations sent directly (no Merkle commitment)
-- Soundness: error ≤ (degree_bound / |F|)^num_queries
+- Each layer commits to antipodal pairs and uses exact positional fold checks.
+- Challenges are derived with `transcript.challengeField()`.
+- The final layer is interpolated and sent as truncated residual coefficients.
+- Merkle paths must have exactly the depth implied by each layer.
+- The field must provide `two_adicity >= log_domain` and a primitive root of unity.
 
 ## License
 

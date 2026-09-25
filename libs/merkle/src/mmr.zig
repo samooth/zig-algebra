@@ -137,21 +137,34 @@ pub fn MMR(comptime H: type) type {
             self.leaf_count += 1;
         }
 
-        /// Compute the bag-of-peaks root.
+        /// Compute the root using the same zero-padded tree used by `prove`.
         pub fn root(self: Self) ![HASH_LEN]u8 {
             if (self.peaks.items.len == 0) return error.EmptyMMR;
 
-            // Hash peaks from right to left (newest to oldest)
-            var current = self.nodes.get(self.peaks.items[self.peaks.items.len - 1].pos).?;
-            for (0..self.peaks.items.len - 1) |i| {
-                const peak_idx = self.peaks.items.len - 2 - i;
-                const peak = self.nodes.get(self.peaks.items[peak_idx].pos).?;
-                var concat: [HASH_LEN * 2]u8 = undefined;
-                @memcpy(concat[0..HASH_LEN], &peak);
-                @memcpy(concat[HASH_LEN..], &current);
-                current = H.hashBytes(&concat);
+            var tree_size: usize = 1;
+            while (tree_size < self.leaf_count) tree_size *= 2;
+
+            var level = try self.allocator.alloc([HASH_LEN]u8, tree_size);
+            defer self.allocator.free(level);
+            for (0..self.leaf_count) |i| {
+                level[i] = self.nodes.get(2 * @as(u64, @intCast(i))).?;
             }
-            return current;
+            for (self.leaf_count..tree_size) |i| level[i] = std.mem.zeroes([HASH_LEN]u8);
+
+            var level_size = tree_size;
+            while (level_size > 1) {
+                const next = try self.allocator.alloc([HASH_LEN]u8, level_size / 2);
+                for (0..level_size / 2) |i| {
+                    var concat: [HASH_LEN * 2]u8 = undefined;
+                    @memcpy(concat[0..HASH_LEN], &level[2 * i]);
+                    @memcpy(concat[HASH_LEN..], &level[2 * i + 1]);
+                    next[i] = H.hashBytes(&concat);
+                }
+                self.allocator.free(level);
+                level = next;
+                level_size /= 2;
+            }
+            return level[0];
         }
 
         /// Generate an inclusion proof for leaf at `index`.

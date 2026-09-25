@@ -60,6 +60,7 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
 
         /// Polynomial `x` (the identity).
         pub fn x() Self {
+            if (max_degree == 0) return Self.zero();
             var p = Self{};
             p.coeffs[1] = F.one();
             p.degree = 1;
@@ -303,8 +304,8 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
             var e = exp;
             while (e > 0) {
                 if (e & 1 == 1) result = result.mul(base);
-                base = base.mul(base);
                 e >>= 1;
+                if (e > 0) base = base.mul(base);
             }
             return result;
         }

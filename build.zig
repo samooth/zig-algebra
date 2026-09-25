@@ -100,23 +100,8 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    // fri -> transcript, merkle
-    {
-        const transcript_mod = b.addModule("zig-transcript-inner", .{
-            .root_source_file = b.path("libs/transcript/src/root.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        _ = lib(
-            b,
-            test_step,
-            target,
-            optimize,
-            "zig-fri",
-            "libs/fri/src/root.zig",
-            &.{ .{ "zig-transcript", transcript_mod }, .{ "zig-merkle", merkle_mod } },
-        );
-    }
+    // fri -> transcript, merkle, field
+    // (declared after field_mod; see below)
 
     // rng -> algebra-traits, hash
     _ = lib(
@@ -184,6 +169,28 @@ pub fn build(b: *std.Build) void {
             .{ "zig-field", field_mod },
         },
     );
+
+    // fri -> transcript, merkle, field
+    {
+        const transcript_mod = b.addModule("zig-transcript-inner", .{
+            .root_source_file = b.path("libs/transcript/src/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        });
+        _ = lib(
+            b,
+            test_step,
+            target,
+            optimize,
+            "zig-fri",
+            "libs/fri/src/root.zig",
+            &.{
+                .{ "zig-transcript", transcript_mod },
+                .{ "zig-merkle", merkle_mod },
+                .{ "zig-field", field_mod },
+            },
+        );
+    }
 
     // poly -> algebra-traits
     _ = lib(
@@ -303,8 +310,8 @@ pub fn build(b: *std.Build) void {
     const run_example = b.addRunArtifact(example_exe);
     example_step.dependOn(&run_example.step);
 
-    // Example: STARK prover (Fibonacci over M31 with FRI)
-    const stark_step = b.step("stark", "Run STARK prover example (Fibonacci over M31)");
+    // Example: STARK prover (Fibonacci over Goldilocks with FRI)
+    const stark_step = b.step("stark", "Run STARK prover example (Fibonacci over Goldilocks)");
     const transcript_root = b.path("libs/transcript/src/root.zig");
     const fri_root = b.path("libs/fri/src/root.zig");
     const stark_transcript_mod = b.createModule(.{
@@ -332,6 +339,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "zig-transcript", .module = stark_transcript_mod },
             .{ .name = "zig-merkle", .module = stark_merkle_mod },
+            .{ .name = "zig-field", .module = field_mod },
         },
     });
     const stark_mod = b.createModule(.{
@@ -342,6 +350,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "zig-transcript", .module = stark_transcript_mod },
             .{ .name = "zig-fri", .module = stark_fri_mod },
             .{ .name = "zig-parallel", .module = parallel_mod },
+            .{ .name = "zig-field", .module = field_mod },
         },
     });
     const stark_exe = b.addExecutable(.{

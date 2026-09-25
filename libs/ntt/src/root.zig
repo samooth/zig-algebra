@@ -150,10 +150,29 @@ pub fn inttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []c
     traits.assertField(F);
     const n = std.math.pow(usize, 2, log_n);
     std.debug.assert(data.len == n);
+    std.debug.assert(twiddles.len == log_n);
 
-    // For inverse, we run forward NTT with inverted twiddles
-    // A more efficient approach would precompute inverse twiddles
-    nttWithTwiddles(F, data, log_n, twiddles);
+    bitReverse(F, data);
+
+    var s: usize = 1;
+    while (s <= log_n) : (s += 1) {
+        const m = std.math.pow(usize, 2, s);
+        const half_m = m >> 1;
+        const stage_twiddles = twiddles[s - 1];
+        std.debug.assert(stage_twiddles.len == half_m);
+
+        var k: usize = 0;
+        while (k < n) : (k += m) {
+            var j: usize = 0;
+            while (j < half_m) : (j += 1) {
+                const w = if (j == 0) F.one() else stage_twiddles[half_m - j].neg();
+                const t = w.mul(data[k + j + half_m]);
+                const u = data[k + j];
+                data[k + j] = u.add(t);
+                data[k + j + half_m] = u.sub(t);
+            }
+        }
+    }
 
     const n_inv = F.fromInt(n).inv();
     for (data) |*x| {
@@ -392,6 +411,32 @@ test "ntt/intt round-trip for BLS12_381_Fp" {
             try std.testing.expect(data[i].eql(original[i]));
         }
     }
+}
+
+test "intt with precomputed twiddles round-trips" {
+    const zf = @import("zig-field");
+    const Goldilocks = zf.Goldilocks;
+    const log_n: usize = 4;
+    const n: usize = @as(usize, 1) << log_n;
+    const root = Goldilocks.primitiveRootOfUnity(log_n);
+    const allocator = std.testing.allocator;
+
+    const twiddles = try precomputeTwiddles(Goldilocks, log_n, root, allocator);
+    defer freeTwiddles(Goldilocks, twiddles, allocator);
+
+    var data = try allocator.alloc(Goldilocks, n);
+    defer allocator.free(data);
+    var original = try allocator.alloc(Goldilocks, n);
+    defer allocator.free(original);
+    var rnd = SimplePrng.init(6);
+    for (0..n) |i| {
+        data[i] = randomField(Goldilocks, &rnd);
+        original[i] = data[i];
+    }
+
+    nttWithTwiddles(Goldilocks, data, log_n, twiddles);
+    inttWithTwiddles(Goldilocks, data, log_n, twiddles);
+    try std.testing.expectEqualSlices(Goldilocks, original, data);
 }
 
 test "ntt convolution property (Goldilocks)" {

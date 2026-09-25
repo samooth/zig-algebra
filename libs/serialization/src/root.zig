@@ -45,14 +45,25 @@ pub fn deserialize(allocator: std.mem.Allocator, bytes: []const u8, comptime T: 
     var cursor = Cursor{ .bytes = bytes };
     var value: T = undefined;
     try readValue(&cursor, allocator, &value, T);
-    if (cursor.pos != cursor.bytes.len) return error.TrailingBytes;
+    if (cursor.pos != cursor.bytes.len) {
+        if (comptime hasDeinit(T)) value.deinit(allocator);
+        return error.TrailingBytes;
+    }
     return value;
 }
 
-/// True when `T` is a field element: exposes `SIZE`, `toBytes`, `fromBytes`.
+/// True when `T` is a field element: exposes `NUM_BYTES` or `SIZE`, `toBytes`, and `fromBytes`.
+fn hasDeinit(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct", .@"enum", .@"union", .@"opaque" => @hasDecl(T, "deinit"),
+        else => false,
+    };
+}
+
 fn isField(comptime T: type) bool {
     if (@typeInfo(T) != .@"struct") return false;
-    return @hasDecl(T, "SIZE") and @hasDecl(T, "toBytes") and @hasDecl(T, "fromBytes");
+    return @hasDecl(T, "toBytes") and @hasDecl(T, "fromBytes") and
+        (@hasDecl(T, "NUM_BYTES") or @hasDecl(T, "SIZE"));
 }
 
 fn writeValue(allocator: std.mem.Allocator, list: *std.ArrayList(u8), value: anytype) !void {
@@ -96,9 +107,14 @@ fn writeValue(allocator: std.mem.Allocator, list: *std.ArrayList(u8), value: any
         .@"struct" => {
             const is_field = comptime isField(T);
             if (is_field) {
-                var buf: [T.SIZE]u8 = undefined;
-                value.toBytes(&buf);
-                try list.appendSlice(allocator, &buf);
+                if (comptime @hasDecl(T, "NUM_BYTES")) {
+                    const bytes = value.toBytes();
+                    try list.appendSlice(allocator, &bytes);
+                } else {
+                    var buf: [T.SIZE]u8 = undefined;
+                    value.toBytes(&buf);
+                    try list.appendSlice(allocator, &buf);
+                }
                 return;
             }
             inline for (std.meta.fields(T)) |f| {
@@ -121,13 +137,18 @@ fn writeValue(allocator: std.mem.Allocator, list: *std.ArrayList(u8), value: any
 
 fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, comptime T: type) !void {
     switch (@typeInfo(T)) {
-        .bool => result.* = (try cursor.byte()) == 1,
+        .bool => {
+            const value = try cursor.byte();
+            if (value > 1) return error.InvalidValue;
+            result.* = value == 1;
+        },
         .int => |i| {
             if (i.signedness == .signed) @compileError("signed integers are not serializable: " ++ @typeName(T));
             if (T == usize) {
                 const bytes = try cursor.take(8);
                 var v: u64 = 0;
                 inline for (0..8) |b| v |= @as(u64, bytes[b]) << @intCast(8 * b);
+                if (@as(u128, v) > @as(u128, std.math.maxInt(usize))) return error.Overflow;
                 result.* = @intCast(v);
                 return;
             }
@@ -161,8 +182,13 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
         .@"struct" => {
             const is_field = comptime isField(T);
             if (is_field) {
-                const bytes = try cursor.take(T.SIZE);
-                result.* = T.fromBytes(bytes[0..T.SIZE].*);
+                if (comptime @hasDecl(T, "NUM_BYTES")) {
+                    const bytes = try cursor.take(T.NUM_BYTES);
+                    result.* = T.fromBytes(bytes) catch return error.InvalidValue;
+                } else {
+                    const bytes = try cursor.take(T.SIZE);
+                    result.* = T.fromBytes(bytes[0..T.SIZE].*);
+                }
                 return;
             }
             inline for (std.meta.fields(T)) |f| {
@@ -177,6 +203,7 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
         },
         .optional => |o| {
             const flag = try cursor.byte();
+            if (flag > 1) return error.InvalidValue;
             if (flag == 1) {
                 var payload: o.child = undefined;
                 try readValue(cursor, allocator, &payload, o.child);
@@ -194,7 +221,7 @@ const Cursor = struct {
     pos: usize = 0,
 
     fn take(self: *Cursor, n: usize) ![]const u8 {
-        if (self.pos + n > self.bytes.len) return error.UnexpectedEnd;
+        if (self.pos > self.bytes.len or n > self.bytes.len - self.pos) return error.UnexpectedEnd;
         const out = self.bytes[self.pos..][0..n];
         self.pos += n;
         return out;
@@ -306,6 +333,31 @@ test "field-element types use their toBytes/fromBytes" {
     const back = try deserialize(alloc, bytes, S2);
     try testing.expectEqual(@as(u8, 0x11), back.lo);
     try testing.expectEqual(@as(u8, 0x22), back.hi);
+}
+
+const S3 = struct {
+    const NUM_BYTES: usize = 2;
+    value: u16,
+
+    fn toBytes(self: S3) [NUM_BYTES]u8 {
+        return .{ @truncate(self.value), @truncate(self.value >> 8) };
+    }
+
+    fn fromBytes(bytes: []const u8) !S3 {
+        if (bytes.len != NUM_BYTES) return error.InvalidLength;
+        return .{ .value = @as(u16, bytes[0]) | (@as(u16, bytes[1]) << 8) };
+    }
+};
+
+test "NUM_BYTES fields and strict flags are supported" {
+    const alloc = std.testing.allocator;
+    const bytes = try serialize(alloc, S3{ .value = 0x1234 });
+    defer alloc.free(bytes);
+    try testing.expectEqualSlices(u8, &.{ 0x34, 0x12 }, bytes);
+    const back = try deserialize(alloc, bytes, S3);
+    try testing.expectEqual(@as(u16, 0x1234), back.value);
+    try testing.expectError(error.InvalidValue, deserialize(alloc, &[_]u8{2}, bool));
+    try testing.expectError(error.InvalidValue, deserialize(alloc, &[_]u8{2}, ?u8));
 }
 
 test "rejects truncated and trailing bytes" {

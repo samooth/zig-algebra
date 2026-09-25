@@ -10,35 +10,67 @@
 
 const std = @import("std");
 
-/// Expand message to arbitrary length using SHA-256 (expand_message_xmd).
+pub const HashToFieldError = error{
+    OutputTooLong,
+    DstTooLong,
+};
+
+/// Expand message according to RFC 9380 expand_message_xmd with SHA-256.
 pub fn expandMessageXmd(
     msg: []const u8,
     dst: []const u8,
     out: []u8,
-) void {
+) HashToFieldError!void {
+    if (out.len > std.math.maxInt(u16)) return HashToFieldError.OutputTooLong;
+    if (dst.len > std.math.maxInt(u8)) return HashToFieldError.DstTooLong;
+    if (out.len == 0) return;
+
     const hash_len = 32;
-    const len_in_bytes = out.len;
-    const b_len = (len_in_bytes + hash_len - 1) / hash_len;
+    const zero_pad = [_]u8{0} ** 64;
+    var len_bytes: [2]u8 = undefined;
+    std.mem.writeInt(u16, &len_bytes, @intCast(out.len), .big);
+    const dst_len = [_]u8{@intCast(dst.len)};
 
-    var idx: usize = 0;
-    while (idx < b_len) : (idx += 1) {
+    var b0: [hash_len]u8 = undefined;
+    var h0 = std.crypto.hash.sha2.Sha256.init(.{});
+    h0.update(&zero_pad);
+    h0.update(msg);
+    h0.update(&len_bytes);
+    h0.update(&[_]u8{0});
+    h0.update(dst);
+    h0.update(&dst_len);
+    h0.final(&b0);
+
+    var previous: [hash_len]u8 = undefined;
+    var h1 = std.crypto.hash.sha2.Sha256.init(.{});
+    h1.update(&b0);
+    h1.update(&[_]u8{1});
+    h1.update(dst);
+    h1.update(&dst_len);
+    h1.final(&previous);
+
+    var offset: usize = 0;
+    const first_len = @min(out.len, hash_len);
+    @memcpy(out[0..first_len], previous[0..first_len]);
+    offset = first_len;
+
+    var block_index: usize = 2;
+    while (offset < out.len) : (block_index += 1) {
+        var mixed: [hash_len]u8 = undefined;
+        for (0..hash_len) |i| mixed[i] = b0[i] ^ previous[i];
+
+        var next: [hash_len]u8 = undefined;
         var h = std.crypto.hash.sha2.Sha256.init(.{});
-        h.update(msg);
-        h.update(&[_]u8{@intCast(len_in_bytes & 0xff)});
+        h.update(&mixed);
+        h.update(&[_]u8{@intCast(block_index)});
         h.update(dst);
-        var b0: [hash_len]u8 = undefined;
-        h.final(&b0);
+        h.update(&dst_len);
+        h.final(&next);
 
-        var h2 = std.crypto.hash.sha2.Sha256.init(.{});
-        h2.update(&b0);
-        h2.update(&[_]u8{@intCast((idx + 1) & 0xff)});
-        h2.update(dst);
-        var bi: [hash_len]u8 = undefined;
-        h2.final(&bi);
-
-        const start = idx * hash_len;
-        const end = @min(start + hash_len, len_in_bytes);
-        @memcpy(out[start..end], bi[0 .. end - start]);
+        const end = @min(offset + hash_len, out.len);
+        @memcpy(out[offset..end], next[0 .. end - offset]);
+        previous = next;
+        offset = end;
     }
 }
 
@@ -48,16 +80,17 @@ pub fn hashToField(
     msg: []const u8,
     dst: []const u8,
     comptime count: usize,
-) [count]F {
+) HashToFieldError![count]F {
     const p = F.MODULUS;
     const L = comptime blk: {
-        const bits = @bitSizeOf(@TypeOf(p));
-        const k = (bits + 127) / 128;
-        break :blk k * 16;
+        var value = p;
+        var bits: usize = 0;
+        while (value != 0) : (bits += 1) value >>= 1;
+        break :blk (bits + 128 + 7) / 8;
     };
 
     var expanded: [count * L]u8 = undefined;
-    expandMessageXmd(msg, dst, &expanded);
+    try expandMessageXmd(msg, dst, &expanded);
 
     var elements: [count]F = undefined;
     comptime var i: usize = 0;
@@ -183,8 +216,8 @@ pub fn hashToCurve(
     comptime b: F,
     msg: []const u8,
     dst: []const u8,
-) (error{SqrtFailed}!CurvePoint(F)) {
-    const us = hashToField(F, msg, dst, 2);
+) (error{ SqrtFailed, OutputTooLong, DstTooLong, SumIsInfinity }!CurvePoint(F)) {
+    const us = try hashToField(F, msg, dst, 2);
 
     const p1 = try mapToCurveSvdW(F, a, b, us[0]);
     const p2 = try mapToCurveSvdW(F, a, b, us[1]);
@@ -193,6 +226,7 @@ pub fn hashToCurve(
     const ep1 = AffinePoint{ .x = p1.x, .y = p1.y, .infinity = false };
     const ep2 = AffinePoint{ .x = p2.x, .y = p2.y, .infinity = false };
     const sum = ep1.add(ep2);
+    if (sum.infinity) return error.SumIsInfinity;
     return .{ .x = sum.x, .y = sum.y };
 }
 
@@ -202,16 +236,28 @@ pub fn hashToCurve(
 
 test "expandMessageXmd produces output" {
     var out: [64]u8 = undefined;
-    expandMessageXmd("test", "dst", &out);
+    try expandMessageXmd("test", "dst", &out);
     var out2: [64]u8 = undefined;
-    expandMessageXmd("test", "dst", &out2);
+    try expandMessageXmd("test", "dst", &out2);
     std.debug.assert(std.mem.eql(u8, &out, &out2));
+}
+
+test "expandMessageXmd matches RFC 9380 vector" {
+    var out: [32]u8 = undefined;
+    try expandMessageXmd("", "QUUX-V01-CS02-with-expander-SHA256-128", &out);
+    const expected = [_]u8{
+        0x68, 0xa9, 0x85, 0xb8, 0x7e, 0xb6, 0xb4, 0x69,
+        0x52, 0x12, 0x89, 0x11, 0xf2, 0xa4, 0x41, 0x2b,
+        0xbc, 0x30, 0x2a, 0x9d, 0x75, 0x96, 0x67, 0xf8,
+        0x7f, 0x7a, 0x21, 0xd8, 0x03, 0xf0, 0x72, 0x35,
+    };
+    try std.testing.expectEqualSlices(u8, &expected, &out);
 }
 
 test "hashToField is deterministic" {
     const F = @import("zig-field").Field(0xFFFFFFFF00000001);
-    const us1 = hashToField(F, "hello", "dst", 2);
-    const us2 = hashToField(F, "hello", "dst", 2);
+    const us1 = try hashToField(F, "hello", "dst", 2);
+    const us2 = try hashToField(F, "hello", "dst", 2);
     std.debug.assert(us1[0].eql(us2[0]));
     std.debug.assert(us1[1].eql(us2[1]));
 }

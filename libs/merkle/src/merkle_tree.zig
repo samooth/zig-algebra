@@ -20,6 +20,12 @@ const hash = @import("zig-hash");
 /// Hash output length in bytes (assumes all hash functions produce 32-byte digests).
 const HASH_LEN = 32;
 
+fn validPathIndex(index: usize, depth: usize) bool {
+    if (depth >= @bitSizeOf(usize)) return false;
+    const leaf_count = @as(usize, 1) << @intCast(depth);
+    return index < leaf_count;
+}
+
 /// A Merkle proof: sibling hashes from leaf to root.
 pub const MerkleProof = struct {
     /// Sibling hashes, from leaf level up to just below root.
@@ -36,8 +42,14 @@ pub const MerkleProof = struct {
     /// Format: [4 bytes: num_siblings] [32 bytes * num_siblings: hashes] [num_siblings bytes: flags]
     pub fn serialize(self: MerkleProof, allocator: std.mem.Allocator) ![]u8 {
         const n = self.siblings.len;
-        const size = 4 + n * HASH_LEN + n;
+        if (self.is_left_sibling.len != n) return error.InvalidProof;
+        if (n > std.math.maxInt(u32)) return error.ProofTooLong;
+        if (n > (std.math.maxInt(usize) - 4) / HASH_LEN) return error.ProofTooLong;
+        const hash_size = n * HASH_LEN;
+        if (n > std.math.maxInt(usize) - 4 - hash_size) return error.ProofTooLong;
+        const size = 4 + hash_size + n;
         const buf = try allocator.alloc(u8, size);
+
         std.mem.writeInt(u32, buf[0..4], @intCast(n), .little);
         for (0..n) |i| {
             @memcpy(buf[4 + i * HASH_LEN ..][0..HASH_LEN], &self.siblings[i]);
@@ -51,11 +63,15 @@ pub const MerkleProof = struct {
     /// Deserialize proof from a flat byte slice.
     pub fn deserialize(buf: []const u8, allocator: std.mem.Allocator) !MerkleProof {
         if (buf.len < 4) return error.InvalidProof;
-        const n = std.mem.readInt(u32, buf[0..4], .little);
-        const expected = 4 + n * HASH_LEN + n;
+        const n: usize = @intCast(std.mem.readInt(u32, buf[0..4], .little));
+        if (n > (std.math.maxInt(usize) - 4) / HASH_LEN) return error.InvalidProof;
+        const hash_size = n * HASH_LEN;
+        if (n > std.math.maxInt(usize) - 4 - hash_size) return error.InvalidProof;
+        const expected = 4 + hash_size + n;
         if (buf.len != expected) return error.InvalidProof;
 
         const siblings = try allocator.alloc([HASH_LEN]u8, n);
+        errdefer allocator.free(siblings);
         const flags = try allocator.alloc(bool, n);
         for (0..n) |i| {
             @memcpy(&siblings[i], buf[4 + i * HASH_LEN ..][0..HASH_LEN]);
@@ -208,8 +224,9 @@ pub fn MerkleTree(comptime H: type) type {
 
         /// Verify an inclusion proof.
         pub fn verify(root_hash: [HASH_LEN]u8, index: usize, leaf: []const u8, proof: MerkleProof) bool {
+            if (proof.siblings.len != proof.is_left_sibling.len or !validPathIndex(index, proof.siblings.len)) return false;
             var current = H.hashBytes(leaf);
-            var pos = index;
+            var idx = index;
 
             for (0..proof.siblings.len) |i| {
                 var concat: [HASH_LEN * 2]u8 = undefined;
@@ -221,7 +238,7 @@ pub fn MerkleTree(comptime H: type) type {
                     @memcpy(concat[HASH_LEN..], &proof.siblings[i]);
                 }
                 current = H.hashBytes(&concat);
-                pos >>= 1;
+                idx >>= 1;
             }
 
             return std.mem.eql(u8, &current, &root_hash);
@@ -229,8 +246,9 @@ pub fn MerkleTree(comptime H: type) type {
 
         /// Verify using a pre-hashed leaf.
         pub fn verifyHashed(root_hash: [HASH_LEN]u8, index: usize, leaf_hash: [HASH_LEN]u8, proof: MerkleProof) bool {
+            if (proof.siblings.len != proof.is_left_sibling.len or !validPathIndex(index, proof.siblings.len)) return false;
             var current = leaf_hash;
-            var pos = index;
+            var idx = index;
 
             for (0..proof.siblings.len) |i| {
                 var concat: [HASH_LEN * 2]u8 = undefined;
@@ -242,7 +260,7 @@ pub fn MerkleTree(comptime H: type) type {
                     @memcpy(concat[HASH_LEN..], &proof.siblings[i]);
                 }
                 current = H.hashBytes(&concat);
-                pos >>= 1;
+                idx >>= 1;
             }
 
             return std.mem.eql(u8, &current, &root_hash);
@@ -256,6 +274,7 @@ pub fn MerkleTree(comptime H: type) type {
             leaf: [HASH_LEN]u8,
             path: []const [HASH_LEN]u8,
         ) bool {
+            if (!validPathIndex(index, path.len)) return false;
             var current = leaf;
             var idx = index;
             for (path) |sibling| {
@@ -284,6 +303,7 @@ pub fn verifyPath(
     leaf: [HASH_LEN]u8,
     path: []const [HASH_LEN]u8,
 ) bool {
+    if (!validPathIndex(index, path.len)) return false;
     var current = leaf;
     var idx = index;
     for (path) |sibling| {

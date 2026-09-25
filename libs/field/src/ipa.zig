@@ -219,58 +219,10 @@ pub fn Ipa(comptime F: type) type {
 
         /// Verify an IPA proof that `<a, b> = c` against the commitment.
         pub fn verify(self: Self, proof: *const Proof, c: F) !void {
-            std.debug.assert(proof.l.len == proof.r.len);
-            const log_n = proof.l.len;
-            std.debug.assert(self.n == (@as(usize, 1) << log_n));
-
-            // Reconstruct final generators
-            var g_final = try self.allocator.alloc(F, self.n);
-            defer self.allocator.free(g_final);
-            @memcpy(g_final, self.g);
-
-            var h_final = try self.allocator.alloc(F, self.n);
-            defer self.allocator.free(h_final);
-            @memcpy(h_final, self.h);
-
-            var n = self.n;
-            var round: usize = 0;
-            while (n > 1) {
-                const half = n / 2;
-                const x = challenge(proof.l[round], proof.r[round], round);
-                const x_inv = x.inv();
-
-                for (0..half) |i| {
-                    g_final[i] = g_final[i].mul(x_inv).add(g_final[half + i].mul(x));
-                    h_final[i] = h_final[i].mul(x).add(h_final[half + i].mul(x_inv));
-                }
-
-                n = half;
-                round += 1;
-            }
-
-            // Check: a0 * g_final[0] + b0 * h_final[0] + a0*b0 * U
-            // should equal the reconstructed commitment
-            const lhs = proof.a0.mul(g_final[0])
-                .add(proof.b0.mul(h_final[0]))
-                .add(proof.a0.mul(proof.b0).mul(self.u));
-
-            // Reconstruct RHS from original commitment equation:
-            // C = sum(s_i^2 * L_i) + sum(s_i^{-2} * R_i) + a0*g0 + b0*h0 + a0*b0*U
-            // where s_i are the challenges. But we don't have C here...
-            // Actually, for a standalone IPA, the verifier needs the original commitment.
-            // This simplified version checks the algebraic consistency.
-
-            // For a proper verify, we'd need the original commitment.
-            // Instead, we verify the reduced equation holds.
-            const rhs = c.mul(self.u).add(proof.a0.mul(g_final[0])).add(proof.b0.mul(h_final[0]));
-
-            // This is a simplified check; full Bulletproofs verification needs the original commitment
-            _ = lhs;
-            _ = rhs;
-
-            // Proper verification: the inner product should be consistent
-            const claimed_ip = proof.a0.mul(proof.b0);
-            _ = claimed_ip;
+            _ = self;
+            _ = proof;
+            _ = c;
+            return error.Unsupported;
         }
 
         /// Verify with the original commitment included.
@@ -279,70 +231,10 @@ pub fn Ipa(comptime F: type) type {
             commitment: F,
             proof: *const Proof,
         ) !void {
-            const log_n = proof.l.len;
-            std.debug.assert(self.n == std.math.pow(usize, 2, log_n));
-
-            // Recompute round challenges from proof
-            var challenges = try self.allocator.alloc(F, log_n);
-            defer self.allocator.free(challenges);
-            for (0..log_n) |i| {
-                challenges[i] = challenge(proof.l[i], proof.r[i], i);
-            }
-
-            // Compute position challenge powers s_i for each position
-            var s = try self.allocator.alloc(F, self.n);
-            defer self.allocator.free(s);
-            for (0..self.n) |i| s[i] = F.one();
-
-            var n = self.n;
-            var round: usize = 0;
-            while (n > 1) {
-                const half = n / 2;
-                const x = challenges[round];
-                const x_inv = x.inv();
-
-                for (0..self.n) |i| {
-                    if ((i >> @intCast(log_n - 1 - round)) & 1 == 0) {
-                        s[i] = s[i].mul(x_inv);
-                    } else {
-                        s[i] = s[i].mul(x);
-                    }
-                }
-                n = half;
-                round += 1;
-            }
-
-            // Compute s^{-1}
-            var s_inv = try self.allocator.alloc(F, self.n);
-            defer self.allocator.free(s_inv);
-            for (0..self.n) |i| s_inv[i] = s[i].inv();
-
-            // Verify: commitment = sum(x_j^2 * L_j) + sum(x_j^{-2} * R_j) + a0*G' + b0*H' + a0*b0*U
-            var lhs = commitment;
-
-            // Subtract L and R terms using ROUND challenges (not position challenges)
-            for (0..log_n) |j| {
-                const x = challenges[j];
-                const x_inv = x.inv();
-                const x_sq = x.mul(x);
-                const x_inv_sq = x_inv.mul(x_inv);
-                lhs = lhs.sub(proof.l[j].mul(x_sq));
-                lhs = lhs.sub(proof.r[j].mul(x_inv_sq));
-            }
-
-            // Compute final generators G' = sum(s_i^{-1} * G_i), H' = sum(s_i * H_i)
-            var g_prime = F.zero();
-            var h_prime = F.zero();
-            for (0..self.n) |i| {
-                g_prime = g_prime.add(self.g[i].mul(s_inv[i]));
-                h_prime = h_prime.add(self.h[i].mul(s[i]));
-            }
-
-            const rhs = proof.a0.mul(g_prime)
-                .add(proof.b0.mul(h_prime))
-                .add(proof.a0.mul(proof.b0).mul(self.u));
-
-            if (!lhs.eq(rhs)) return error.VerificationFailed;
+            _ = self;
+            _ = commitment;
+            _ = proof;
+            return error.Unsupported;
         }
 
         // -- Helpers ---------------------------------------------------------
