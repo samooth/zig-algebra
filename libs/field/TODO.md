@@ -128,13 +128,15 @@ Ordered roughly by value per unit of effort.
       BN254_Fp, 11.2x on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5–2x
       regression** on M31 and BabyBear. The claim should also warn about the
       small-Mersenne regression.
-- [ ] **Fix the `format` method signature.** `field.zig:591`, `field.zig:1210`
-      and the two in `extension.zig` all declare
-      `options: std.fmt.FormatOptions`, which was removed in Zig 0.16. The
-      methods are dead: `{}` on a field element falls back to default struct
-      printing, e.g. `M31.fromInt(7)` prints `.{ .value = 7 }` rather than `7`.
-      `zig-bigint`'s `BigInt.format` and `zig-linalg`'s `Vector`/`Matrix.format`
-      have the same problem.
+- [x] **Fix the `format` method signature.** Done in 0.4.0: `field.zig` (both
+      backends) and `extension.zig` (both towers), plus `zig-bigint`,
+      `zig-linalg`, `zig-poly`, `zig-pairing` and `zig-algebra-traits`, all use
+      `fn (self, writer: *std.Io.Writer) std.Io.Writer.Error!void`. Note the
+      remaining half of the problem is the *call site*, not the method: Zig
+      0.16 only selects a `format` method for the `{f}` specifier, so
+      `std.debug.print("{}", .{M31.fromInt(7)})` still prints
+      `.{ .value = 7 }` while `"{f}"` prints `7`. Sweeping every `{}` on a
+      field element in the tests, examples and docs is still open.
 - [ ] **Implement `Ipa.verify`.** `src/ipa.zig:221` is a stub that returns
       `error.Unsupported`; only `verifyWithCommitment` works. Related: IPA round
       challenges are a local SHA-256 of `(L, R, round)`, not a
