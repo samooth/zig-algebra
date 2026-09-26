@@ -26,6 +26,32 @@ Rationale:
   (`BigField.inv` routes through `Montgomery.invMontgomery`, whose limbs use the
   constant-time `ct*` helpers, but the loop bound still depends on the input.)
 
+### Total vs checked inversion (0.4.0)
+
+The binary GCD loop has no defined behaviour for a zero input: with `a == 0`
+the `u & 1 == 0` branch is taken forever while `v` never moves, so the loop
+does not terminate. This used to be documented as a `std.debug.assert`, which
+means a caller that could supply zero got a panic in Debug/ReleaseSafe and an
+infinite loop in `ReleaseFast`. The pair is now explicit:
+
+- `inv(self) Self` — legacy, total: `inv(0) == zero()`. It delegates to
+  `invChecked` and swallows `error.InverseOfZero`, so a non-invertible input
+  stays zero instead of fabricating a plausible-looking element.
+- `invChecked(self) error{InverseOfZero}!Self` — the API new code must use.
+
+The same split is applied to `div` / `divChecked` and to Montgomery's
+`invMontgomery` / `invMontgomeryChecked`, and it is extended to the tower types
+(`QuadraticExtension`, `CubicExtension`, `TowerField`) whose norm-based and
+recursive inverses degenerate to zero in the same way. Zero is a field element,
+but it is not invertible, so a zero result must never be treated as
+"invertible"; the legacy
+wrappers exist for source compatibility only. The same reasoning covers every
+other `std.debug.assert` that guarded a caller-supplied length or dimension
+(`batchInv`, `randomBounded`, `Vec8.fromSlice8`, the M31 SIMD NTT, the packed
+MLE and the binary-field MLE table lengths): they are `error.LengthMismatch` /
+`error.InvalidDimension` / `error.InvalidLength` now, and the `…Checked`
+sibling rejects rather than totalising.
+
 ### Mersenne fast-path
 
 `SmallField` keeps residues in canonical form (no Montgomery round-trip) and
@@ -112,9 +138,14 @@ Every mathematical operation is tested against a reference:
 - Pairings: bilinearity e(aP,bQ) = e(P,Q)^{ab}, r-torsion, non-degeneracy
 - Serialization: golden wire-layout tests to catch accidental format changes
 
-Counts (Zig 0.16.0): the root `zig build test` step executes 316 tests in both
-Debug and ReleaseFast; per-library steps sum to 419 because `field` and
-`curve` also compile their `tests/` roots there. See `README.md`.
+Negative coverage also includes the validation paths themselves: out-of-range
+and mismatched-length inputs must return typed errors, and must not leave a
+leak, an out-of-bounds access or an unbounded allocation behind. See the
+"Total vs checked" section above.
+
+Counts (Zig 0.16.0): the root `zig build test` step executes 354 tests in both
+Debug and ReleaseFast; per-library steps sum to 470 because `field` (85) and
+`curve` (96) also compile their `tests/` roots there. See `README.md`.
 
 ## Security Notes
 
@@ -133,10 +164,22 @@ For signature schemes or key exchange: audit before use.
 
 Non-cryptographic caveats that documentation must keep visible:
 - **No independent audit exists** for any library in this workspace.
+- `inv(0) == 0` and `x / 0 == 0` are the **legacy total** results of the
+  non-checked wrappers in `zig-field` and of `inv` in `zig-binary-field`. They
+  are source-compatibility shims, not a mathematical statement; the
+  `…Checked` variants are what new code must call.
+- `zig-binary-field`'s `Sumcheck` refuses `F.BITS < 128`
+  (`error.FieldTooSmall`); the `SumcheckUnsafe` / `MlePcsUnsafe` /
+  `CommittedMlePcsUnsafe` variants keep the historical 4-bit challenge format
+  and are grindable, i.e. **not sound against a malicious prover**. They exist
+  for the on-chain toy format and tests.
 - `kzg.Setup.generate` is a synthetic trusted setup (tests/dev only).
 - `Ipa.verify` in `zig-field` is a stub (`error.Unsupported`); only
   `verifyWithCommitment` verifies, and its challenges are a local SHA-256 of
   `(L, R, round)` rather than a `zig-transcript` Fiat-Shamir session.
+- `zig-rng`'s `csprng.setRandomForTesting` retains a pointer to the caller's
+  generator state; it must be reset with `defer setRandomForTesting(null)`, or
+  `setRandomForTestingSeed` should be used instead (module-owned state).
 - `zig build bench` numbers are indicative and machine-specific; CI records
   them as an artifact without regression thresholds.
 
@@ -189,8 +232,12 @@ Edges as wired in the root `build.zig` (and mirrored in each library's
   serialization).
 - v0.2.0: added `transcript` and `fri` (16 libraries).
 - v0.2.2: added `kzg` as the 17th library.
-- Current: workspace `0.3.2`; each library carries its own independent semver
-  (currently `0.1.0`–`0.3.0`).
+- v0.4.0: workspace version; validation hardening (asserts → typed errors plus
+  total legacy wrappers) in `field` (0.3.0), `binary-field` (0.3.0), `merkle`
+  (0.1.2), `rng` (0.3.0), `serialization` (0.2.0) and `curve` (0.4.0). The
+  remaining manifests are unchanged.
+- Current: workspace `0.4.0`; each library carries its own independent semver
+  (currently `0.1.0`–`0.4.0`).
 - Future: bump MAJOR on breaking API changes, MINOR on new features.
 
 ## BN254 optimal ate pairing (tower) — algorithm notes
@@ -254,7 +301,7 @@ point.
   NOTE the RHS needs the affine SUBTRACTION in G2 — comparing against
   bare [tau]G2 silently fails even though group identity holds.
 - `commit`/`prove` take a caller-supplied allocator and propagate
-  `error.OutOfMemory` (breaking change in v0.3.0).
+  `error.OutOfMemory` (breaking change introduced in v0.3.0).
 - Scalar-mult by Fr over curve points: delegates to zig-curve's
   windowed ladder (4-bit windows, left-to-right, Jacobian coordinates;
   O(1) inversions). The earlier per-byte LSB-first affine double-and-add

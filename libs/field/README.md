@@ -2,12 +2,16 @@
 
 A generic prime-field arithmetic library for Zig, supporting fields up to 512 bits with Montgomery arithmetic and tower extensions.
 
+Library version: **0.3.0** (`libs/field/build.zig.zon`); the workspace version
+lives in the root `build.zig.zon`.
+
 ## Features
 
 - **Generic `Field(comptime modulus)` factory** — create prime fields of any size up to 512 bits
 - **Dual backend**:
   - **Small fields** (< 2^64): native `u64` with fast reduction; Mersenne primes (`2^k - 1`) use the classic split reduction
   - **Large fields** (≥ 2^64): Montgomery arithmetic over `[N]u64` limbs using CIOS multiplication
+- **Checked inverse and division** — `invChecked` / `divChecked` / `batchInvChecked` return typed errors; the plain `inv` / `div` / `batchInv` remain as total legacy wrappers (see [Inversion and division](#inversion-and-division))
 - **SIMD Vec8 backend for M31** — 8-lane `@Vector(8, u64)` arithmetic with per-lane Mersenne reduction (`addVec8`, `subVec8`, `mulVec8`, `reduceVec8`, `fromVec8U32`, `toVec8U32`)
 - **Tower extensions**: `QuadraticExtension` and `CubicExtension` with Karatsuba multiplication and norm-based inversion
 - **Extension metadata**: `NON_RESIDUE` (base-field non-residue) and `EXT_NON_RESIDUE` (`v` where `v^2 = n` or `v^3 = n`) exposed on both extension types
@@ -15,7 +19,7 @@ A generic prime-field arithmetic library for Zig, supporting fields up to 512 bi
 - **Tonelli-Shanks square roots** and Legendre symbols
 - **Predefined fields**: M31, BabyBear, KoalaBear, Goldilocks, M61, StarkNet, Pallas, Vesta, BN254, BLS12-381
 - **Extension towers**: CM31, QM31, BN254_Fp2 (matching zig-stark semantics)
-- **8-lane SIMD NTT/INTT for M31** — `nttVec8M31` / `inttVec8M31` (the generic Cooley-Tukey transform with precomputed twiddles lives in `zig-ntt`)
+- **8-lane SIMD NTT/INTT for M31** — `nttVec8M31` / `inttVec8M31` (the generic Cooley-Tukey transform with precomputed twiddles lives in `zig-ntt`), plus `nttVec8M31Checked` / `inttVec8M31Checked`
 - **Multi-scalar exponentiation** — `multiExp` with windowed Pippenger algorithm
 - **Inner Product Argument (IPA)** — Bulletproofs-style proof of `<a, b> = c` without revealing vectors
 - **Merkle trees** — SHA-256 based trees over field elements with inclusion proofs
@@ -56,7 +60,7 @@ const a = F.fromInt(12345);
 const b = F.fromInt(67890);
 const sum = a.add(b);
 const prod = a.mul(b);
-const inv = a.inv();
+const inv = try a.invChecked();
 
 // Power-of-two roots of unity (for NTT).
 // M31 has two_adicity == 1, so it only exposes 2^1-roots — use a field with
@@ -90,6 +94,41 @@ const rand = F.random(prng.random());
 > they are timing-constant. For small fields the reduction uses `v % MODULUS`,
 > whose latency varies on x86-64 — use them on public data there, and keep
 > secret-scalar code on the `inv`/`mul` paths with your own audit.
+
+## Inversion and division
+
+`inv`, `inverse`, `div` and `batchInv` are **legacy total wrappers** kept for
+source compatibility. They no longer assert, and they propagate zero:
+
+```zig
+const F = zf.M31;
+std.debug.assert(F.zero().inv().isZero());     // legacy, total
+std.debug.assert(F.fromInt(7).div(F.zero()).isZero()); // legacy, total
+
+// Checked variants — what new code must use.
+try std.testing.expectError(error.InverseOfZero, F.zero().invChecked());
+try std.testing.expectError(error.DivisionByZero, F.fromInt(7).divChecked(F.zero()));
+```
+
+| Legacy (total) | Checked | Error |
+|----------------|---------|-------|
+| `inv()` → `zero()` on `0` | `invChecked()` | `error.InverseOfZero` |
+| `div(y)` → `zero()` on `y == 0` | `divChecked(y)` | `error.DivisionByZero` |
+| `batchInv(in, out)`: ignores a length mismatch, writes `zero()` at zero inputs | `batchInvChecked(in, out)` | `error.LengthMismatch`, `error.InverseOfZero` |
+
+Why the split: the binary extended GCD has no defined behaviour on a zero
+input — with `a == 0` the loop takes the `u & 1 == 0` branch forever — and the
+guard against it used to be a `std.debug.assert`, which is compiled out in
+`ReleaseFast`. So a caller-supplied zero used to hang a release build. The
+legacy wrappers are **not** a validation step: zero is not an inverse
+(`0 * inv(0) != 1`), so never read a zero result as "invertible". The same
+applies to the extension types, whose norm-based and closed-form inverses
+degenerate to zero in the same way, and to `Montgomery.invMontgomery` /
+`invMontgomeryChecked`.
+
+`batchInv` writes `zero()` at each zero input and still inverts every other
+position; `batchInvChecked` rejects the whole batch and leaves `outputs`
+untouched.
 
 ## Tower Extensions
 
@@ -278,6 +317,10 @@ for (&lanes, 0..) |*slot, k| slot.* = M31.fromInt(k + 1);
 const m31_root = M31.primitiveRootOfUnity(1); // 2^1-roots only on M31
 zf.nttVec8M31(&lanes, 1, m31_root);
 zf.inttVec8M31(&lanes, 1, m31_root);
+
+// The checked pair rejects a length mismatch with error.InvalidLength; the
+// plain pair leaves the data untouched and swallows the error.
+_ = try zf.nttVec8M31Checked(&lanes, 1, m31_root);
 ```
 
 ## Running Tests
@@ -290,9 +333,32 @@ zig build test
 cd libs/field && zig build test
 ```
 
-`cd libs/field && zig build test` runs seven binaries — `zig-field-tests` (11
-inline), `field-tests` (37), `extension-tests` (9), `merkle-tests` (4),
-`ipa-tests` (2), `simd-tests` (5) and `ext_quick-tests` (2) — 70 tests total.
+`cd libs/field && zig build test` runs seven binaries — `zig-field-tests` (13
+inline), `field-tests` (47), `extension-tests` (10), `merkle-tests` (4),
+`ipa-tests` (2), `simd-tests` (7) and `ext_quick-tests` (2) — 85 tests total.
+The root `zig build test` compiles only the inline `src/` tests, so it counts
+13 for this library.
+
+## Known limitations
+
+- **`inv(0) == 0` and `x / 0 == 0` are the legacy total results** of `inv`,
+  `inverse`, `div` and `batchInv` on both backends and both extension towers.
+  Zero is not an inverse; use `invChecked` / `divChecked` / `batchInvChecked`.
+- **`Ipa.verify` is a stub** (`error.Unsupported`); only
+  `Ipa.verifyWithCommitment` verifies, and its challenges are a local SHA-256
+  over `(L, R, round)` rather than a `zig-transcript` Fiat-Shamir session, so
+  the module is not transcript-composable.
+- **`zf.BLS12_381_Fp2` does not compile** (broken re-export); use
+  `zig-curve`'s `bls12_381.Fp2`.
+- **Inversion is not constant-time** (`binaryGcdInverse` iteration count is
+  input-dependent), and `SmallField` multiplication/reduction uses `%`. Safe for
+  public STARK values, not for secret scalars.
+- **`Vec8` and the `*Vec8` helpers are M31-only**; every other field gets
+  `Vec8 = void`, and `Vec8.fromSlice8` is total (a short slice zero-fills the
+  remaining lanes, a long one truncates to 8).
+- **`format` is dead** on the field and extension types: they declare
+  `options: std.fmt.FormatOptions`, removed in Zig 0.16, so `{}` on a field
+  element falls back to default struct printing.
 
 ## Design Notes
 

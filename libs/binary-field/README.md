@@ -2,15 +2,23 @@
 
 Binary (characteristic-2) Galois fields for Zig. GF(2^n) arithmetic with two field families (polynomial-reduced and Wiedemann tower), CLMUL hardware acceleration, and a Binius-style multilinear polynomial commitment stack.
 
+Library version: **0.3.0** (`libs/binary-field/build.zig.zon`); the workspace
+version lives in the root `build.zig.zon`.
+
 ## Features
 
 - **Generic `BinaryField(bits, reduction_constant)`** — GF(2^n) reduced modulo an arbitrary irreducible polynomial. The leading `x^bits` term is implicit: you supply only the lower coefficients (e.g. `BinaryField(4, 0x3)` for `x^4 + x + 1`, `BinaryField(128, 0x87)` for the GCM polynomial)
 - **Wiedemann tower fields** — `TowerField(level)` builds `T_i = T_{i-1}[X_{i-1}] / (X_{i-1}^2 + X_{i-2}·X_{i-1} + 1)`, so `TowerField(level).BITS == 1 << level`. `TowerField(7)` is GF(2^128)
 - **CLMUL hardware acceleration** — x86_64 `PCLMULQDQ` when the CPU has the `pclmul` feature, with a portable bit-sliced software fallback
-- **Multilinear polynomial evaluation** — `Multilinear(Field)` with folding-based `eval` / `extend` / `hypercubeSum`
-- **Packed MLE (Binius packing)** — `PackedMle`, `novelNorms`, `novelEval`
-- **Sum-check protocol** — `Sumcheck(F)` prover/verifier with a seeded transcript
+- **Multilinear polynomial evaluation** — `Multilinear(Field)` with folding-based `eval` / `extend` / `hypercubeSum`, validated with `error.NotPowerOfTwo` / `error.InvalidPointLength`
+- **Packed MLE (Binius packing)** — `PackedMle` (with `MAX_K`), `novelNorms`, `novelEval`
+- **Sum-check protocol** — `Sumcheck(F)` prover/verifier with a seeded transcript.
+  The secure entry point requires `F.BITS >= 128` and returns
+  `error.FieldTooSmall` otherwise; `SumcheckUnsafe(F)` is only
+  for toy/on-chain experiments such as the historical 4-bit Bitcoin Script
+  format and is not sound against a grinding prover.
 - **Merkle-committed MLE PCS** — `MlePcs(F, E)` and `CommittedMlePcs(F, E)`
+  (the challenge field `E` must have `E.BITS >= 128`), plus the `…Unsafe` toy variants
 
 ## Installation
 
@@ -64,6 +72,11 @@ const Gf128 = zbf.BinaryField(128, 0x87);
 const g = Gf128.fromInt(3);
 std.debug.assert(g.mul(g.inv()).eq(Gf128.one()));
 std.debug.assert(g.pow(3).eq(g.mul(g).mul(g)));
+
+// `inv(0) == 0` is the legacy total result. Zero is not an inverse; call
+// `invChecked` when invertibility is a requirement.
+std.debug.assert(Gf128.zero().inv().isZero());
+try std.testing.expectError(error.InverseOfZero, Gf128.zero().invChecked());
 ```
 
 ### Predefined instances
@@ -127,6 +140,7 @@ const G = zbf.Gf256;
 const table = [_]G{ G.fromInt(1), G.fromInt(2), G.fromInt(3), G.fromInt(4) };
 const mle = zbf.fromEvals(G, &table);
 std.debug.assert(mle.numVars() == 2);
+std.debug.assert((try mle.numVarsChecked()) == 2); // error.NotPowerOfTwo otherwise
 
 const r = [_]G{ G.fromInt(5), G.fromInt(6) };
 const value = try mle.eval(allocator, &r); // fold every variable, then read
@@ -138,14 +152,17 @@ std.debug.assert(ext.len == 1);
 
 _ = mle.hypercubeSum(); // the claimed sum H
 
-// Packed MLE helpers
+// Packed MLE helpers. `k` must satisfy `1 <= k <= P.MAX_K`; everything else
+// is error.InvalidDimension, and any length mismatch error.LengthMismatch.
 const P = zbf.PackedMle(G);
+std.debug.assert(P.MAX_K == @min(G.BITS, @bitSizeOf(usize) - 2));
 const coeffs = [_]G{ G.fromInt(1), G.fromInt(2), G.fromInt(3), G.fromInt(4), G.fromInt(5), G.fromInt(6), G.fromInt(7), G.fromInt(8) };
 const x3 = [_]G{ G.fromInt(0), G.fromInt(1), G.fromInt(2) };
 _ = try P.eval(allocator, 3, &coeffs, &x3);
 _ = try P.vanishingPoly(allocator, 3);
 _ = try P.interpolate(allocator, 3, &coeffs);
-_ = P.betaOnH(3, &x3, 1);
+_ = P.betaOnH(3, &x3, 1);          // legacy: a short r yields zero
+_ = try P.betaOnHChecked(3, &x3, 1); // error.LengthMismatch when r.len < k
 _ = zbf.novelNorms(G, 3);
 _ = try zbf.novelEval(allocator, G, 3, &coeffs, x3[1]);
 ```
@@ -166,7 +183,9 @@ _ = q;
 ### Sum-check and PCS
 
 ```zig
-const S = zbf.Sumcheck(zbf.Gf256);
+// Secure entry points: these require F.BITS >= 128 and return
+// error.FieldTooSmall for a smaller field (e.g. GF(256)).
+const S = zbf.Sumcheck(zbf.Gf2_128);
 _ = S; // prove / verify, plus a seeded transcript variant
 
 const Pcs = zbf.MlePcs(zbf.Gf256, zbf.Gf2_128);
@@ -175,15 +194,34 @@ _ = Pcs;
 _ = Committed;
 ```
 
+> **The `…Unsafe` family is not secure.** `SumcheckUnsafe`, `MlePcsUnsafe` and
+> `CommittedMlePcsUnsafe` skip the `E.BITS >= 128` check so the historical
+> 4-bit on-chain challenge format stays testable over GF(2^4) and GF(2^8). A
+> prover can grind challenges in a field that small, so a proof accepted by
+> these entry points proves nothing to a remote verifier. Use them for the
+> on-chain toy format and for tests only.
+
 ## Running Tests
 
 ```bash
 # From the monorepo root
 zig build test
 
-# Just this library (68 tests, all inline)
+# Just this library (76 tests, all inline)
 cd libs/binary-field && zig build test
 ```
+
+## Known limitations
+
+- `inv(0) == 0` in `BinaryField` and at every `TowerField` level is the legacy
+  total result, not a valid inverse. `invChecked` reports
+  `error.InverseOfZero`; at the GF(2) base case it also rejects any value other
+  than `one()`.
+- `Sumcheck(F)` needs `F.BITS >= 128`; `MlePcs(F, E)` and
+  `CommittedMlePcs(F, E)` need `E.BITS >= 128` for their challenge field. The
+  `…Unsafe` variants are grindable and toy-only.
+- Not a full Binius implementation: there is no Binius commit of a packed MLE
+  beyond `CommittedMlePcs`.
 
 ## Design Notes
 
@@ -204,6 +242,15 @@ cd libs/binary-field && zig build test
 - `src/accel.zig` defines an optional GPU `values[t]` hook for the Gf256
   sum-check. It is internal: the library never depends on CUDA, and the hook
   is not re-exported from `root.zig`
+- **Dimensions and lengths are typed errors, not asserts.** `std.debug.assert`
+  is compiled out in `ReleaseFast`, so a range such as `k` in `PackedMle`, a
+  MLE table length or a query-point length is validated with
+  `error.InvalidDimension` / `error.LengthMismatch` / `error.NotPowerOfTwo` /
+  `error.InvalidPointLength` and propagated from `eval`, `extend`,
+  `interpolate`, `kernelPoly`, `mulModVanishing` and `novelEval`.
+  `PackedMle.MAX_K` is the documented upper bound (`min(F.BITS,
+  bitSizeOf(usize) - 2)`), because the vanishing polynomial of a dimension-`k`
+  subspace allocates `2^(k+1) - 1` elements.
 
 ## License
 

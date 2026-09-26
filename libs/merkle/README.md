@@ -2,10 +2,13 @@
 
 Merkle tree implementations for data commitments. Three tree structures for different use cases: classic binary trees, append-only logs, and sparse key-value sets.
 
+Library version: **0.1.2** (`libs/merkle/build.zig.zon`); the workspace version
+lives in the root `build.zig.zon`.
+
 ## Features
 
 - **MerkleTree** — classic binary Merkle tree with inclusion proofs
-- **MMR (Merkle Mountain Range)** — append-only log structure for blockchains
+- **MMR (Merkle Mountain Range)** — append-only log structure for blockchains, with shape-checked `verify`
 - **SparseMerkleTree** — perfect binary tree for sparse key-value sets
 - **Inclusion/exclusion proofs** — prove membership or non-membership
 - **Proof serialization** — compact binary proof format (`MerkleProof.serialize` / `MerkleProof.deserialize`)
@@ -136,13 +139,27 @@ defer proof.deinit(allocator);
 std.debug.assert(mmr.verify(root, 0, "leaf1", proof));
 ```
 
+`MMR.verify` is **fail-closed on a malformed proof** — it returns `false`
+rather than indexing anything it has not validated:
+
+- `siblings.len` must equal `is_left_sibling.len`. A `MerkleProof` whose two
+  halves disagree used to be walked by `siblings.len` while indexing the flags,
+  i.e. an out-of-bounds read (a trap in Debug/ReleaseSafe, silent undefined
+  behaviour in `ReleaseFast`).
+- The proof depth must match the zero-padded tree that `prove` / `root` build:
+  `2^depth` is the smallest power of two covering `leaf_count`, so a well-formed
+  proof carries exactly `depth` siblings, `index < 2^depth`, `leaf_count` does
+  not exceed `2^depth`, and `depth` is the smallest such one. A truncated or
+  over-long path is rejected.
+- The leaf index must be below `leaf_count`.
+
 ## Running Tests
 
 ```bash
 # From the monorepo root
 zig build test
 
-# Just this library (14 tests, all inline in src/root.zig)
+# Just this library (18 tests, all inline in src/root.zig)
 cd libs/merkle && zig build test
 ```
 
@@ -159,7 +176,10 @@ cd libs/merkle && zig build test
 - MMR is append-only (no deletions) — ideal for blockchain transaction logs.
   `MMR.root()` is an error union because it must collapse the peak list
 - Proofs are `MerkleProof` structs carrying `siblings` plus
-  `is_left_sibling` flags, so a verifier never needs the tree
+  `is_left_sibling` flags, so a verifier never needs the tree. The two slices
+  are parallel arrays: `MMR.verify` requires equal lengths and a depth matching
+  the padded tree before it hashes anything, so a malformed proof is rejected
+  rather than walked out of bounds.
 - Proof format is compact and serializable:
   `[u32 num_siblings][32*n sibling hashes][n direction flags]`
 

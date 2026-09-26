@@ -1,6 +1,6 @@
 # zig-field Improvements Roadmap
 
-Status as of this revision. `zig-field` is version **0.2.0**.
+Status as of this revision. `zig-field` is version **0.3.0**.
 
 Each item was checked against `libs/field/src/`, `libs/field/tests/` and
 `libs/field/build.zig`. Items marked **Phantom** were previously listed as
@@ -12,6 +12,10 @@ complete but have no declaration, no test and no caller anywhere in `src/`.
 
 - [x] `batchInv` — batch inversion via Montgomery's trick (O(n) muls + 1 inv),
       both backends
+- [x] `invChecked` / `divChecked` / `batchInvChecked` — typed errors
+      (`error.InverseOfZero`, `error.DivisionByZero`, `error.LengthMismatch`) on
+      both backends and both extension towers; the plain `inv` / `div` /
+      `batchInv` stay as total legacy wrappers (`inv(0) == 0`, `x / 0 == 0`)
 - [x] `powFast` — non-constant-time exponentiation, both backends and both
       extension towers
 - [x] `toInt()` — field element back to a canonical integer
@@ -51,7 +55,9 @@ complete but have no declaration, no test and no caller anywhere in `src/`.
 
 - [x] `src/ntt.zig` — in-place NTT/INTT, `precomputeTwiddles` / `freeTwiddles` /
       `nttWithTwiddles` / `inttWithTwiddles`
-- [x] `nttVec8M31()` / `inttVec8M31()` — 8-lane SIMD NTT for M31
+- [x] `nttVec8M31()` / `inttVec8M31()` — 8-lane SIMD NTT for M31, plus the
+      `nttVec8M31Checked` / `inttVec8M31Checked` pair that enforces
+      `data.len == 8 * 2^log_n` with `error.InvalidLength`
 - [x] `M31.Vec8` SIMD backend with `addVec8` / `subVec8` / `mulVec8` /
       `reduceVec8` / `ctSelectVec8` / conversions
 - [x] `MerkleTree(F)` — SHA-256 Merkle tree over field elements, inclusion proofs,
@@ -63,6 +69,10 @@ complete but have no declaration, no test and no caller anywhere in `src/`.
 
 - [x] Edge-case tests: `pow(x, 0)`, `pow(x, 1)`, `inv(1)`, `sqrt(0)`,
       `sqrt(1)`, `sqrt(non-residue) == null`
+- [x] Negative tests for the validation paths: `inv(0)`, division by zero,
+      `batchInv` with zeros / mismatched lengths, `randomBounded(rnd, 0)`,
+      `Vec8.fromSlice8` short/long slices, the M31 SIMD NTT length contract,
+      `MerkleTree.verifyBatch` length mismatch
 - [x] Fuzz harness (`tests/fuzz.zig`) and `zig build fuzz`
 - [x] GitHub Actions CI on Linux / macOS / Windows, pinned to Zig 0.16.0
       downloaded from ziglang.org, with a scoped `zig fmt --check build.zig libs examples bench scripts` job
@@ -135,7 +145,7 @@ Ordered roughly by value per unit of effort.
       Mersenne with `BITS == 31`, so the Vec8 helpers cannot be reused for
       Goldilocks or the big fields. Either generalise the lane type or make the
       `void` case a compile error instead of a silently uncallable stub.
-- [ ] **More extension tests.** `extension_test.zig` has 9 tests;
+- [ ] **More extension tests.** `extension_test.zig` has 10 tests;
       `ext_quick.zig` has 2. The `primitiveRootOfUnity` test is limited to the
       fast path because Debug mode is too slow at high two-adicity, so extension
       roots of unity are under-covered.
@@ -153,9 +163,11 @@ Ordered roughly by value per unit of effort.
 - [ ] **GPU backend (CUDA / OpenCL) for batch operations.** Not started.
 - [ ] **WASM target tuning.** `zig build wasm` builds and passes the Node smoke
       test, but there is no performance work on the freestanding target.
-- [ ] **Constant-time, single-pass batch inversion.** `batchInv` debug-asserts
-      that no input is zero and its accumulator is a running product, so it is
-      not usable on secret data as written.
+- [ ] **Constant-time batch inversion.** `batchInv` is now total instead of
+      asserting, but its accumulator is a running product and the whole batch
+      still costs one binary-GCD inverse, so the function remains
+      input-dependent and is not usable on secret data as written.
+      `batchInvChecked` is the API to call when a zero input must be an error.
 
 ## Not in scope for this library
 

@@ -4,6 +4,9 @@ Canonical wire encoding for Zig values via comptime reflection. The format is
 derived entirely from the compile-time type structure — there is no per-type
 code and no schema.
 
+Library version: **0.2.0** (`libs/serialization/build.zig.zon`); the workspace
+version lives in the root `build.zig.zon`.
+
 ## Features
 
 - **Two entry points** — `serialize(allocator, value) ![]u8` and
@@ -16,6 +19,12 @@ code and no schema.
 - **Self-delimiting** — `deserialize` rejects trailing bytes
   (`error.TrailingBytes`) and truncation (`error.UnexpectedEnd`); no silent
   truncation
+- **Untrusted input is bounded** — a `u64` length prefix is validated against
+  the bytes that remain (and the minimum wire size per element) *before*
+  anything is allocated, so it returns `error.InvalidLength` instead of
+  requesting an arbitrary allocation
+- **Rollback on failure** — a decode that fails part-way through releases
+  everything it had already allocated, so a rejected message leaks nothing
 - **Allocator fields handled** — a `std.mem.Allocator` field is skipped on
   write and restored to the deserializing caller's allocator on read; a field
   named `owns_entries` is skipped on write and set to `true` on read
@@ -144,8 +153,36 @@ const pback = try ser.deserialize(allocator, pb, Pair);
 | `deserialize` | `(allocator: std.mem.Allocator, bytes: []const u8, comptime T: type) !T` | result owns its memory; release with `deinit(allocator)` |
 
 Error set (inferred, not a named type): `error.UnexpectedEnd`,
-`error.TrailingBytes`, `error.InvalidValue`, `error.Overflow`, plus
-`error.OutOfMemory`.
+`error.TrailingBytes`, `error.InvalidLength`, `error.InvalidValue`,
+`error.Overflow`, plus `error.OutOfMemory`.
+
+## Untrusted input
+
+`deserialize` is written for bytes you did not produce:
+
+- A `u64` length prefix is checked against the number of bytes actually left in
+  the input, using `minWireSize(child)` as the per-element lower bound, before
+  any allocation. A declared length larger than the input can support is
+  `error.InvalidLength`, and the allocation size is therefore bounded by the
+  input size times the type's own memory-per-wire-byte ratio. On 32-bit
+  targets a prefix above `maxInt(usize)` is rejected here too, instead of
+  tripping an `@intCast` overflow.
+- A failing `readValue` rolls back every value it had already decoded (earlier
+  struct fields, earlier slice elements, earlier optional payloads), so the
+  partially built value owns nothing when the error surfaces. The rollback
+  mirrors the read logic field for field and deliberately does **not** call a
+  user `deinit` on a value whose later fields are still uninitialized.
+- `error.TrailingBytes` frees the fully decoded value; that path now works
+  whether or not the type exposes a `pub deinit`.
+
+```zig
+// 2^64-1 elements with no payload behind the prefix: rejected, not allocated.
+const hostile = [_]u8{0xff} ** 8;
+try std.testing.expectError(
+    error.InvalidLength,
+    ser.deserialize(allocator, &hostile, []const u32),
+);
+```
 
 ## Memory ownership
 
@@ -153,20 +190,22 @@ Error set (inferred, not a named type): `error.UnexpectedEnd`,
 - `deserialize` **allocates** every slice it decodes. A decoded type with a
   `deinit(allocator)` member is the caller's responsibility to release on the
   success path.
-- `error.TrailingBytes` is the one error with a cleanup path: `deserialize` calls
-  `deinit` on the fully decoded value before returning it. **Declare `deinit` as
-  `pub`** — verified with `std.heap.DebugAllocator`, two otherwise identical
-  structs that differ only in `pub` on `deinit` behave differently here: the
-  public one returns `.ok` from `deinit()`, the private one returns `.leak`,
-  because `hasDeinit` only checks `@hasDecl(T, "deinit")` and the cross-file
-  method call does not reach a non-`pub` member.
-- Every other failure (`error.UnexpectedEnd`, `error.InvalidValue`,
-  `error.Overflow`) **leaks whatever was decoded so far**: `readValue` has no
-  `errdefer` unwind for the partially filled parent value. Validate the buffer
-  length and shape before decoding untrusted input, or decode into a scratch
-  allocator.
-- `deserialize` on a type without `deinit` still allocates; those allocations are
-  only reachable through the returned value.
+- `error.TrailingBytes` frees the decoded value before returning it, preferring
+  the type's own `deinit`. **Declare `deinit` as `pub`** — verified with
+  `std.heap.DebugAllocator`, two otherwise identical structs that differ only
+  in `pub` on `deinit` behave differently here: the public one releases
+  cleanly, the private one leaves a leak, because `hasDeinit` only checks
+  `@hasDecl(T, "deinit")` and the cross-file method call does not reach a
+  non-`pub` member.
+- **Every other failure releases what it decoded** (`error.InvalidLength`,
+  `error.UnexpectedEnd`, `error.InvalidValue`, `error.Overflow`). An earlier
+  revision of this file stated the opposite: `readValue` had no unwind for the
+  partially filled parent value, so a malformed message leaked the prefix it had
+  managed to build. The rollback is now in place, and it does not need `deinit`
+  to be `pub` — a type with no `deinit` at all is released through the mirrored
+  walk.
+- `deserialize` on a type without `deinit` still allocates; on the success path
+  those allocations are only reachable through the returned value.
 
 ## Installation
 
@@ -192,9 +231,16 @@ There are no dependencies.
 cd libs/serialization && zig build test
 ```
 
-5 tests: the golden wire layout, a nested slice-of-slices round trip, the
+15 tests: the golden wire layout, a nested slice-of-slices round trip, the
 `SIZE`-protocol field element, the `NUM_BYTES` field element plus strict
-`bool`/optional flag validation, and rejection of truncated and trailing bytes.
+`bool`/optional flag validation, rejection of truncated and trailing bytes, and
+the untrusted-input suite — over-long length prefixes rejected, a prefix that
+never reaches the allocator (checked with `FailingAllocator`), rollback of
+earlier struct fields, rollback of already-decoded slice elements, rollback of
+optional payloads (allocated and not), a prefix that fails before an optional
+payload runs, rollback that mirrors the read logic instead of calling a user
+`deinit` on a half-built value, and a valid minimal encoding with empty
+elements that must still round-trip.
 
 ## Design Notes
 

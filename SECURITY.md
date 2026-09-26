@@ -14,6 +14,24 @@ your own review, threat model and parameter selection.
   comparison, square roots, curve `scalarMul` and both BN254/BLS12-381 pairing
   implementations are data-dependent. The Montgomery `mul`/`add`/`sub` core is
   constant-time; see `DESIGN.md` for the per-operation list.
+- **Legacy total inverse/divide:** `inv(0) == 0` and `x / 0 == 0` in
+  `zig-field` (both backends plus `QuadraticExtension` / `CubicExtension`) and
+  `inv(0) == 0` in `zig-binary-field` (`BinaryField`, `TowerField`). These are
+  **source-compatibility wrappers**, not a mathematical result: zero has no
+  inverse, and `x * inv(x) == 1` does not hold for `x == 0`. Use
+  `invChecked` / `divChecked` / `batchInvChecked`, which return
+  `error.InverseOfZero`, `error.DivisionByZero` and `error.LengthMismatch`. The
+  reason the wrappers exist at all is that the underlying binary-GCD loop does
+  not terminate on a zero input, which used to be guarded by an
+  `std.debug.assert` — a guard that vanished in `ReleaseFast`.
+- **Binary-field sum-check over small fields:** `Sumcheck(F)` requires
+  `F.BITS >= 128`; `MlePcs(F, E)` and `CommittedMlePcs(F, E)` require
+  `E.BITS >= 128` for their challenge field. They return
+  `error.FieldTooSmall` below that. `SumcheckUnsafe`, `MlePcsUnsafe` and
+  `CommittedMlePcsUnsafe` skip the check, keep the historical 4-bit on-chain
+  (Bitcoin Script) challenge format, and are **not sound**: a prover can grind
+  small-field challenges. Treat them as toy/test-only code; they must never
+  secure a remote proof.
 - **KZG setup:** `Setup.generate` is synthetic (caller-chosen `tau`) and is for
   tests and development only. Production needs a verified powers-of-tau
   ceremony with toxic-waste destruction.
@@ -29,8 +47,11 @@ your own review, threat model and parameter selection.
 - **Entropy:** `zig-rng` seeds its process-wide ChaCha20 CSPRNG from the OS
   (`getrandom` on Linux, Windows `BCryptGenRandom`, `/dev/urandom` elsewhere,
   host-injected entropy on wasm/freestanding) and panics if secure entropy is
-  unavailable. Test hooks (`setEntropy`, `setRandomForTesting`) are for
-  deterministic tests only and must not be reachable in production builds.
+  unavailable. Test hooks (`setRandomForTesting`, `setRandomForTestingSeed`) are
+  for deterministic tests only and must not be reachable in production builds.
+  `setRandomForTesting` keeps a pointer to the caller's generator state, so it
+  must always be paired with `defer setRandomForTesting(null)`; prefer
+  `setRandomForTestingSeed`, whose state lives inside the module.
 
 ## Advisory ZA-2026-001 — zig-fri `verify()` is not a low-degree test
 
@@ -89,14 +110,15 @@ zig build test --summary all -Doptimize=ReleaseFast
 zig build stark
 ```
 
-Both test modes passed **316/316 tests**, and the STARK demo (Fibonacci over
+Both test modes passed **354/354 tests**, and the STARK demo (Fibonacci over
 Goldilocks) accepted the honest proof while rejecting a tampered proof. The FRI
 tests also pass through the standalone `libs/fri` build.
 
 > History: when the fix above landed, the same commands reported 297/297
 > tests — that was the suite size at the time, not a different result. The
-> count has since grown with the rest of the workspace (see `README.md` for the
-> per-library breakdown).
+> count has since grown with the rest of the workspace (an intermediate
+> documentation pass quoted 316; see `README.md` for the current per-library
+> breakdown).
 
 ## Migration
 
@@ -109,6 +131,56 @@ Do not use the historical `zig-pkg/` snapshot as evidence that the current
 implementation is fixed. New deployments still require an external security
 review, carefully chosen domain/degree parameters, and a real trusted setup
 for the surrounding proof system.
+
+## Advisory ZA-2026-002 — preconditions were asserted, not enforced
+
+**Affected:** the `zig-algebra` working tree through workspace release 0.3.2,
+in the `field`, `binary-field`, `merkle`, `rng`, `serialization` and `curve`
+entry points listed below.
+
+**Status:** addressed in the current tree (workspace `0.4.0`; `field` `0.3.0`,
+`binary-field` `0.3.0`, `merkle` `0.1.2`, `rng` `0.3.0`, `serialization`
+`0.2.0`, `curve` `0.4.0`). The fix has not been independently audited and is
+not, by itself, a production security claim.
+
+**Class of defect:** every precondition in this class was expressed as
+`std.debug.assert`, which Zig compiles out in `ReleaseFast` and
+`ReleaseSmall`. A violating input therefore behaved differently per
+optimization level: a panic under Debug/ReleaseSafe, and a hang, an
+out-of-bounds read/write, or silently wrong output in a release build. Where
+the length, dimension or domain string comes from a peer, the memory-safety
+and availability cases are remotely triggerable.
+
+| Affected entry point | ReleaseFast behaviour before the fix |
+|---------------------|------------------------------------|
+| `zig-field` `inv` / `div` / `batchInv` (both backends and both towers) | binary-GCD loop on `a == 0` never terminates; `batchInv` also wrote past `outputs` on a length mismatch |
+| `zig-field` `randomBounded(rnd, 0)`, `Vec8.fromSlice8`, `nttVec8M31` / `inttVec8M31`, `MerkleTree(F).verifyBatch` | rejection loop or unsatisfiable test hangs; out-of-bounds access; batch verification returned `true` after checking only `min(len)` entries |
+| `zig-binary-field` `BinaryField.inv`, `TowerField.inv` | zero exponentiated or walked down the tower and came back as a fabricated zero inverse; the GF(2) base case asserted `a == 1` |
+| `zig-binary-field` `Multilinear.numVars` / `eval` / `extend`, `PackedMle.*`, `novelEval` | folding past the end of the table; oversized `k` wrapped the length arithmetic and then allocated or indexed out of bounds |
+| `zig-binary-field` `Sumcheck` over `F.BITS < 128` | 4-bit challenges were accepted as a secure sum-check, i.e. a grindable proof system |
+| `zig-merkle` `MMR.verify` | sibling array walked by its length while indexing a shorter flag array (out-of-bounds read) |
+| `zig-rng` `csprng.setEntropy`, host-seed reads, `setRandomForTesting` | over-long entropy overflowed the host buffer; a seed request longer than the injection copied uninitialized memory; the test hook could outlive the caller's generator state |
+| `zig-serialization` `deserialize` | an untrusted `u64` length prefix reached the allocator unvalidated (allocation amplification / 32-bit `@intCast` overflow), and a mid-stream failure left the partially decoded value allocated |
+| `zig-curve` `hashToPoint` / `generatorVector` | `catch unreachable` on the label buffer (abort) and `unreachable` on an exhausted search |
+
+**Impact:** denial of service, undefined behaviour, allocation amplification,
+and — for the sum-check entry points — a proof system that is not sound
+against a grinding prover.
+
+**Fix and residual risk:** the preconditions are now typed errors
+(`error.InverseOfZero`, `error.DivisionByZero`, `error.LengthMismatch`,
+`error.InvalidDimension`, `error.InvalidLength`, `error.NotPowerOfTwo`,
+`error.InvalidPointLength`, `error.EntropyTooLong`,
+`error.InsufficientEntropy`, `error.DomainTooLong`,
+`error.NoValidPoint`), and the checked functions are the ones that enforce
+them. Two caveats survive by design and must not be read away:
+
+1. The legacy total wrappers still exist for source compatibility
+   (`inv(0) == 0`, `x / 0 == 0`, truncating `setEntropy`, a no-op
+   `nttVec8M31`). Calling them is not a validation step.
+2. `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe` deliberately
+   bypass the `F.BITS >= 128` requirement to keep the historical 4-bit on-chain
+   format testable. They are toy-only and unsound for remote proofs.
 
 ## Reporting
 

@@ -6,15 +6,95 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Security (P0 class: asserted preconditions)
+
+The preconditions of several public entry points were expressed as
+`std.debug.assert`, which Zig compiles out in `ReleaseFast`/`ReleaseSmall`. A
+violating input therefore panicked in Debug/ReleaseSafe and, in a release
+build, hung, read/wrote out of bounds, or silently produced a wrong result.
+All of these are now typed errors, with total legacy wrappers kept only where a
+signature could not change. `SECURITY.md` records the full advisory as
+**ZA-2026-002**; the highlights:
+
+- **field** (0.2.0 → **0.3.0**): added `invChecked` (`error.InverseOfZero`),
+  `divChecked` (`error.DivisionByZero`) and `batchInvChecked`
+  (`error.LengthMismatch` / `error.InverseOfZero`) on `SmallField`, `BigField`,
+  `QuadraticExtension` and `CubicExtension`, plus Montgomery's
+  `invMontgomeryChecked`. **BREAKING in behaviour:** `inv`, `inverse` and `div`
+  are total — `inv(0) == zero()` and `x / 0 == zero()` — where they previously
+  asserted (Debug/ReleaseSafe) or spun forever in the binary-GCD loop
+  (ReleaseFast). `randomBounded(rnd, 0)` returns zero instead of hanging,
+  `Vec8.fromSlice8` zero-fills/truncates instead of reading past the slice,
+  `MerkleTree(F).verifyBatch` fails closed on a length mismatch, and
+  `nttVec8M31Checked` / `inttVec8M31Checked` report
+  `error.InvalidLength` (the unchecked pair is now a no-op on a mismatch).
+- **binary-field** (0.2.0 → **0.3.0**): `invChecked` on `BinaryField` and
+  `TowerField` (`error.InverseOfZero`; the GF(2) base case also rejects a
+  non-unit). `Multilinear.numVarsChecked` (`error.NotPowerOfTwo`) with `eval` /
+  `extend` returning `error.InvalidPointLength`; `PackedMle` gained `MAX_K` and
+  `checkK` and now returns `error.InvalidDimension` / `error.LengthMismatch`
+  (`betaOnHChecked` likewise), and `novelEval` validates `k` and the coefficient
+  length. **BREAKING:** `Sumcheck(F)` now requires `F.BITS >= 128` and returns
+  `error.FieldTooSmall`; `MlePcs(F, E)` and `CommittedMlePcs(F, E)` apply the
+  same check to their challenge field `E`. The
+  new `SumcheckUnsafe`, `MlePcsUnsafe` and `CommittedMlePcsUnsafe` bypass it to
+  keep the historical 4-bit on-chain challenge format — they are **toy/test
+  only and not sound against a grinding prover**, and the library's own small
+  field tests were switched to them.
+- **merkle** (0.1.1 → **0.1.2**): `MMR.verify` shape-checks the proof before
+  indexing it — the sibling and flag arrays must have equal length, and the
+  depth must match the zero-padded tree (`2^ceil(log2(leaf_count))`) with the
+  index below it. A proof whose two halves disagreed in length previously
+  caused an out-of-bounds read of `is_left_sibling`.
+- **rng** (0.2.0 → **0.3.0**): added `setEntropyChecked`
+  (`error.EntropyTooLong` / `error.InsufficientEntropy`) and
+  `entropyAvailable`. Legacy `setEntropy` now truncates to the 64-byte host
+  buffer and zero-fills the tail instead of overflowing it; the host buffer is
+  zero-initialised and a seed request longer than the injected entropy is
+  refused rather than copying uninitialised memory. Added
+  `setRandomForTestingSeed(?u64)`, whose state lives in the module;
+  `setRandomForTesting` now stores a copy of the `std.Random` interface value
+  and must be reset with `defer setRandomForTesting(null)` (the previous
+  pointer form could outlive the caller's generator). `src/root.zig` added
+  `refAllDecls`, without which the `csprng` tests were never collected.
+- **serialization** (0.1.1 → **0.2.0**): `deserialize` treats its input as
+  untrusted. A `u64` length prefix is validated against the bytes that remain
+  and the per-element minimum wire size before anything is allocated
+  (`error.InvalidLength`), and a failure part-way through rolls back every
+  value already decoded, so a rejected input no longer leaks. **BREAKING:**
+  `error.InvalidLength` is a new error in the inferred error set, and
+  `error.TrailingBytes` now releases the decoded value through a path that does
+  not depend on `deinit` being `pub`.
+- **curve** (0.3.0 → **0.4.0**): `hashToPoint` returns
+  `error{ DomainTooLong, NoValidPoint }!Point` and `generatorVector` returns
+  `(DeriveError || std.mem.Allocator.Error)![]Point`, freeing its allocation
+  when a derivation fails. The `catch unreachable` on the 64-byte label buffer
+  and the `unreachable` on an exhausted try-and-increment search are gone; the
+  domain limits are exported as `max_domain_len` and
+  `max_generator_vector_domain_len`. **BREAKING:** both functions are error
+  unions now, so existing `const p = hashToPoint(...)` call sites need `try`.
+
+### Versioning
+
+- Root `build.zig.zon` is now **`0.4.0`** (was `0.3.2`); every library keeps
+  its own independent semver in `libs/<name>/build.zig.zon`. The manifests
+  bumped for this release are `field` `0.3.0`, `binary-field` `0.3.0`,
+  `merkle` `0.1.2`, `rng` `0.3.0`, `serialization` `0.2.0` and `curve`
+  `0.4.0`; every other manifest is unchanged, so the per-library range is
+  `0.1.0` (`transcript`) to `0.4.0` (`curve`).
+
 ### Docs
 - Documentation pass so every top-level document matches the current tree.
   Historical entries are retained, with factual corrections noted here.
-- **Test counts.** The root `zig build test` step runs **316 tests** (verified
+- **Test counts.** The root `zig build test` step runs **354 tests** (verified
   on Zig 0.16.0 in both Debug and ReleaseFast); per-library `zig build test`
-  steps sum to 419 because `field` (70) and `curve` (92) also compile their
-  separate `tests/` roots. Older documents quoted 222 and 297; the 297 figure
-  in `SECURITY.md` was accurate for the suite as it stood when advisory
-  ZA-2026-001 was fixed and is kept there as history.
+  steps sum to 470 because `field` (85) and `curve` (96) also compile their
+  separate `tests/` roots. Older documents quoted 222, 297 and 316; the 297
+  figure in `SECURITY.md` was accurate for the suite as it stood when advisory
+  ZA-2026-001 was fixed and is kept there as history. Per-library totals:
+  algebra-traits 0, bigint 18, binary-field 76, curve 96, field 85, fri 10,
+  hash 17, kzg 6, linalg 9, merkle 18, ntt 11, pairing 54, parallel 2, poly 20,
+  rng 23, serialization 15, transcript 10.
 - **Library counts.** The workspace has 17 libraries. `kzg` is the 17th
   (added in v0.2.2); v0.1.0 shipped 14 libraries and v0.2.0 brought the total
   to 16 with `fri` and `transcript`.
@@ -25,6 +105,11 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   Merkle commitment), and its challenges are a local SHA-256 of `(L, R, round)`
   rather than a `zig-transcript` Fiat-Shamir session. The module is now listed
   under Known Limitations in `README.md` and Scope in `SECURITY.md`.
+- **Validation contract documented.** `README.md` gained a table pairing each
+  legacy total wrapper with its `…Checked` sibling, and every document now
+  states that `inv(0) == 0` is a source-compatibility result, not a valid
+  inverse, and that `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe`
+  are unsound.
 - **Feature lists corrected** to the code that exists: `zig-ntt` is radix-2
   power-of-two only (no mixed-radix, 2-D, batch or SIMD; the M31 `Vec8` NTT is
   in `zig-field`), `zig-poly` has schoolbook multiplication with no
@@ -49,14 +134,10 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 - **STARK demo field corrected** to Goldilocks (`examples/stark_prover.zig`) in
   `AGENTS.md` and in the `.github/workflows/test.yml` step name; the demo has
   used Goldilocks since it was introduced.
-
-### Versioning
-
-- Root `build.zig.zon` carries the workspace version (`0.3.2`); every library
-  keeps its own independent semver in `libs/<name>/build.zig.zon`, currently
-  between `0.1.0` (`transcript`) and `0.3.0` (`curve`, `pairing`). Library
-  versions bump for API changes, the workspace version for ecosystem-level
-  releases.
+- **Stale `inv(0)` statements removed.** `libs/field/CHANGELOG.md` and
+  `libs/field/TODO.md` claimed there was no `inv(0)` test because `inv`
+  debug-asserted; both now describe the total legacy behaviour and the checked
+  API.
 
 ## [v0.3.2] — 2026-09-25
 

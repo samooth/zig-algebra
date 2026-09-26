@@ -2,11 +2,14 @@
 
 Cryptographically secure and deterministic random number generators for Zig. Includes a ChaCha20 CSPRNG, a SHAKE256 XOF-based generator, a process-wide OS-seeded CSPRNG, and unbiased sampling helpers for field elements and bounded integers.
 
+Library version: **0.3.0** (`libs/rng/build.zig.zon`); the workspace version
+lives in the root `build.zig.zon`.
+
 ## Features
 
 - **ChaCha20Rng** — stream-cipher CSPRNG (RFC 8439), deterministic from a 32-byte key
 - **Shake256Rng** — XOF-based generator (Keccak-f[1600], rate 136 bytes), extendable output
-- **Process-wide CSPRNG** (`csprng`) — seeded once from OS entropy, spinlock-guarded, with a host-injection hook for freestanding/WASM
+- **Process-wide CSPRNG** (`csprng`) — seeded once from OS entropy, spinlock-guarded, with a host-injection hook for freestanding/WASM (`setEntropy`, `setEntropyChecked`, `entropyAvailable`)
 - **Unbiased sampling** — rejection sampling for field elements and bounded integers, with a bounded attempt count
 - **Utilities** — Fisher-Yates shuffle, random permutation, random bool, `u8`/`u32`/`u64` draws
 - **`RngTrait`** — compile-time contract: any type with `randomBytes([]u8) void` satisfies it
@@ -142,8 +145,41 @@ pub fn main() !void {
 |----------|-----------|-------|
 | `bytes` | `(out: []u8) void` | lazily seeds on first use |
 | `random` | `(comptime T) T` | uniformly random `T` |
-| `setEntropy` | `(entropy: []const u8) void` | **required** on freestanding/WASI before any draw |
-| `setRandomForTesting` | `(rng: ?*std.Random) void` | test-only deterministic injection |
+| `setEntropy` | `(entropy: []const u8) void` | **required** on freestanding/WASI before any draw; total — truncates to the 64-byte host buffer and zero-fills the tail |
+| `setEntropyChecked` | `(entropy: []const u8) error{ EntropyTooLong, InsufficientEntropy }!void` | strict variant: rejects an over-capacity or too-short injection |
+| `entropyAvailable` | `() usize` | bytes of host entropy currently injected (0 = none) |
+| `required_entropy_len` | `const usize` | `std.Random.DefaultCsprng.secret_seed_length`; the minimum for a usable seed |
+| `setRandomForTesting` | `(rng: ?*std.Random) void` | test-only deterministic injection; **always** reset with `defer setRandomForTesting(null)` |
+| `setRandomForTestingSeed` | `(seed: ?u64) void` | test-only injection with module-owned state (cannot dangle); `null` disables |
+
+```zig
+// Freestanding / WASM: inject host entropy before the first draw.
+try zr.csprng.setEntropyChecked(host_bytes);      // error if too short/too long
+std.debug.assert(zr.csprng.entropyAvailable() >= zr.csprng.required_entropy_len);
+
+// Deterministic tests. Prefer the seed form: no caller pointer is retained.
+defer zr.csprng.setRandomForTesting(null);
+zr.csprng.setRandomForTestingSeed(1234);
+var buf: [32]u8 = undefined;
+zr.csprng.bytes(&buf);
+```
+
+> **Lifetime rule for `setRandomForTesting`.** The hook stores a *copy* of the
+> `std.Random` interface value, and `std.Random` is
+> `{ ptr: *anyopaque, fillFn }` — `ptr` still points at the caller's generator
+> state. Installing the hook therefore extends the lifetime requirement of that
+> state: a failed expectation that skips the reset leaves the next
+> `bytes`/`random` call reading freed stack memory. `setRandomForTestingSeed`
+> keeps its state inside the module and cannot dangle, which is why it is the
+> recommended form. Neither hook may be reachable in production builds.
+
+> **Truncation rule for `setEntropy`.** The legacy `setEntropy` is total: an
+> over-long slice is truncated to `host_seed_capacity` (64) bytes and the tail
+> is zeroed, instead of overflowing the buffer as it did in `ReleaseFast` when
+> the guarding assert was compiled out. The stored buffer is zero-initialised,
+> shrinking an injection makes the old bytes unreachable, and a seed request
+> longer than `entropyAvailable()` is refused rather than satisfied with
+> uninitialised memory. Use `setEntropyChecked` when strict validation is wanted.
 
 ## Errors and limits
 
@@ -151,6 +187,8 @@ pub fn main() !void {
 - `error.RejectionSamplingFailed` — `MAX_REJECTION_ATTEMPTS` (1024) draws were
   all rejected. A healthy source effectively never hits this; a hostile or
   constant source always does (there is a regression test for that).
+- `error.EntropyTooLong` / `error.InsufficientEntropy` — `setEntropyChecked`
+  only; the legacy `setEntropy` is total.
 - `randomFieldElement` requires `F` to expose `MODULUS` (or `order`) and
   `fromInt`, and `R` to expose `randomBytes`. It reads `F.NUM_BYTES` bytes when
   available and falls back to `bit_length(order)` otherwise, capped at 64 bytes.
@@ -166,6 +204,8 @@ pub fn main() !void {
   re-seed before then.
 - `csprng` serialises all callers on a spinlock, so it is not meant for bulk
   random-byte generation. Use a `ChaCha20Rng` for that.
+- The deterministic hooks are process-wide and not per-instance; they exist for
+  tests, not for production.
 
 ## Design Notes
 
@@ -188,13 +228,23 @@ pub fn main() !void {
 cd libs/rng && zig build test
 ```
 
-13 tests: ChaCha20 determinism across two instances, distinct outputs for
+23 tests: ChaCha20 determinism across two instances, distinct outputs for
 distinct seeds, `randomU64Bounded`, `randomBytes` non-repetition, SHAKE256
 determinism and seed sensitivity, allocation-free `squeezeInto`, Fisher-Yates
 permutation validity, `randomPermutation`, `randomFieldElement` on an in-file
 F7, `randomBool` balance, `randomU64Bounded` edge cases (`0`, `1`, `max == 0`),
-and a regression test that a constant-output source terminates with
-`error.RejectionSamplingFailed` after `MAX_REJECTION_ATTEMPTS`.
+a regression test that a constant-output source terminates with
+`error.RejectionSamplingFailed` after `MAX_REJECTION_ATTEMPTS`, and the CSPRNG
+suite: `setRandomForTesting` stream reproducibility, `setRandomForTestingSeed`
+determinism with no caller pointer retained, restoring the real CSPRNG with
+`setRandomForTestingSeed(null)`, `setEntropyChecked` rejecting short and
+over-long entropy, `setEntropy` truncating instead of overflowing,
+`setEntropy` zeroing the tail, and host-seed requests bounded by the injected
+length.
+
+`src/root.zig` calls `std.testing.refAllDecls`, without which the `test`
+blocks in `src/csprng.zig` were never collected and the CSPRNG tests above did
+not run at all.
 
 ## License
 

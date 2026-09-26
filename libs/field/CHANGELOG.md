@@ -5,8 +5,8 @@ All notable changes to `zig-field` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Library version: **0.2.0** (`libs/field/build.zig.zon`). The workspace version
-lives in the root `build.zig.zon`.
+Library version: **0.3.0** (`libs/field/build.zig.zon`). The workspace version
+lives in the root `build.zig.zon` (`0.4.0`).
 
 ---
 
@@ -14,7 +14,54 @@ lives in the root `build.zig.zon`.
 
 ### Added
 
-Verified present in `src/` as of this revision:
+Checked variants of every entry point whose precondition used to be a
+`std.debug.assert` (compiled out in `ReleaseFast`/`ReleaseSmall`):
+
+- `invChecked()` → `error.InverseOfZero` on `SmallField`, `BigField`,
+  `QuadraticExtension` and `CubicExtension`
+- `divChecked(other)` → `error.DivisionByZero` on the same four types
+- `batchInvChecked(inputs, outputs)` → `error.LengthMismatch` /
+  `error.InverseOfZero` on both backends; on error `outputs` is untouched
+- `Montgomery(M).invMontgomeryChecked` → `error.InverseOfZero`, and
+  `binaryGcdInverse` now returns `?[]u64` (`null` for zero) instead of looping
+- `nttVec8M31Checked` / `inttVec8M31Checked` → `error.InvalidLength` when
+  `data.len != 8 * 2^log_n` (also rejects a `log_n` whose `8 * 2^log_n` would
+  not fit in a `usize`); exported flat as `zf.nttVec8M31Checked` /
+  `zf.inttVec8M31Checked`
+
+### Changed (BREAKING in behaviour)
+
+- **`inv`, `inverse`, `div` and `batchInv` are total.** `inv(0) == zero()` and
+  `x / 0 == zero()` where the code previously `std.debug.assert`ed the input was
+  non-zero — a panic in Debug/ReleaseSafe and, for `inv`, an infinite loop in
+  `ReleaseFast` once the assert was compiled out and the binary-GCD loop
+  stopped making progress on `a == 0`. `batchInv` now returns without touching
+  `outputs` on a length mismatch (it used to write past the end) and writes
+  `zero()` at each zero input while inverting every other position. Zero is not
+  an inverse; call the `…Checked` variants when invertibility is required.
+- `randomBounded(rnd, 0)` returns zero (the empty range) instead of looping
+  forever on an unsatisfiable range test.
+- `Vec8.fromSlice8` zero-fills the remaining lanes for a short slice and
+  truncates a long one to its first 8 entries, instead of reading past the end.
+- `MerkleTree(F).verifyBatch` fails closed (`false`) on a length mismatch
+  instead of verifying only the first `min(len)` entries and returning `true`.
+- `nttVec8M31` / `inttVec8M31` leave `data` untouched on a length mismatch
+  (they used to read and write out of bounds); the `…Checked` pair reports it.
+
+### Testing
+
+- `cd libs/field && zig build test` runs 85 tests in this library (7 test
+  binaries: inline `src/` tests 13, `field_test.zig` 47, `extension_test.zig` 10,
+  `merkle_test.zig` 4, `ipa_test.zig` 2, `simd_test.zig` 7, `ext_quick.zig` 2).
+  The root `zig build test` only compiles the inline `src/` tests, so it reports
+  13 for `zig-field` and 354 for the whole workspace.
+- New negative tests cover `inv(0)`, `div` by zero, `batchInv` with zeros and
+  with mismatched lengths, `randomBounded(rnd, 0)`, `fromSlice8` with a short and
+  a long slice, the M31 SIMD NTT length contract, `verifyBatch` length
+  mismatch, and the zero-input paths of `invMontgomery` / `invMontgomeryChecked`
+  at M31 and BLS12-381 sizes.
+
+### Added (verified present in `src/` as of this revision)
 
 - `batchInv(inputs, outputs)` — batch inversion via Montgomery's trick
   (O(n) muls + 1 inv) on both `SmallField` and `BigField`
@@ -96,8 +143,11 @@ Verified present in `src/` as of this revision:
 - The extension `primitiveRootOfUnity` test is limited to the fast path because
   Debug mode is too slow at high two-adicity.
 - Edge-case tests cover `pow(x, 0)`, `pow(x, 1)`, `inv(1)`, `sqrt(0)`, `sqrt(1)`
-  and "sqrt of a non-residue returns `null`" — for `SmallField`. There is **no**
-  `inv(0)` test, because `inv` debug-asserts a non-zero input.
+  and "sqrt of a non-residue returns `null`" — for `SmallField`. `inv(0)` is
+  now covered too: an earlier revision of this file said there was **no**
+  `inv(0)` test because `inv` debug-asserted a non-zero input. That assertion is
+  gone, so the test asserts the total behaviour (`inv(0) == zero()`) and the
+  checked behaviour (`invChecked(0) == error.InverseOfZero`).
 - **Removed from the changelog because they never existed in `src/`:**
   `fromIntStrict()`, `fromBytesBE()` and `toBytesBE()`. A repository-wide search
   finds these identifiers only in this file and in `TODO.md`; there is no
@@ -111,11 +161,11 @@ Verified present in `src/` as of this revision:
 
 ### Build and CI
 
-- `zig build test` runs 70 tests in this library (7 test binaries: inline `src/`
-  tests 11, `field_test.zig` 37, `extension_test.zig` 9, `merkle_test.zig` 4,
-  `ipa_test.zig` 2, `simd_test.zig` 5, `ext_quick.zig` 2). The root
-  `zig build test` only compiles the inline `src/` tests, so it reports 11 for
-  `zig-field` and 316 for the whole workspace.
+- `zig build test` runs 85 tests in this library (7 test binaries: inline `src/`
+  tests 13, `field_test.zig` 47, `extension_test.zig` 10, `merkle_test.zig` 4,
+  `ipa_test.zig` 2, `simd_test.zig` 7, `ext_quick.zig` 2). The root
+  `zig build test` only compiles the inline `src/` tests, so it reports 13 for
+  `zig-field` and 354 for the whole workspace.
 - Additional steps: `zig build bench`, `zig build fuzz`, `zig build fmt`
   (`zig fmt --check build.zig libs examples bench scripts`, enforced in CI).
 - **`zig build docs` is a no-op placeholder.** `build.zig` declares the step with

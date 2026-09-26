@@ -5,9 +5,14 @@
 
 A modular ecosystem of 17 algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig 0.16.0.
 
-> **Status:** workspace version `0.3.2` (see [Versioning](#versioning)). No
+> **Status:** workspace version `0.4.0` (see [Versioning](#versioning)). No
 > independent cryptographic audit has been performed; "production candidate"
 > below means test-covered, not audited. Review `SECURITY.md` before use.
+>
+> `0.4.0` is a hardening release: input validation that used to be
+> `std.debug.assert` (invisible in `ReleaseFast`) is now typed errors, and the
+> legacy total wrappers are explicitly marked as such. See
+> [Known Limitations](#known-limitations).
 
 ## Vision
 
@@ -70,26 +75,27 @@ parallel (no deps) · serialization (no deps)
 | [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 17 |
 | [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 10 |
 | [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 10 |
-| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 13 |
-| [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 70 |
-| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 68 |
-| [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 92 |
+| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 23 |
+| [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 85 |
+| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 76 |
+| [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 96 |
 | [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 54 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 11 |
-| [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 14 |
+| [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 18 |
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 20 |
 | [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 9 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 2 |
-| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 5 |
+| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 15 |
 | [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM; synthetic setup, tests only) | 6 |
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **316 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
+> **354 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
 > compiles each library's inline `src/` tests only, so `field` and `curve` —
-> the two libraries with separate `tests/` roots — contribute 11 and 48 tests
-> there instead of 70 and 92. `algebra-traits` is compile-time only and
-> contributes 0 tests. `kzg` was added in v0.2.2 as the 17th library.
+> the two libraries with separate `tests/` roots — contribute 13 and 52 tests
+> there instead of 85 and 96. `algebra-traits` is compile-time only and
+> contributes 0 tests. The per-library steps sum to 470. `kzg` was added in
+> v0.2.2 as the 17th library.
 
 ## API Status
 
@@ -103,6 +109,30 @@ parallel (no deps) · serialization (no deps)
 checks; it does not claim an independent cryptographic audit or constant-time
 guarantee. Module-level gaps (e.g. the IPA verifier inside `zig-field`) are
 listed under [Known Limitations](#known-limitations).
+
+## Validation Contract (0.4.0)
+
+Input validation used to be expressed as `std.debug.assert`, which is compiled
+out in `ReleaseFast`. The affected entry points are now split in two:
+
+| Legacy (total) | Checked | Rejects |
+|----------------|---------|---------|
+| `F.inv()` → `zero()` on `0` | `F.invChecked()` | `error.InverseOfZero` |
+| `F.div(y)` → `zero()` on `y == 0` | `F.divChecked(y)` | `error.DivisionByZero` |
+| `F.batchInv(in, out)` (silently ignores a length mismatch, inverts around zeros) | `F.batchInvChecked(in, out)` | `error.LengthMismatch`, `error.InverseOfZero` |
+| `BinaryField.inv()`, `TowerField.inv()` → `zero()` on `0` | `invChecked()` | `error.InverseOfZero` |
+| `Multilinear.numVars()` → `0` on a malformed table | `numVarsChecked()` | `error.NotPowerOfTwo` |
+| `PackedMle` checked methods / `novelEval` | `checkK`, `betaOnHChecked`, typed methods | `error.InvalidDimension`, `error.LengthMismatch` |
+| `nttVec8M31` / `inttVec8M31` → no-op on a length mismatch | `nttVec8M31Checked` / `inttVec8M31Checked` | `error.InvalidLength` |
+| `randomBounded(rnd, 0)` → `zero()` | — | (the empty range is defined) |
+| `csprng.setEntropy` → truncates to capacity | `setEntropyChecked` | `error.EntropyTooLong`, `error.InsufficientEntropy` |
+| `hashToPoint`, `generatorVector` (previously `catch unreachable`) | same names | `error.DomainTooLong`, `error.NoValidPoint` |
+
+The legacy column is **kept for source compatibility only**. Where a legacy
+function used to assert, it previously panicked in Debug/ReleaseSafe and either
+hung or read/wrote out of bounds in `ReleaseFast`; it is now total. Prefer the
+`…Checked` entry points in new code, and never read the legacy `inv` result as
+proof that the argument was invertible.
 
 ## Quick Start
 
@@ -136,7 +166,7 @@ const zc = @import("zig-curve");
 // Prime field arithmetic
 const F = zf.Field(21888242871839275222246405745257275088696311157297823662689037894645226208583); // BN254_Fp
 const a = F.fromInt(42);
-const b = a.inv().mul(a);
+const b = (try a.invChecked()).mul(a);  // invChecked, not inv: inv(0) == 0
 try std.testing.expect(b.isOne());
 
 // Elliptic curve operations
@@ -149,7 +179,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 316 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 354 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |
@@ -174,6 +204,19 @@ zig build test -Doptimize=ReleaseFast
 
 - **No independent audit.** Nothing here has been reviewed by an external
   auditor; the pairing, FRI, KZG and binary-field stacks are the most exposed.
+- **Legacy `inv(0) == 0` (and `x / 0 == 0`).** `zig-field` (`SmallField`,
+  `BigField`, `QuadraticExtension`, `CubicExtension`), `zig-binary-field`
+  (`BinaryField`, `TowerField`) and the Montgomery backend all keep a total
+  `inv()` that returns zero for a non-invertible argument, and a total `div()`
+  that returns zero for a zero divisor. Zero is **not** a field element that
+  satisfies `x * inv(x) == 1`; using the legacy API where invertibility is a
+  requirement silently yields zero. Use `invChecked` / `divChecked` /
+  `batchInvChecked`.
+- **`SumcheckUnsafe`, `MlePcsUnsafe`, `CommittedMlePcsUnsafe` are not secure.**
+  They exist to keep the historical 4-bit Bitcoin-Script challenge format
+  testable. `Sumcheck(F)` itself now refuses `F.BITS < 128` with
+  `error.FieldTooSmall`; the `…Unsafe` variants skip that check and are
+  grindable by a malicious prover. Toy fields and tests only.
 - **IPA is incomplete.** `zig-field`'s `Ipa.verify` is a stub that returns
   `error.Unsupported`; only `Ipa.verifyWithCommitment` is implemented. IPA
   challenges come from a local SHA-256 over `(L, R, round)` — they are *not*
@@ -184,6 +227,10 @@ zig build test -Doptimize=ReleaseFast
 - **Constant-time is partial.** Inversion (binary GCD), integer comparison,
   square roots and scalar multiplication are not constant-time; see
   `DESIGN.md` and `SECURITY.md`.
+- **`zig-rng` test hooks must be reset.** `csprng.setRandomForTesting` stores a
+  copy of the `std.Random` interface, but that interface still points at the
+  caller's generator state: pair it with `defer setRandomForTesting(null)`, or
+  use `setRandomForTestingSeed`, whose state lives inside the module.
 - **Documented API gaps remain:** see each library README for known broken or
   unimplemented entry points (including the `zig-field` `BLS12_381_Fp2` re-export,
   `zig-hash` `Hash.hash2`, and `zig-rng` `ChaCha20Rng.initOsRandom` on Zig
@@ -221,6 +268,10 @@ for (&data, 0..) |*slot, k| slot.* = M31.fromInt(k + 1);
 const log_n = 1;
 const root = M31.primitiveRootOfUnity(log_n);
 zf.nttVec8M31(&data, log_n, root);
+
+// `data.len` must be exactly `8 * 2^log_n`. The legacy entry point leaves the
+// data untouched on a mismatch; the checked one reports it:
+try zf.nttVec8M31Checked(&data, log_n, root);
 ```
 
 ## Benchmarks (indicative)
@@ -252,11 +303,16 @@ and print as `0 ns`.
 
 ## Versioning
 
-The workspace root manifest (`build.zig.zon`) is versioned as **`0.3.2`**, while
+The workspace root manifest (`build.zig.zon`) is versioned as **`0.4.0`**, while
 each library carries its own `build.zig.zon` with an independent semver
-(workspace `0.3.2`; libraries currently between `0.1.0` and `0.3.0`). Library
-count grew over time: 14 libraries at v0.1.0, 16 at v0.2.0 (`fri` +
-`transcript`), 17 at v0.2.2 (`kzg`). See `CHANGELOG.md` for the full history.
+(workspace `0.4.0`; libraries currently between `0.1.0` (`transcript`) and
+`0.4.0` (`curve`)). Library count grew over time: 14 libraries at v0.1.0, 16 at
+v0.2.0 (`fri` + `transcript`), 17 at v0.2.2 (`kzg`). The `0.4.0` workspace
+release carried the validation hardening of `field`, `binary-field`, `merkle`,
+`rng`, `serialization` and `curve`; their manifests were bumped accordingly
+(`field` and `binary-field` to `0.3.0`, `curve` to `0.4.0`, `rng` to `0.3.0`,
+`serialization` to `0.2.0`, `merkle` to `0.1.2`); every other manifest is
+unchanged. See `CHANGELOG.md` for the full history.
 
 ## License
 

@@ -75,7 +75,28 @@ pub fn FieldTrait(comptime T: type) type {
 - `error.OutOfMemory` is propagated; the proof stack has no `catch unreachable`
 - No hidden allocations inside scalar operations
 
-### 4. Zig 0.16 Compatibility
+### 4. Typed Errors for Caller Input (0.4.0)
+
+Preconditions over caller-supplied lengths, dimensions, domains and
+invertibility are no longer expressed as `std.debug.assert`. That assert is
+compiled out in `ReleaseFast`, and the code it used to guard either looped
+forever (binary GCD on zero), indexed past a caller-supplied length, or
+allocated from an untrusted length prefix. Those inputs are now
+`error.LengthMismatch` / `error.InvalidDimension` / `error.InvalidLength` /
+`error.NotPowerOfTwo` / `error.InvalidPointLength` / `error.DomainTooLong`, and
+invertibility is `error.InverseOfZero` / `error.DivisionByZero`. Two shapes are
+used:
+
+- a new error-returning entry point (`Multilinear.numVarsChecked`,
+  `csprng.setEntropyChecked`, `nttVec8M31Checked`, `hashToPoint` /
+  `generatorVector`, which became error unions);
+- a legacy **total** wrapper kept next to a `…Checked` sibling for source
+  compatibility (`inv` / `div` / `batchInv`, `numVars`, `setEntropy`), which
+  must be documented as not being a validation step.
+
+`std.debug.assert` remains for invariants that no caller input can influence.
+
+### 5. Zig 0.16 Compatibility
 
 All libraries target Zig 0.16.0 with:
 - `b.createModule()` + `root_module =` pattern
@@ -150,7 +171,10 @@ Random number generators:
 - **Process-wide CSPRNG** - thread-safe ChaCha20 seeded from OS entropy
   (`getrandom` on Linux, `BCryptGenRandom` on Windows, `/dev/urandom` elsewhere,
   host-injected entropy for freestanding/wasm) with a test-only
-  deterministic injection hook
+  deterministic injection hook (`setRandomForTesting`, `setRandomForTestingSeed`)
+- **Host entropy injection** - `setEntropy` (total: truncates to capacity and
+  zero-fills the tail), `setEntropyChecked`
+  (`error.EntropyTooLong` / `error.InsufficientEntropy`), `entropyAvailable`
 - **Fisher-Yates** - unbiased shuffling, plus `randomPermutation`
 - **Rejection sampling** - uniform field elements, bounded by
   `MAX_REJECTION_ATTEMPTS` and returning typed range errors
@@ -170,8 +194,12 @@ Prime field implementations:
 - **Extensions**: CM31, QM31, BN254_Fp2 (the `BLS12_381_Fp2` re-export in `zig-field` is currently broken; use `zig-curve`'s BLS12-381 `Fp2`)
 - `Field(modulus)` picks `SmallField` (< 2^64, native u64, Mersenne
   split-reduce) or `BigField` (Montgomery CIOS over `[N]u64` limbs)
-- Binary GCD inversion (non-constant-time: input-dependent iteration count)
-- `Vec8NttM31` - `@Vector(8, u64)` Cooley-Tukey NTT, **M31 only**
+- Binary GCD inversion (non-constant-time: input-dependent iteration count),
+  with `invChecked` / `divChecked` / `batchInvChecked` as the enforced API and
+  the plain `inv` / `div` / `batchInv` kept as total legacy wrappers
+  (`inv(0) == 0`, `x / 0 == 0` — zero is not an inverse)
+- `Vec8NttM31` - `@Vector(8, u64)` Cooley-Tukey NTT, **M31 only**, with
+  `nttVec8M31Checked` / `inttVec8M31Checked` enforcing `data.len == 8 * 2^log_n`
 - RFC 9380 `expand_message_xmd`, `hashToField`, cofactor-aware `hashToCurve`
 - Two extra modules that are not separate libraries: `MerkleTree(F)` (SHA-256
   over serialized field elements) and `Ipa(F)`, the Bulletproofs-style inner
@@ -188,7 +216,9 @@ built-in default:
 
 - `MerkleTree(H)` - binary Merkle tree (power-of-two leaves), build from leaves
   (`init`) or from pre-hashed leaves (`initFromHashes`), array-heap storage
-- `MMR(H)` - append-only log (`append`/`appendHash`)
+- `MMR(H)` - append-only log (`append`/`appendHash`); `verify` shape-checks the
+  proof (sibling/flag array lengths must agree, and the depth must match the
+  zero-padded tree `2^ceil(log2(leaf_count))`) before indexing anything
 - `SparseMerkleTree(H, DEPTH)` - 256-bit key/value set with inclusion **and**
   non-membership proofs (`verifyNonMembership`)
 - `MerkleProof` - path + sibling hashes + side flags, with
@@ -202,11 +232,18 @@ Characteristic-2 fields:
 - Generic `BinaryField(bits, reduction_constant)`
 - Tower: GF(2) → GF(4) → GF(16) → GF(256) → … → GF(2^128) (`TowerField`)
 - CLMUL hardware acceleration (x86 PCLMULQDQ, ARM PMULL)
-- Multilinear polynomial evaluation: packed MLE (`PackedMle`, `novelEval`)
-- Sum-check protocol over binary fields
+- Multilinear polynomial evaluation: packed MLE (`PackedMle`, `novelEval`), with
+  `MAX_K` / `error.InvalidDimension` / `error.LengthMismatch` instead of asserts
+- Sum-check protocol over binary fields. `Sumcheck(F)` requires `F.BITS >= 128`
+  and returns `error.FieldTooSmall` otherwise
 - Multilinear evaluation / commitment protocols: `MlePcs` (verifier holds the
-  table) and `CommittedMlePcs` (Merkle-committed), i.e. Binius-style
-  polynomial commitments — not a full Binius implementation
+   table) and `CommittedMlePcs` (Merkle-committed), i.e. Binius-style
+   polynomial commitments — not a full Binius implementation
+- `inv(0) == 0` in both families is a **legacy total** result (`invChecked`
+  reports `error.InverseOfZero`), and `SumcheckUnsafe` / `MlePcsUnsafe` /
+  `CommittedMlePcsUnsafe` bypass the 128-bit requirement to keep the 4-bit
+  on-chain challenge format: **toy/test-only and not sound against a grinding
+  prover**
 
 ### curve (Layer 3)
 
@@ -217,6 +254,9 @@ Elliptic curve implementations:
 - **BLS12-381**: G1, G2
 - **Pasta**: Pallas, Vesta (2-cycle)
 - Hash-to-curve (RFC 9380 Shallue-van de Woestijne)
+- Nothing-up-my-sleeve generator derivation (`hashToPoint` /
+  `generatorVector`) with `error.DomainTooLong` / `error.NoValidPoint` instead
+  of `catch unreachable`
 - Group operations (generic over any point type)
 - Byte-scalar arithmetic
 - Group-element polynomial evaluation (VSS/KZG)
@@ -282,7 +322,8 @@ KZG polynomial commitments over BN254:
 - `verify` - pairing check `e(C - [y]G1, [tau]G2 - [z]G2) == e(W, G2)`
 - Scalar multiplication delegated to the windowed Jacobian ladder in
   `zig-curve`; non-constant-time
-- `commit`/`prove` take a caller allocator (breaking change in v0.3.0)
+- `commit`/`prove` take a caller allocator (breaking change introduced in
+  v0.3.0)
 
 ### pairing (Layer 4)
 
@@ -317,6 +358,10 @@ Canonical wire encoding via comptime reflection:
 - Optionals → presence byte + payload
 - Structs → fields in declaration order
 - Allocator fields skipped/restored
+- `deserialize` treats its input as untrusted: a `u64` length prefix that claims
+  more elements than the remaining bytes can hold is rejected with
+  `error.InvalidLength` **before** allocating, and any failure part-way through
+  rolls back the values already decoded, so a rejected input leaks nothing
 
 ## Testing
 
@@ -327,23 +372,25 @@ cd libs/field && zig build test
 # All libraries
 zig build test
 
-# With specific optimization (same 316 tests, seconds instead of ~1-2 min)
+# With specific optimization (same 354 tests, seconds instead of ~1-2 min)
 zig build test -Doptimize=ReleaseFast
 ```
 
-Counts verified on Zig 0.16.0: the root `zig build test` step runs **316 tests**
-in both Debug and ReleaseFast; per-library steps sum to 419 because `field`
-(70) and `curve` (92) additionally compile their separate `tests/` roots.
+Counts verified on Zig 0.16.0: the root `zig build test` step runs **354 tests**
+in both Debug and ReleaseFast; per-library steps sum to 470 because `field`
+(85) and `curve` (96) additionally compile their separate `tests/` roots.
 `algebra-traits` is compile-time only (0 tests).
 
 ## Versioning
 
-The root `build.zig.zon` carries the **workspace version `0.3.2`**. Each
+The root `build.zig.zon` carries the **workspace version `0.4.0`**. Each
 library ships its own `build.zig.zon` with an independent semver — currently
-`0.1.0` (`transcript`) through `0.3.0` (`curve`, `pairing`). Library count
-grew 14 (v0.1.0) → 16 (v0.2.0: `fri`, `transcript`) → 17 (v0.2.2: `kzg`).
-Bump the library version for API changes and the workspace version for
-ecosystem-level releases; record both in `CHANGELOG.md`.
+`0.1.0` (`transcript`) through `0.4.0` (`curve`). Library count grew 14
+(v0.1.0) → 16 (v0.2.0: `fri`, `transcript`) → 17 (v0.2.2: `kzg`). The 0.4.0
+release bumped `field` and `binary-field` to `0.3.0`, `curve` to `0.4.0`,
+`rng` to `0.3.0`, `serialization` to `0.2.0` and `merkle` to `0.1.2`; the other
+manifests are unchanged. Bump the library version for API changes and the
+workspace version for ecosystem-level releases; record both in `CHANGELOG.md`.
 
 ## Known Gaps
 
@@ -351,11 +398,16 @@ Documented because the architecture above is easy to over-read:
 
 - No independent cryptographic audit exists for any library here.
 - Pairing, curve `scalarMul` and field inversion are not constant-time.
+- `inv(0) == 0` and `x / 0 == 0` in `zig-field`, and `inv(0) == 0` in
+  `zig-binary-field`, are legacy total wrappers, not valid mathematics. Use
+  `invChecked` / `divChecked` / `batchInvChecked`.
+- `Sumcheck(F)` in `zig-binary-field` requires `F.BITS >= 128`; the PCS
+  entry points require `E.BITS >= 128` for their challenge field. The
+  `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe` variants are
+  grindable and must stay in tests.
 - `Ipa.verify` (inside `zig-field`) is a stub; `verifyWithCommitment` is the
   working path and is not bound to a `zig-transcript` session.
 - `kzg.Setup.generate` is a synthetic trusted setup.
-- `libs/pairing/README.md` still carries the pre-v0.2.x status table; this
-  document, `DESIGN.md` and the root `README.md` are authoritative.
 
 ## Contributing
 

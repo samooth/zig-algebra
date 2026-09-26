@@ -2,15 +2,15 @@
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
-version 0.3.2) covering fields, curves, pairings, and STARK building blocks.
+version 0.4.0) covering fields, curves, pairings, and STARK building blocks.
 No independent cryptographic audit exists; see SECURITY.md before making
 security claims.
 
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (316 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 316 tests, seconds
+zig build test        # Run all library tests (354 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 354 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -24,7 +24,7 @@ zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (316 total vs. 419 summed over all per-library steps).
+tests only (354 total vs. 470 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -52,6 +52,29 @@ pub fn fromBytes(bytes: []const u8) !Self;  // error on >= MODULUS
 ```
 Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
 
+### Checked Inverses and Division (0.4.0 rule)
+Invertible operations come in pairs: a total legacy wrapper and a checked one.
+New code MUST use the checked one.
+
+```zig
+pub fn inv(self: Self) Self;                 // legacy, total: inv(0) == zero()
+pub fn invChecked(self: Self) error{InverseOfZero}!Self;
+pub fn div(self: Self, other: Self) Self;    // legacy, total: x / 0 == zero()
+pub fn divChecked(self: Self, other: Self) error{ DivisionByZero, InverseOfZero }!Self;
+pub fn batchInv(inputs: []const Self, outputs: []Self) void;                 // legacy, total
+pub fn batchInvChecked(inputs: []const Self, outputs: []Self) error{ LengthMismatch, InverseOfZero }!void;
+```
+
+Rationale: the old `std.debug.assert(!self.isZero())` was compiled out in
+`ReleaseFast`, where the binary-GCD loop then never terminated. The total
+wrapper is kept for source compatibility, and it propagates zero, which is
+*not* a valid inverse. Do not "fix" a caller by asserting in a new place —
+return a typed error instead. Apply the same split to length/dimension inputs:
+`length` and `dimension` mismatches are `error.LengthMismatch` /
+`error.InvalidDimension`, never asserts. A legacy total wrapper is not a
+validation step, and `std.debug.assert` is now reserved for invariants that no
+caller input can influence.
+
 ### Constant-Time vs Non-CT
 - **CT required**: field inversion/mul on secret keys, EC scalarMul,
   signature operations.
@@ -64,7 +87,9 @@ Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
   ```zig
   pub fn fromBytes(bytes: []const u8) !Self { ... }
   ```
-- Use `std.debug.assert` only for internal invariants that should never fail.
+- Use `std.debug.assert` only for internal invariants that no caller input can
+  influence; see the checked-inverse rule above for anything a caller can
+  reach.
 - Public APIs validate inputs and return typed errors.
 
 ### Memory
@@ -88,9 +113,12 @@ Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 316; per-library
-  `zig build test` totals sum to 419 (field 70, curve 92 include the `tests/`
-  roots the root step skips).
+- Counts (Zig 0.16.0, verified): root `zig build test` = 354; per-library
+  `zig build test` totals sum to 470 (field 85, curve 96 include the `tests/`
+  roots the root step skips). Per-library totals: algebra-traits 0,
+  bigint 18, binary-field 76, curve 96, field 85, fri 10, hash 17, kzg 6,
+  linalg 9, merkle 18, ntt 11, pairing 54, parallel 2, poly 20, rng 23,
+  serialization 15, transcript 10.
 
 ### Property-Based Testing Pattern
 For ring/field axioms, generate random elements and verify:
@@ -116,13 +144,24 @@ test "property: associativity" {
 
 ## Versioning
 
-Root `build.zig.zon` carries the workspace version (`0.3.2`); each library has
+Root `build.zig.zon` carries the workspace version (`0.4.0`); each library has
 its own independent semver in `libs/<name>/build.zig.zon` (currently
-`0.1.0`–`0.3.0`). Bump the library version for API changes, the workspace
+`0.1.0`–`0.4.0`). Bump the library version for API changes, the workspace
 version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 
 ## Known Gaps (do not paper over these in docs)
 
+- `inv(0) == 0` and `x / 0 == 0` are the **legacy total** behaviours of
+  `inv`/`div` in `zig-field` (both backends plus both extension towers) and of
+  `inv` in `zig-binary-field` (`BinaryField`, `TowerField`). Zero is not an
+  inverse, so the legacy result must never be read as "invertible". Document
+  `invChecked` / `divChecked` / `batchInvChecked` as the APIs new code uses.
+- `Sumcheck(F)` in `zig-binary-field` requires `F.BITS >= 128`;
+  `MlePcs(F, E)` and `CommittedMlePcs(F, E)` require `E.BITS >= 128` for
+  their challenge field and return `error.FieldTooSmall` otherwise.
+  `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe` skip that check,
+  keep the historical 4-bit on-chain challenge format, and are **not sound**
+  against a grinding prover. Label them toy/test-only everywhere.
 - `Ipa.verify` in `libs/field/src/ipa.zig` is a stub (`error.Unsupported`);
   only `Ipa.verifyWithCommitment` works, and IPA challenges are a local
   SHA-256 of `(L, R, round)` — not a `zig-transcript` Fiat-Shamir session.

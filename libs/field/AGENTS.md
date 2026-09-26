@@ -52,8 +52,14 @@ This file contains enduring instructions for any agent (human or AI) working on 
 
 ### Error Handling
 - Use `!T` for operations that can fail (e.g., `fromBytes`, `sqrt`).
-- Use `std.debug.assert` for invariants that should never fail in correct usage.
+- Use `std.debug.assert` for invariants that no caller input can influence.
 - Panic only for unreachable code or violated preconditions.
+- As of 0.3.0, invertibility and caller-supplied lengths are **typed errors**,
+  not asserts: `invChecked` / `divChecked` / `batchInvChecked` and
+  `nttVec8M31Checked` / `inttVec8M31Checked`. `std.debug.assert` is compiled out
+  in `ReleaseFast`, where the binary-GCD loop on a zero input does not
+  terminate. `inv` / `div` / `batchInv` remain as total legacy wrappers
+  (`inv(0) == 0`); do not use them where invertibility is a requirement.
 
 ### Testing
 - Property-based tests against `u512`/`u1024` reference arithmetic.
