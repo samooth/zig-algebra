@@ -253,11 +253,24 @@ pub fn TowerField(comptime level: u8) type {
 
         /// Recursive inversion: a⁻¹ = conj(a)·N(a)⁻¹ with
         /// N(a) = a0² + a0·a1·β + a1² ∈ T_{level-1} and conj(a) = a0 + a1(β + y).
+        ///
+        /// Total: `inv(0) == 0` at every level. Zero has no inverse, and the
+        /// norm of zero is zero, so the recursion reaches the GF(2) base case
+        /// with `0`; the old assert there only fired in Debug/ReleaseSafe and
+        /// `inv(0)` used to walk the whole tower before "succeeding". Use
+        /// `invChecked` to reject a non-invertible value.
         pub fn inv(a: Self) Self {
+            return invChecked(a) catch zero();
+        }
+
+        /// Checked inverse: `error.InverseOfZero` when `a == 0`, and also when
+        /// `a` is not a unit at the GF(2) base case (`a != 1`).
+        pub fn invChecked(a: Self) error{InverseOfZero}!Self {
             if (level == 0) {
-                std.debug.assert(a.value == 1);
+                if (a.value != 1) return error.InverseOfZero;
                 return a;
             }
+            if (a.value == 0) return error.InverseOfZero;
             const half: u8 = 1 << (level - 1);
             const mask: u128 = (@as(u128, 1) << half) - 1;
             const S = TowerField(level - 1);
@@ -266,7 +279,7 @@ pub fn TowerField(comptime level: u8) type {
             const beta_e = S{ .value = BETA };
 
             const n = a0.mul(a0).add(a0.mul(a1).mul(beta_e)).add(a1.mul(a1));
-            const inv_n = n.inv();
+            const inv_n = try n.invChecked();
             const lo = a0.add(a1.mul(beta_e)).mul(inv_n);
             const hi = a1.mul(inv_n);
             return .{ .value = lo.value | (hi.value << half) };
@@ -455,8 +468,24 @@ test "inversion round trip" {
             var a = rng(F, &s);
             while (a.isZero()) a = rng(F, &s);
             try std.testing.expect(a.mul(a.inv()).eq(F.one()));
+            try std.testing.expect((try a.invChecked()).eq(a.inv()));
         }
     }
+}
+
+test "inversion of zero is defined and checked at every level" {
+    inline for (0..8) |lv| {
+        const F = TowerField(lv);
+        // Legacy API: zero, never a panic (Debug) and never a hang (ReleaseFast).
+        try std.testing.expect(F.zero().inv().isZero());
+        try std.testing.expectError(error.InverseOfZero, F.zero().invChecked());
+        // Non-zero values still invert.
+        const a = F.alpha();
+        try std.testing.expect(a.mul(a.inv()).eq(F.one()));
+    }
+    // GF(2) has a single unit: only one is invertible.
+    try std.testing.expect(Gf2.one().inv().eq(Gf2.one()));
+    try std.testing.expectError(error.InverseOfZero, Gf2.zero().invChecked());
 }
 
 test "exhaustive field properties for GF(4), GF(16), GF(256)" {
@@ -566,7 +595,7 @@ test "mul by alpha is the quadratic-step map" {
 
 // --- Integration: the tower drops into the sum-check stack ---
 
-const Sumcheck = @import("sumcheck.zig").Sumcheck;
+const Sumcheck = @import("sumcheck.zig").SumcheckUnsafe;
 
 test "sum-check round trip over tower GF(16)" {
     const alloc = std.testing.allocator;

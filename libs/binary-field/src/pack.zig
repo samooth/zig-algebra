@@ -31,6 +31,27 @@ pub fn PackedMle(comptime F: type) type {
     return struct {
         const Self = @This();
 
+        /// Largest `k` this field can pack: a subspace of dimension `k` must fit
+        /// in `F` (`k <= F.BITS`), and the vanishing polynomial below allocates
+        /// `2^(k+1) - 1` elements, so `k` also has to leave room for that
+        /// doubling in a `usize`. The old `std.debug.assert(k >= 1 and k <=
+        /// F.BITS)` was compiled out in ReleaseFast, where an oversized `k`
+        /// wrapped the length arithmetic and then read/wrote out of bounds.
+        pub const MAX_K: u8 = @min(F.BITS, @as(u8, @intCast(@bitSizeOf(usize) - 2)));
+
+        /// `error.InvalidDimension` unless `1 <= k <= MAX_K`.
+        pub fn checkK(k: u8) error{InvalidDimension}!void {
+            if (k < 1 or k > MAX_K) return error.InvalidDimension;
+            return;
+        }
+
+        /// `N = 2^k` after validating `k` (the shift is only sound once `k` is
+        /// in range).
+        fn checkedN(k: u8) error{InvalidDimension}!usize {
+            try checkK(k);
+            return @as(usize, 1) << @intCast(k);
+        }
+
         /// Evaluate a polynomial (Horner).
         fn evalPoly(g: []const F, x: F) F {
             var acc = F.zero();
@@ -45,8 +66,10 @@ pub fn PackedMle(comptime F: type) type {
         /// Vanishing polynomial Z_H(x) = ∏_{y∈H}(x + y) of the low-bits
         /// subspace, built by adjoining the basis vectors {1, 2, 4, …}: for
         /// W ⊕ ⟨b⟩, Z_new(x) = Z_W(x)² + Z_W(b)·Z_W(x) (Z_W is linearized).
+        ///
+        /// `error.InvalidDimension` when `k` is outside `[1, MAX_K]`.
         pub fn vanishingPoly(allocator: std.mem.Allocator, k: u8) ![]F {
-            std.debug.assert(k >= 1 and k <= F.BITS);
+            try checkK(k);
             var z = try allocator.alloc(F, 2);
             z[0] = F.zero();
             z[1] = F.one();
@@ -96,9 +119,13 @@ pub fn PackedMle(comptime F: type) type {
         /// Interpolate the packed polynomial g (degree < N) from the MLE table:
         /// g = Σ_i f(i)·l_i with l_i = λ_i/d, coefficient-wise, so that
         /// g(x_i) = f(i).
+        ///
+        /// `error.InvalidDimension` when `k` is outside `[1, MAX_K]`,
+        /// `error.LengthMismatch` when `table.len != 2^k` (the old assert let
+        /// `table[i]` read past the end in ReleaseFast).
         pub fn interpolate(allocator: std.mem.Allocator, k: u8, table: []const F) ![]F {
-            const N = @as(usize, 1) << @intCast(k);
-            std.debug.assert(table.len == N);
+            const N = try checkedN(k);
+            if (table.len != N) return error.LengthMismatch;
 
             const z = try vanishingPoly(allocator, k);
             defer allocator.free(z);
@@ -118,7 +145,17 @@ pub fn PackedMle(comptime F: type) type {
         }
 
         /// The Lagrange kernel β_r(bits(i)) = ∏_j (bit_j(i) + 1 + r_j).
+        ///
+        /// Total: a `r` shorter than `k` yields zero (no contribution) instead
+        /// of reading `r[j]` out of bounds. Use `betaOnHChecked` to detect it.
         pub fn betaOnH(k: u8, r: []const F, i: usize) F {
+            return betaOnHChecked(k, r, i) catch F.zero();
+        }
+
+        /// Checked kernel evaluation: `error.LengthMismatch` when
+        /// `r.len < k`.
+        pub fn betaOnHChecked(k: u8, r: []const F, i: usize) error{LengthMismatch}!F {
+            if (r.len < k) return error.LengthMismatch;
             var acc = F.one();
             for (0..k) |j| {
                 const bit: u8 = @intFromBool((i >> @intCast(j)) & 1 == 1);
@@ -129,9 +166,12 @@ pub fn PackedMle(comptime F: type) type {
 
         /// Interpolate B_r (the kernel β_r restricted to H) as a univariate
         /// polynomial of degree < N with B_r(x_i) = β_r(i).
+        ///
+        /// `error.InvalidDimension` / `error.LengthMismatch` as in
+        /// `interpolate` (here the length requirement is on `r`).
         pub fn kernelPoly(allocator: std.mem.Allocator, k: u8, r: []const F) ![]F {
-            const N = @as(usize, 1) << @intCast(k);
-            std.debug.assert(r.len == k);
+            const N = try checkedN(k);
+            if (r.len != k) return error.LengthMismatch;
             const z = try vanishingPoly(allocator, k);
             defer allocator.free(z);
             const dinv = lagrangeDenom(z).inv();
@@ -141,7 +181,7 @@ pub fn PackedMle(comptime F: type) type {
             for (0..N) |i| {
                 const row = try lagrangeBasis(allocator, z, F.fromInt(i));
                 defer allocator.free(row);
-                const v = betaOnH(k, r, i).mul(dinv);
+                const v = (try betaOnHChecked(k, r, i)).mul(dinv);
                 for (0..N) |j| B[j] = B[j].add(v.mul(row[j]));
             }
             return B;
@@ -151,9 +191,13 @@ pub fn PackedMle(comptime F: type) type {
         /// vanishing polynomial of H (z[N] = 1, deg z = N). Uses the monic
         /// relation x^N ≡ Σ_{i<N} z_i·x^i and folds high degrees down in one
         /// descending pass.
+        ///
+        /// `error.LengthMismatch` when `raw.len > 2N - 1` (the old assert let
+        /// `@memcpy` overflow the work buffer in ReleaseFast).
         fn reduceMod(allocator: std.mem.Allocator, z: []const F, raw: []const F) ![]F {
+            if (z.len < 2) return error.LengthMismatch;
             const N = z.len - 1;
-            std.debug.assert(raw.len <= 2 * N - 1);
+            if (raw.len > 2 * N - 1) return error.LengthMismatch;
             const work = try allocator.alloc(F, 2 * N - 1);
             defer allocator.free(work);
             @memset(work, F.zero());
@@ -172,9 +216,12 @@ pub fn PackedMle(comptime F: type) type {
 
         /// Product a·b mod Z_H (length N), where z is the vanishing polynomial
         /// of H.
+        ///
+        /// `error.InvalidDimension` / `error.LengthMismatch` as above; the
+        /// length check is what keeps `a[i]`/`b[j]` in bounds.
         pub fn mulModVanishing(allocator: std.mem.Allocator, k: u8, z: []const F, a: []const F, b: []const F) ![]F {
-            const N = @as(usize, 1) << @intCast(k);
-            std.debug.assert(a.len == N and b.len == N and z.len == N + 1);
+            const N = try checkedN(k);
+            if (a.len != N or b.len != N or z.len != N + 1) return error.LengthMismatch;
             const raw = try allocator.alloc(F, 2 * N - 1);
             defer allocator.free(raw);
             @memset(raw, F.zero());
@@ -189,8 +236,13 @@ pub fn PackedMle(comptime F: type) type {
         /// Evaluate the MLE f (given as its packed polynomial g) at r via
         /// coefficient extraction: f(r) = d·[x^(N-1)](g·B_r mod Z_H) with
         /// d = Z_H'(x) = z[1] (1 iff H is a subfield).
+        ///
+        /// `error.InvalidDimension` when `k` is out of range, `error.LengthMismatch`
+        /// when `g.len != 2^k` or `r.len != k`.
         pub fn eval(allocator: std.mem.Allocator, k: u8, g: []const F, r: []const F) !F {
-            const N = @as(usize, 1) << @intCast(k);
+            const N = try checkedN(k);
+            if (g.len != N) return error.LengthMismatch;
+            if (r.len != k) return error.LengthMismatch;
             const B = try kernelPoly(allocator, k, r);
             defer allocator.free(B);
             const z = try vanishingPoly(allocator, k);
@@ -220,14 +272,20 @@ pub fn novelNorms(comptime S: type, comptime k: u8) [k]S {
 
 /// Evaluate a degree-<2^k polynomial given in the *novel* basis (see
 /// `fripcs.zig` `Ntt`) at a single point `x`, in O(2^k) field ops. The i-th
-/// basis element is Ŵ_i(x) = s_i(x)/s_i(e_i); `coeffs[r]` is the coefficient of
-/// ∏_{i∈S(r)} Ŵ_i with S(r) the set bits of r. This is the packing analogue of
+/// basis element is Ŵ_i(x) = s_i(x)/s_i(e_i); `coeffs[r]` is the coefficient of
+/// ∏_{i∈S(r)} Ŵ_i with S(r) the set bits of r. This is the packing analogue of
 /// Horner evaluation: what the FRI-Binius additive NTT computes over the whole
 /// domain, restricted to one point. `k <= S.BITS`; the caller frees the scratch.
+///
+/// `error.InvalidDimension` when `k` is outside `[1, S.BITS]` (the old assert
+/// let `norms[i]`/`w[0]` write out of bounds once compiled out) and
+/// `error.LengthMismatch` when `coeffs.len != 2^k`.
 pub fn novelEval(allocator: std.mem.Allocator, comptime S: type, k: u8, coeffs: []const S, x: S) !S {
-    std.debug.assert(k >= 1 and k <= S.BITS);
-    std.debug.assert(coeffs.len == @as(usize, 1) << @intCast(k));
+    if (k < 1 or k > S.BITS) return error.InvalidDimension;
+    if (k > @bitSizeOf(usize) - 2) return error.InvalidDimension;
     const N = @as(usize, 1) << @intCast(k);
+    if (coeffs.len != N) return error.LengthMismatch;
+
     // Norms c_j = s_j(e_j), computed here at runtime (k is a runtime parameter;
     // `novelNorms` is the comptime variant for comptime k).
     var norms: [S.BITS]S = undefined;
@@ -374,4 +432,78 @@ test "packed eval round trips across k and fields (incl. non-subfield k)" {
             try std.testing.expectEqual(direct.value, via_packing.value);
         }
     }
+}
+
+test "out-of-range dimensions are typed errors, not oversized allocations" {
+    const alloc = std.testing.allocator;
+    const F = Gf16; // BITS = 4
+    const P = PackedMle(F);
+
+    try std.testing.expectEqual(@as(u8, 4), P.MAX_K);
+    // k == 0 and k > BITS: both were asserts that vanished in ReleaseFast.
+    try std.testing.expectError(error.InvalidDimension, P.vanishingPoly(alloc, 0));
+    try std.testing.expectError(error.InvalidDimension, P.vanishingPoly(alloc, F.BITS + 1));
+    // k == 255 used to wrap the length arithmetic and then allocate/OOM.
+    try std.testing.expectError(error.InvalidDimension, P.vanishingPoly(alloc, 255));
+    try std.testing.expectError(error.InvalidDimension, P.interpolate(alloc, 255, &[_]F{}));
+    try std.testing.expectError(error.InvalidDimension, P.interpolate(alloc, 0, &[_]F{}));
+    try std.testing.expectError(error.InvalidDimension, P.kernelPoly(alloc, 255, &[_]F{}));
+    try std.testing.expectError(error.InvalidDimension, P.eval(alloc, 255, &[_]F{}, &[_]F{}));
+    try std.testing.expectError(error.InvalidDimension, P.mulModVanishing(alloc, 255, &[_]F{}, &[_]F{}, &[_]F{}));
+}
+
+test "length mismatches are typed errors, not out-of-bounds access" {
+    const alloc = std.testing.allocator;
+    const F = Gf256;
+    const P = PackedMle(F);
+    const k: u8 = 3;
+    const N = @as(usize, 1) << @intCast(k);
+
+    const table = try randomTable(alloc, F, k, 3);
+    defer alloc.free(table);
+    const r = try randomPoint(alloc, F, k, 4);
+    defer alloc.free(r);
+    const g = try P.interpolate(alloc, k, table);
+    defer alloc.free(g);
+    const z = try P.vanishingPoly(alloc, k);
+    defer alloc.free(z);
+
+    // Table shorter/longer than 2^k.
+    const short_table = table[0 .. N - 1];
+    try std.testing.expectError(error.LengthMismatch, P.interpolate(alloc, k, short_table));
+    const long_table = try alloc.alloc(F, N + 1);
+    defer alloc.free(long_table);
+    @memset(long_table, F.zero());
+    try std.testing.expectError(error.LengthMismatch, P.interpolate(alloc, k, long_table));
+
+    // Point of the wrong length.
+    const short_r = r[0 .. k - 1];
+    try std.testing.expectError(error.LengthMismatch, P.kernelPoly(alloc, k, short_r));
+    try std.testing.expectError(error.LengthMismatch, P.eval(alloc, k, g, short_r));
+    try std.testing.expectError(error.LengthMismatch, P.betaOnHChecked(k, short_r, 1));
+    // Legacy kernel helper: zero contribution instead of reading past `r`.
+    try std.testing.expect(P.betaOnH(k, short_r, 1).isZero());
+
+    // Packed polynomial of the wrong length.
+    const short_g = g[0 .. N - 1];
+    const short_z = z[0 .. z.len - 1];
+    try std.testing.expectError(error.LengthMismatch, P.eval(alloc, k, short_g, r));
+    try std.testing.expectError(error.LengthMismatch, P.mulModVanishing(alloc, k, z, short_g, g));
+    try std.testing.expectError(error.LengthMismatch, P.mulModVanishing(alloc, k, short_z, g, g));
+}
+
+test "novelEval validates k and coeffs length" {
+    const alloc = std.testing.allocator;
+    const S = Gf16; // BITS = 4
+    const k: u8 = 2;
+    const N = @as(usize, 1) << @intCast(k);
+    // coeffs[0] == 1 is the constant-one polynomial: the sum collapses to p[0].
+    const coeffs = [_]S{ S.one(), S.zero(), S.zero(), S.zero() };
+    try std.testing.expectEqual(@as(u128, 1), (try novelEval(alloc, S, k, &coeffs, S.fromInt(9))).value);
+
+    try std.testing.expectError(error.InvalidDimension, novelEval(alloc, S, 0, &coeffs, S.one()));
+    try std.testing.expectError(error.InvalidDimension, novelEval(alloc, S, S.BITS + 1, &coeffs, S.one()));
+    try std.testing.expectError(error.InvalidDimension, novelEval(alloc, S, 255, &coeffs, S.one()));
+    try std.testing.expectError(error.LengthMismatch, novelEval(alloc, S, k, coeffs[0 .. N - 1], S.one()));
+    try std.testing.expectError(error.LengthMismatch, novelEval(alloc, S, k, &[_]S{S.one()}, S.one()));
 }

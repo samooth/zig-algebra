@@ -130,16 +130,30 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         }
 
         /// `(a + bv)^-1 = (a - bv) / (a^2 - n b^2)`.
+        ///
+        /// Total: `inv(0) == zero()`. The norm of zero is zero, so the base
+        /// field inverse is the zero element and the product below is zero; the
+        /// legacy signature cannot report "no inverse" and an assert only fired
+        /// in Debug/ReleaseSafe (in ReleaseFast it hung inside the base GCD
+        /// loop). Use `invChecked` to reject a non-invertible value.
         pub fn inv(self: Self) Self {
+            return self.invChecked() catch zero();
+        }
+
+        /// Checked inverse: `error.InverseOfZero` when `self == 0`.
+        pub fn invChecked(self: Self) error{InverseOfZero}!Self {
+            // `n` is a non-residue, so `x^2 - n y^2 == 0` iff `x == y == 0`;
+            // the check makes the contract explicit instead of relying on it.
+            if (self.isZero()) return error.InverseOfZero;
             const norm = self.c0.mul(self.c0).sub(non_residue.mul(self.c1.mul(self.c1)));
-            const norm_inv = norm.inv();
+            const norm_inv = try norm.invChecked();
             return .{
                 .c0 = self.c0.mul(norm_inv),
                 .c1 = self.c1.neg().mul(norm_inv),
             };
         }
 
-        /// Alias for `inv` (trait compatibility).
+        /// Alias for `inv` (trait compatibility). Total, like `inv`.
         pub fn inverse(self: Self) Self {
             return self.inv();
         }
@@ -187,9 +201,19 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         }
 
         /// Division: `self / other` = `self * other.inv()`.
+        ///
+        /// Total: `self / 0 == zero()`. Use `divChecked` to reject a zero
+        /// divisor.
         pub fn div(self: Self, other: Self) Self {
-            std.debug.assert(!other.isZero());
             return self.mul(other.inv());
+        }
+
+        /// Checked division: `error.DivisionByZero` when `other == 0`
+        /// (`error.InverseOfZero` is unreachable, the zero divisor is rejected
+        /// above).
+        pub fn divChecked(self: Self, other: Self) error{ DivisionByZero, InverseOfZero }!Self {
+            if (other.isZero()) return error.DivisionByZero;
+            return self.mul(try other.invChecked());
         }
 
         /// Hash for HashMap support.
@@ -456,7 +480,19 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         /// Closed-form inverse: with `x = a + bv + cv^2`, the inverse is
         /// `(A + Bv + Cv^2)/denom` where `A = a^2 - nbc`, `B = nc^2 - ab`,
         /// `C = b^2 - ac` and `denom = a^3 + nb^3 + n^2c^3 - 3nabc`.
+        ///
+        /// Total: `inv(0) == zero()` — the denominator of zero is zero, so the
+        /// base field inverse yields zero and the whole element is zero. The
+        /// legacy signature cannot report "no inverse"; the removed assert only
+        /// fired in Debug/ReleaseSafe while ReleaseFast hung in the base GCD
+        /// loop. Use `invChecked` to reject a non-invertible value.
         pub fn inv(self: Self) Self {
+            return self.invChecked() catch zero();
+        }
+
+        /// Checked inverse: `error.InverseOfZero` when `self == 0`.
+        pub fn invChecked(self: Self) error{InverseOfZero}!Self {
+            if (self.isZero()) return error.InverseOfZero;
             const a = self.c0;
             const b = self.c1;
             const c = self.c2;
@@ -464,7 +500,7 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
             const B = non_residue.mul(c.mul(c)).sub(a.mul(b));
             const C = b.mul(b).sub(a.mul(c));
             const denom = a.mul(A).add(non_residue.mul(c.mul(B))).add(non_residue.mul(b.mul(C)));
-            const denom_inv = denom.inv();
+            const denom_inv = try denom.invChecked();
             return .{
                 .c0 = A.mul(denom_inv),
                 .c1 = B.mul(denom_inv),
@@ -472,7 +508,7 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
             };
         }
 
-        /// Alias for `inv` (trait compatibility).
+        /// Alias for `inv` (trait compatibility). Total, like `inv`.
         pub fn inverse(self: Self) Self {
             return self.inv();
         }
@@ -575,9 +611,19 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         }
 
         /// Division: `self / other` = `self * other.inv()`.
+        ///
+        /// Total: `self / 0 == zero()`. Use `divChecked` to reject a zero
+        /// divisor.
         pub fn div(self: Self, other: Self) Self {
-            std.debug.assert(!other.isZero());
             return self.mul(other.inv());
+        }
+
+        /// Checked division: `error.DivisionByZero` when `other == 0`
+        /// (`error.InverseOfZero` is unreachable, the zero divisor is rejected
+        /// above).
+        pub fn divChecked(self: Self, other: Self) error{ DivisionByZero, InverseOfZero }!Self {
+            if (other.isZero()) return error.DivisionByZero;
+            return self.mul(try other.invChecked());
         }
 
         /// Hash for HashMap support.

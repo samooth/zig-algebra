@@ -225,6 +225,127 @@ test "MMR proof matches root for a non-power-of-two leaf count" {
     try std.testing.expectEqualSlices(u8, &root, &current);
 }
 
+test "MMR verify accepts its own proofs" {
+    const M = MMR(Blake3);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const leaves = [_][]const u8{ "a", "b", "c", "d", "e" };
+    var m = try M.init(allocator);
+    defer m.deinit();
+    for (leaves) |leaf| try m.append(leaf);
+
+    const root = try m.root();
+    for (leaves, 0..) |leaf, i| {
+        const proof = try m.prove(i, allocator);
+        defer proof.deinit(allocator);
+        try std.testing.expect(m.verify(root, i, leaf, proof));
+        // Wrong leaf and out-of-range index must be rejected.
+        try std.testing.expect(!m.verify(root, i, "not-a-leaf", proof));
+        try std.testing.expect(!m.verify(root, leaves.len, leaf, proof));
+    }
+}
+
+test "MMR verify accepts the single-leaf empty proof" {
+    const M = MMR(Blake3);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var m = try M.init(allocator);
+    defer m.deinit();
+    try m.append("only");
+
+    const root = try m.root();
+    const proof = try m.prove(0, allocator);
+    defer proof.deinit(allocator);
+    try std.testing.expectEqual(@as(usize, 0), proof.siblings.len);
+    try std.testing.expect(m.verify(root, 0, "only", proof));
+}
+
+test "MMR verify rejects malformed proofs before indexing" {
+    const M = MMR(Blake3);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var m = try M.init(allocator);
+    defer m.deinit();
+    try m.append("a");
+    try m.append("b");
+    try m.append("c");
+    try m.append("d");
+
+    const root = try m.root();
+    const good = try m.prove(0, allocator);
+    defer good.deinit(allocator);
+    try std.testing.expectEqual(@as(usize, 2), good.siblings.len);
+
+    // Fewer flags than siblings: walking `siblings` and indexing
+    // `is_left_sibling` used to read out of bounds.
+    const short_flags = try allocator.dupe(bool, good.is_left_sibling[0..1]);
+    defer allocator.free(short_flags);
+    try std.testing.expect(!m.verify(root, 0, "a", .{
+        .siblings = good.siblings,
+        .is_left_sibling = short_flags,
+    }));
+
+    // More flags than siblings.
+    const long_flags = try allocator.alloc(bool, good.siblings.len + 1);
+    defer allocator.free(long_flags);
+    @memset(long_flags, false);
+    try std.testing.expect(!m.verify(root, 0, "a", .{
+        .siblings = good.siblings,
+        .is_left_sibling = long_flags,
+    }));
+
+    // Both halves empty (well-formed, but not a proof for this tree).
+    const empty = [_][32]u8{};
+    try std.testing.expect(!m.verify(root, 0, "a", .{
+        .siblings = &empty,
+        .is_left_sibling = &[_]bool{},
+    }));
+
+    // Depth that does not match the padded tree (4 leaves => depth 2).
+    const one_level = good.siblings[0..1];
+    const one_flag = good.is_left_sibling[0..1];
+    try std.testing.expect(!m.verify(root, 0, "a", .{
+        .siblings = one_level,
+        .is_left_sibling = one_flag,
+    }));
+
+    // Sanity: the unmodified proof still verifies, so the rejections above
+    // come from the shape checks and not from a broken root.
+    try std.testing.expect(m.verify(root, 0, "a", good));
+}
+
+test "MMR verify does not index past the leaf index with a truncated flag array" {
+    // Regression: sibling/flag arrays of different lengths, checked with a
+    // proof whose sibling index is at the end of the loop.
+    const M = MMR(Blake3);
+    var gpa = std.heap.DebugAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var m = try M.init(allocator);
+    defer m.deinit();
+    try m.append("a");
+    try m.append("b");
+
+    const root = try m.root();
+    const good = try m.prove(1, allocator);
+    defer good.deinit(allocator);
+
+    const no_flags = try allocator.alloc(bool, good.siblings.len);
+    defer allocator.free(no_flags);
+    @memset(no_flags, false);
+    try std.testing.expect(!m.verify(root, 1, "b", .{
+        .siblings = good.siblings,
+        .is_left_sibling = no_flags[0..0],
+    }));
+}
+
 test "SparseMerkleTree update and prove" {
     const SMT = SparseMerkleTree(Blake3, 8);
     var gpa = std.heap.DebugAllocator(.{}){};

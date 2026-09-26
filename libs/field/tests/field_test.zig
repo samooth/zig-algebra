@@ -302,6 +302,139 @@ test "BigField: mulBy2/3/4/5 vs mul" {
     }
 }
 
+// ============================================================================
+// Zero-inverse / zero-divisor contracts (regressions for hangs and OOB writes)
+// ============================================================================
+
+/// Every backend must behave identically: `inv(0) == 0`, `x / 0 == 0`, and the
+/// checked variants must report the missing inverse/divisor. The legacy
+/// behaviour before these tests was a debug-only assert, i.e. an infinite loop
+/// in the binary GCD (`a == 0` never reduces) under ReleaseFast.
+fn testZeroInverseContract(comptime F: type) !void {
+    try std.testing.expect(F.zero().inv().isZero());
+    try std.testing.expect(F.zero().inverse().isZero());
+    try std.testing.expectError(error.InverseOfZero, F.zero().invChecked());
+    try std.testing.expect(F.fromInt(9).div(F.zero()).isZero());
+    try std.testing.expectError(error.DivisionByZero, F.fromInt(9).divChecked(F.zero()));
+
+    // Non-zero values are unaffected.
+    const a = F.fromInt(3);
+    const b = F.fromInt(7);
+    try std.testing.expect(a.mul(a.inv()).isOne());
+    try std.testing.expect((try a.invChecked()).eq(a.inv()));
+    try std.testing.expect(a.div(b).eq(a.mul(b.inv())));
+    try std.testing.expect((try a.divChecked(b)).eq(a.div(b)));
+}
+
+test "M31: inv(0)/div by zero are defined and checked" {
+    try testZeroInverseContract(zf.M31);
+}
+
+test "BabyBear: inv(0)/div by zero are defined and checked" {
+    try testZeroInverseContract(zf.BabyBear);
+}
+
+test "Goldilocks: inv(0)/div by zero are defined and checked" {
+    try testZeroInverseContract(zf.Goldilocks);
+}
+
+test "BN254_Fp: inv(0)/div by zero are defined and checked" {
+    try testZeroInverseContract(zf.BN254_Fp);
+}
+
+test "BLS12_381_Fp: inv(0)/div by zero are defined and checked" {
+    try testZeroInverseContract(zf.BLS12_381_Fp);
+}
+
+/// batchInv must survive a zero input (used to hang on `inv(0)`) and a length
+/// mismatch (used to write past the end of `outputs`), and `batchInvChecked`
+/// must report both.
+fn testBatchInvContract(comptime F: type) !void {
+    const inputs = [_]F{ F.fromInt(2), F.zero(), F.fromInt(5), F.one(), F.zero() };
+    var outputs: [inputs.len]F = undefined;
+    F.batchInv(&inputs, &outputs);
+
+    for (inputs, outputs) |x, inv_x| {
+        if (x.isZero()) {
+            try std.testing.expect(inv_x.isZero());
+        } else {
+            try std.testing.expect(x.mul(inv_x).isOne());
+        }
+    }
+
+    // Checked variant: zero-free input gives the same inverses ...
+    const nonzero = [_]F{ F.fromInt(2), F.fromInt(5), F.one() };
+    var checked: [nonzero.len]F = undefined;
+    try F.batchInvChecked(&nonzero, &checked);
+    for (nonzero, checked) |x, inv_x| try std.testing.expect(x.mul(inv_x).isOne());
+    // ... and a zero input is reported instead of hanging.
+    var untouched: [inputs.len]F = @splat(F.fromInt(42));
+    try std.testing.expectError(error.InverseOfZero, F.batchInvChecked(&inputs, &untouched));
+    for (untouched) |v| try std.testing.expect(v.eq(F.fromInt(42)));
+
+    var short: [inputs.len - 2]F = undefined;
+    try std.testing.expectError(error.LengthMismatch, F.batchInvChecked(&inputs, &short));
+    // Legacy: a mismatch writes nothing at all (no out-of-bounds store).
+    var sentinel: [inputs.len]F = @splat(F.fromInt(42));
+    F.batchInv(&inputs, sentinel[0 .. inputs.len - 1]);
+    for (sentinel) |v| try std.testing.expect(v.eq(F.fromInt(42)));
+
+    // Empty input is a no-op, not a call to inv on an empty product.
+    var empty: [1]F = undefined;
+    F.batchInv(&[_]F{}, empty[0..0]);
+    try F.batchInvChecked(&[_]F{}, empty[0..0]);
+}
+
+test "SmallField: batchInv tolerates zeros and length mismatch" {
+    try testBatchInvContract(zf.M31);
+}
+
+test "BigField: batchInv tolerates zeros and length mismatch" {
+    try testBatchInvContract(zf.BN254_Fp);
+}
+
+/// Randomised cross-check of the zero-tolerant `batchInv` against per-element
+/// inversion, with zeros deliberately injected.
+fn testBatchInvRandom(comptime F: type, seed: u64, iterations: usize) !void {
+    var prng = std.Random.DefaultPrng.init(seed);
+    const rnd = prng.random();
+    for (0..iterations) |_| {
+        const n = 1 + rnd.uintLessThan(usize, 8);
+        var inputs: [8]F = undefined;
+        var outputs: [8]F = undefined;
+        for (0..n) |i| {
+            inputs[i] = if (rnd.uintLessThan(u8, 4) == 0) F.zero() else F.random(rnd);
+        }
+        F.batchInv(inputs[0..n], outputs[0..n]);
+        for (0..n) |i| {
+            if (inputs[i].isZero()) {
+                try std.testing.expect(outputs[i].isZero());
+            } else {
+                try std.testing.expect(inputs[i].mul(outputs[i]).isOne());
+                try std.testing.expect(outputs[i].eq((try inputs[i].invChecked())));
+            }
+        }
+    }
+}
+
+test "M31: batchInv matches per-element inversion at random" {
+    try testBatchInvRandom(zf.M31, 1234, 50);
+}
+
+test "BN254_Fp: batchInv matches per-element inversion at random" {
+    try testBatchInvRandom(zf.BN254_Fp, 4321, 10);
+}
+
+test "randomBounded(0) yields zero instead of dividing by zero" {
+    var prng = std.Random.DefaultPrng.init(5);
+    const rnd = prng.random();
+    try std.testing.expect(zf.M31.randomBounded(rnd, 0).isZero());
+    try std.testing.expect(zf.BN254_Fp.randomBounded(rnd, 0).isZero());
+    // A bound larger than the modulus is still clamped to the field.
+    try std.testing.expect(zf.M31.randomBounded(rnd, std.math.maxInt(u64)).toInt() < zf.M31.MODULUS);
+    try std.testing.expect(zf.BN254_Fp.randomBounded(rnd, std.math.maxInt(u512)).toInt() < zf.BN254_Fp.MODULUS);
+}
+
 test "M61 field basic arithmetic" {
     const F = zf.M61;
     const a = F.fromInt(123456789);

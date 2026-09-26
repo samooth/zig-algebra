@@ -29,10 +29,21 @@ const CoreMerkle = @import("zig-merkle");
 /// polynomial commitment scheme. In this module the verifier holds the table
 /// and recomputes the final MLE value itself.
 pub fn MlePcs(comptime F: type, comptime E: type) type {
+    return MlePcsWith(F, E, false);
+}
+
+/// Toy/test-only MLE PCS variant that permits extension fields smaller than 128
+/// bits. It is not sound against a grinding prover; use `MlePcs` for anything
+/// security-sensitive.
+pub fn MlePcsUnsafe(comptime F: type, comptime E: type) type {
+    return MlePcsWith(F, E, true);
+}
+
+fn MlePcsWith(comptime F: type, comptime E: type, comptime allow_small_field: bool) type {
     return struct {
         const Self = @This();
         const Multilinear = Polynomial.Multilinear(E);
-        const SC = SumcheckMod.Sumcheck(E);
+        const SC = if (allow_small_field) SumcheckMod.SumcheckUnsafe(E) else SumcheckMod.Sumcheck(E);
 
         fn checkedTableLen(k: usize) !usize {
             if (k >= @bitSizeOf(usize)) return error.InvalidArity;
@@ -221,9 +232,18 @@ pub fn MlePcs(comptime F: type, comptime E: type) type {
 /// over the base field) while the query point and all round arithmetic live in
 /// the extension `E`.
 pub fn CommittedMlePcs(comptime F: type, comptime E: type) type {
+    return CommittedMlePcsWith(F, E, false);
+}
+
+/// Toy/test-only committed PCS variant; see `MlePcsUnsafe`.
+pub fn CommittedMlePcsUnsafe(comptime F: type, comptime E: type) type {
+    return CommittedMlePcsWith(F, E, true);
+}
+
+fn CommittedMlePcsWith(comptime F: type, comptime E: type, comptime allow_small_field: bool) type {
     return struct {
-        const SC = SumcheckMod.Sumcheck(E);
-        const M = MlePcs(F, E);
+        const SC = if (allow_small_field) SumcheckMod.SumcheckUnsafe(E) else SumcheckMod.Sumcheck(E);
+        const M = MlePcsWith(F, E, allow_small_field);
         const Hash = CoreHash.Hash;
         const Blake3 = CoreHash.Blake3;
         const MerkleTree = CoreMerkle.MerkleTree(Blake3);
@@ -377,10 +397,10 @@ const Gf16 = @import("field.zig").Gf16;
 const Tg16 = @import("tower.zig").Gf16;
 const TowerField = @import("tower.zig").TowerField;
 const Gf2_128 = TowerField(7);
-const P = MlePcs(Gf16, Gf16);
-const Pg = MlePcs(Tg16, Tg16);
+const P = MlePcsUnsafe(Gf16, Gf16);
+const Pg = MlePcsUnsafe(Tg16, Tg16);
 const Pe = MlePcs(Tg16, Gf2_128);
-const CP = CommittedMlePcs(Gf16, Gf16);
+const CP = CommittedMlePcsUnsafe(Gf16, Gf16);
 const CPe = CommittedMlePcs(Tg16, Gf2_128);
 
 fn fe(x: u128) Gf16 {

@@ -60,6 +60,13 @@ test "MerkleTree batch verify" {
     defer for (proof_slices) |p| std.testing.allocator.free(p);
 
     try std.testing.expect(zf.MerkleTree(F).verifyBatch(root, &indices, &proof_slices, &selected_leaves));
+
+    // A length mismatch must fail closed instead of verifying only the
+    // overlapping prefix (the assert it replaced was compiled out in
+    // ReleaseFast).
+    try std.testing.expect(!zf.MerkleTree(F).verifyBatch(root, &indices, proof_slices[0..2], &selected_leaves));
+    try std.testing.expect(!zf.MerkleTree(F).verifyBatch(root, indices[0..2], &proof_slices, &selected_leaves));
+    try std.testing.expect(!zf.MerkleTree(F).verifyBatch(root, &indices, &proof_slices, selected_leaves[0..1]));
 }
 
 test "MerkleTree with non-power-of-two leaves" {

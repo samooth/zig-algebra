@@ -10,19 +10,39 @@ const Tower = @import("tower.zig");
 ///
 /// where each `f_j` is a multilinear polynomial supplied as its 2^k hypercube
 /// evaluation table. The Fiat-Shamir transcript uses SHA256 and a per-round
-/// challenge `r_i` taken as the last byte of the digest masked to the field's
-/// bit width (4 bits for GF(16), mirroring the Bitcoin Script verifier), so a
-/// proof produced here can be re-checked on-chain.
+/// challenge `r_i` taken as the last bytes of the digest and reduced into the
+/// field. The secure `Sumcheck(F)` entry point requires `F.BITS >= 128`.
+/// `SumcheckUnsafe(F)` preserves the historical 4-bit Bitcoin Script format
+/// for toy/on-chain experiments, but a prover can grind small-field challenges
+/// and it must not be used to secure remote proofs.
 ///
 /// Convention: round i folds the *lowest* remaining variable (adjacent table
 /// pairs `(2j, 2j+1)`), which is exactly the ordering used by
 /// `Multilinear.eval`, so the verifier's final MLE-product check reuses it.
+/// Secure Sumcheck entry point. The field must expose at least 128 bits so
+/// Fiat–Shamir challenges have a sound-enough domain for the protocol.
 pub fn Sumcheck(comptime F: type) type {
+    return SumcheckWith(F, false);
+}
+
+/// Explicitly insecure/test-only Sumcheck entry point for small toy fields such
+/// as GF(2^4). It preserves the 4-bit on-chain challenge format but must not be
+/// used to secure remote proofs.
+pub fn SumcheckUnsafe(comptime F: type) type {
+    return SumcheckWith(F, true);
+}
+
+fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
     return struct {
         const Self = @This();
         const Sha256 = std.crypto.hash.sha2.Sha256;
         const Multilinear = Polynomial.Multilinear(F);
         const MAX_INTERPOLATION_POINTS: usize = 64;
+        pub const MIN_SAFE_BITS: u16 = 128;
+
+        fn requireSafeField() error{FieldTooSmall}!void {
+            if (!allow_small_field and F.BITS < MIN_SAFE_BITS) return error.FieldTooSmall;
+        }
 
         fn checkedTableLen(k: usize) !usize {
             if (k >= @bitSizeOf(usize)) return error.InvalidArity;
@@ -114,6 +134,7 @@ pub fn Sumcheck(comptime F: type) type {
             claimed: F,
             rounds: []const []const F,
         ) !?RoundResult {
+            try requireSafeField();
             var transcript = if (seed) |s| Transcript.initBytes(s) else Transcript.init(claimed);
             const challenges = try allocator.alloc(F, rounds.len);
             errdefer allocator.free(challenges);
@@ -231,6 +252,7 @@ pub fn Sumcheck(comptime F: type) type {
             terms: []const Term,
             seed: ?[]const u8,
         ) !Proof {
+            try requireSafeField();
             return proveCombinationWith(allocator, k, tables, terms, seed, null);
         }
 
@@ -245,6 +267,7 @@ pub fn Sumcheck(comptime F: type) type {
             seed: ?[]const u8,
             pool: *const Pool,
         ) !Proof {
+            try requireSafeField();
             return proveCombinationWith(allocator, k, tables, terms, seed, pool);
         }
 
@@ -516,6 +539,7 @@ pub fn Sumcheck(comptime F: type) type {
             tables: []const []const F,
             seed: ?[]const u8,
         ) !Proof {
+            try requireSafeField();
             const m = tables.len;
             const n = try validateTables(k, tables);
             if (m >= MAX_INTERPOLATION_POINTS) return error.DegreeTooLarge;
@@ -607,6 +631,7 @@ pub fn Sumcheck(comptime F: type) type {
             proof: Proof,
             seed: ?[]const u8,
         ) !bool {
+            try requireSafeField();
             const m = tables.len;
             _ = try validateTables(k, tables);
             if (m >= MAX_INTERPOLATION_POINTS) return false;
@@ -634,10 +659,19 @@ pub fn Sumcheck(comptime F: type) type {
 // ---------------------------------------------------------------------------
 
 const Gf16 = @import("field.zig").Gf16;
-const T = Sumcheck(Gf16);
+const T = SumcheckUnsafe(Gf16);
 
 fn fe(x: u128) Gf16 {
     return Gf16.fromInt(x);
+}
+
+test "secure Sumcheck rejects fields smaller than 128 bits" {
+    const alloc = std.testing.allocator;
+    const tables = [_][]const Gf16{&.{ fe(3), fe(7) }};
+    try std.testing.expectError(error.FieldTooSmall, Sumcheck(Gf16).prove(alloc, 1, &tables));
+
+    const empty_proof = Sumcheck(Gf16).Proof{ .claimed_sum = fe(0), .rounds = &.{} };
+    try std.testing.expectError(error.FieldTooSmall, Sumcheck(Gf16).verify(alloc, 1, &tables, empty_proof));
 }
 
 test "interpolate recovers linear polynomial" {
@@ -807,7 +841,7 @@ fn g256CombinationEval(
 test "GpuMode off/auto/on control the accelerator hook" {
     const alloc = std.testing.allocator;
     const G = Tower.Gf256;
-    const T256 = Sumcheck(G);
+    const T256 = SumcheckUnsafe(G);
     const t0 = [_]G{ G.fromInt(1), G.fromInt(2), G.fromInt(3), G.fromInt(4) };
     const t1 = [_]G{ G.fromInt(5), G.fromInt(6), G.fromInt(7), G.fromInt(8) };
     const tables = [_][]const G{ &t0, &t1 };

@@ -46,6 +46,10 @@ pub const novelEval = pack.novelEval;
 pub const Sumcheck = sumcheck.Sumcheck;
 pub const MlePcs = pcs.MlePcs;
 pub const CommittedMlePcs = pcs.CommittedMlePcs;
+/// Toy/test-only variants; small fields are not sound against grinding provers.
+pub const SumcheckUnsafe = sumcheck.SumcheckUnsafe;
+pub const MlePcsUnsafe = pcs.MlePcsUnsafe;
+pub const CommittedMlePcsUnsafe = pcs.CommittedMlePcsUnsafe;
 
 test {
     std.testing.refAllDecls(@This());

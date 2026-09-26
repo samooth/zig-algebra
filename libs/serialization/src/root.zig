@@ -23,6 +23,18 @@
 //! - `u64` length prefixes bound every variable-length section
 //! - Self-delimiting: `deserialize` rejects trailing data
 //!
+//! # Untrusted input
+//!
+//! `deserialize` is written for untrusted bytes:
+//!
+//! - A `u64` length prefix is validated against the number of bytes actually
+//!   left in the input before anything is allocated, so a declared length can
+//!   never be larger than the input that backs it. Every allocation is
+//!   therefore bounded by the input size (see `minWireSize`).
+//! - A failing `readValue` rolls back every value it had already decoded:
+//!   the partially built value owns nothing when the error surfaces, so
+//!   `DebugAllocator` reports no leaks.
+//!
 //! Extracted from zig-stark's `core/serialization.zig`.
 
 const std = @import("std");
@@ -41,12 +53,17 @@ pub fn serialize(allocator: std.mem.Allocator, value: anytype) ![]u8 {
 ///
 /// The returned value owns its memory (release with `deinit(allocator)` if needed).
 /// Returns `error.TrailingBytes` if input has unconsumed bytes.
+///
+/// `bytes` is treated as untrusted: a length prefix that claims more elements
+/// than the remaining input can hold is rejected with `error.InvalidLength`
+/// before any allocation happens, and a failure part-way through leaves nothing
+/// allocated behind.
 pub fn deserialize(allocator: std.mem.Allocator, bytes: []const u8, comptime T: type) !T {
     var cursor = Cursor{ .bytes = bytes };
     var value: T = undefined;
     try readValue(&cursor, allocator, &value, T);
     if (cursor.pos != cursor.bytes.len) {
-        if (comptime hasDeinit(T)) value.deinit(allocator);
+        releaseValue(allocator, &value);
         return error.TrailingBytes;
     }
     return value;
@@ -60,10 +77,72 @@ fn hasDeinit(comptime T: type) bool {
     };
 }
 
+/// Release a fully decoded value, preferring the type's own `deinit`.
+///
+/// Only called on complete values; partial values go through `deinitValue`,
+/// which mirrors `readValue` and never calls user code on uninitialized state.
+fn releaseValue(allocator: std.mem.Allocator, value: anytype) void {
+    if (comptime hasDeinit(@TypeOf(value.*))) {
+        value.deinit(allocator);
+        return;
+    }
+    deinitValue(allocator, value);
+}
+
 fn isField(comptime T: type) bool {
     if (@typeInfo(T) != .@"struct") return false;
     return @hasDecl(T, "toBytes") and @hasDecl(T, "fromBytes") and
         (@hasDecl(T, "NUM_BYTES") or @hasDecl(T, "SIZE"));
+}
+
+/// Smallest number of bytes a serialized `T` can occupy.
+///
+/// Used to reject `u64` length prefixes before allocating. A result of 0 means
+/// "no useful lower bound" (only reachable for empty structs and `[0]T`
+/// arrays), in which case the length is validated against the remaining byte
+/// count alone.
+fn minWireSize(comptime T: type) usize {
+    return switch (@typeInfo(T)) {
+        .bool => 1,
+        .int => |i| wireIntSize(T, i.bits, i.signedness),
+        .array => |a| if (a.child == u8)
+            a.len
+        else
+            a.len *| minWireSize(a.child),
+        .pointer => |p| switch (p.size) {
+            // Just the `u64` length prefix: the elements may all be empty.
+            .slice => 8,
+            .one, .many, .c => @compileError("single-item pointers are not serializable: " ++ @typeName(T)),
+        },
+        .@"struct" => if (isField(T))
+            fieldWireSize(T)
+        else
+            structWireSize(T),
+        .optional => 1,
+        else => @compileError("cannot size type " ++ @typeName(T)),
+    };
+}
+
+fn wireIntSize(comptime T: type, comptime bits: u16, comptime signedness: std.builtin.Signedness) usize {
+    if (signedness == .signed) @compileError("signed integers are not serializable: " ++ @typeName(T));
+    // `usize` is always 8 bytes on the wire regardless of pointer width.
+    if (T == usize) return 8;
+    return bits / 8;
+}
+
+fn fieldWireSize(comptime T: type) usize {
+    if (comptime @hasDecl(T, "NUM_BYTES")) return T.NUM_BYTES;
+    return T.SIZE;
+}
+
+fn structWireSize(comptime T: type) usize {
+    var total: usize = 0;
+    inline for (std.meta.fields(T)) |f| {
+        if (f.type == std.mem.Allocator) continue;
+        if (comptime std.mem.eql(u8, f.name, "owns_entries")) continue;
+        total += minWireSize(f.type);
+    }
+    return total;
 }
 
 fn writeValue(allocator: std.mem.Allocator, list: *std.ArrayList(u8), value: anytype) !void {
@@ -135,6 +214,11 @@ fn writeValue(allocator: std.mem.Allocator, list: *std.ArrayList(u8), value: any
     }
 }
 
+/// Read a value of type `T` into `result`.
+///
+/// Contract: on error every allocation made while decoding `result` is
+/// released again and `result` is left in an unusable state — callers must not
+/// `deinit` it. On success `result` is a complete, owned value.
 fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, comptime T: type) !void {
     switch (@typeInfo(T)) {
         .bool => {
@@ -143,7 +227,7 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
             result.* = value == 1;
         },
         .int => |i| {
-            if (i.signedness == .signed) @compileError("signed integers are not serializable: " ++ @typeName(T));
+            const n_bytes = comptime wireIntSize(T, i.bits, i.signedness);
             if (T == usize) {
                 const bytes = try cursor.take(8);
                 var v: u64 = 0;
@@ -152,7 +236,6 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
                 result.* = @intCast(v);
                 return;
             }
-            const n_bytes = @divExact(i.bits, 8);
             const bytes = try cursor.take(n_bytes);
             var v: T = 0;
             inline for (0..n_bytes) |b| v |= @as(T, bytes[b]) << @intCast(8 * b);
@@ -163,17 +246,33 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
                 const bytes = try cursor.take(@sizeOf(T));
                 result.* = bytes[0..@sizeOf(T)].*;
             } else {
-                inline for (0..a.len) |i| try readValue(cursor, allocator, &result[i], a.child);
+                inline for (0..a.len) |i| {
+                    readValue(cursor, allocator, &result[i], a.child) catch |err| {
+                        inline for (0..a.len) |j| {
+                            if (j < i) deinitValue(allocator, &result[j]);
+                        }
+                        return err;
+                    };
+                }
             }
         },
         .pointer => |p| {
             switch (p.size) {
                 .slice => {
-                    const len = try cursor.readU64();
                     const child = p.child;
-                    const slice = try allocator.alloc(child, @intCast(len));
-                    errdefer allocator.free(slice);
-                    for (0..@as(usize, @intCast(len))) |i| try readValue(cursor, allocator, &slice[i], child);
+                    const len = try cursor.sliceLen(child);
+                    const slice = try allocator.alloc(child, len);
+                    // On failure release the elements decoded so far, then the
+                    // slice itself: a half-decoded slice is not the caller's
+                    // to clean up.
+                    var i: usize = 0;
+                    while (i < len) : (i += 1) {
+                        readValue(cursor, allocator, &slice[i], child) catch |err| {
+                            for (slice[0..i]) |*element| deinitValue(allocator, element);
+                            allocator.free(slice);
+                            return err;
+                        };
+                    }
                     result.* = slice;
                 },
                 .one, .many, .c => @compileError("single-item pointers are not serializable: " ++ @typeName(T)),
@@ -191,13 +290,20 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
                 }
                 return;
             }
-            inline for (std.meta.fields(T)) |f| {
+            inline for (std.meta.fields(T), 0..) |f, idx| {
                 if (f.type == std.mem.Allocator) {
                     @field(result, f.name) = allocator;
                     continue;
                 }
                 if (comptime std.mem.eql(u8, f.name, "owns_entries")) continue;
-                try readValue(cursor, allocator, &@field(result, f.name), f.type);
+                readValue(cursor, allocator, &@field(result, f.name), f.type) catch |err| {
+                    // Roll back every field decoded before this one, otherwise
+                    // a malformed input leaks the prefix it managed to build.
+                    inline for (std.meta.fields(T), 0..) |g, j| {
+                        if (j < idx) deinitValue(allocator, &@field(result, g.name));
+                    }
+                    return err;
+                };
             }
             if (@hasField(T, "owns_entries")) @field(result, "owns_entries") = true;
         },
@@ -205,6 +311,7 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
             const flag = try cursor.byte();
             if (flag > 1) return error.InvalidValue;
             if (flag == 1) {
+                // A failing `readValue` rolls back its own partial state.
                 var payload: o.child = undefined;
                 try readValue(cursor, allocator, &payload, o.child);
                 result.* = payload;
@@ -213,6 +320,47 @@ fn readValue(cursor: *Cursor, allocator: std.mem.Allocator, result: anytype, com
             }
         },
         else => @compileError("cannot deserialize type " ++ @typeName(T)),
+    }
+}
+
+/// Free everything `readValue` may have allocated inside `value`.
+///
+/// Mirrors `readValue` field for field and never calls user `deinit` methods:
+/// it also runs on partially decoded values whose later fields are still
+/// uninitialized. Types that own memory outside their own fields cannot be
+/// rolled back this way; nothing in this repository does.
+fn deinitValue(allocator: std.mem.Allocator, value: anytype) void {
+    const T = @TypeOf(value.*);
+    // `std.mem.Allocator` is stored, not owned: nothing to release.
+    if (T == std.mem.Allocator) return;
+    switch (@typeInfo(T)) {
+        .bool, .int, .@"enum", .@"union", .@"opaque" => {},
+        .array => |a| {
+            if (a.child != u8) {
+                for (&value.*) |*element| deinitValue(allocator, element);
+            }
+        },
+        .pointer => |p| switch (p.size) {
+            .slice => {
+                // Elements were allocated one by one by `readValue`, so they
+                // have to be released one by one too before the slice itself.
+                for (value.*) |*element| deinitValue(allocator, element);
+                allocator.free(value.*);
+            },
+            .one, .many, .c => {},
+        },
+        .@"struct" => {
+            if (comptime isField(T)) return;
+            inline for (std.meta.fields(T)) |f| {
+                if (f.type == std.mem.Allocator) continue;
+                if (comptime std.mem.eql(u8, f.name, "owns_entries")) continue;
+                deinitValue(allocator, &@field(value.*, f.name));
+            }
+        },
+        .optional => {
+            if (value.*) |*payload| deinitValue(allocator, payload);
+        },
+        else => @compileError("cannot release type " ++ @typeName(T)),
     }
 }
 
@@ -232,11 +380,36 @@ const Cursor = struct {
         return b[0];
     }
 
+    fn remaining(self: *const Cursor) usize {
+        return self.bytes.len - self.pos;
+    }
+
     fn readU64(self: *Cursor) !u64 {
         var v: u64 = 0;
         const bytes = try self.take(8);
         inline for (0..8) |b| v |= @as(u64, bytes[b]) << @intCast(8 * b);
         return v;
+    }
+
+    /// Validate a `u64` length prefix against the bytes that are left and
+    /// return it as a `usize`.
+    ///
+    /// Rejecting an over-long prefix *before* `allocator.alloc` is what keeps
+    /// untrusted input from requesting a huge allocation (or tripping an
+    /// `@intCast` overflow on 32-bit targets). The lower bound per element is
+    /// `minWireSize(child)`, so the allocation can never exceed the input by
+    /// more than the fixed memory-per-wire-byte ratio of the type itself.
+    fn sliceLen(self: *Cursor, comptime child: type) !usize {
+        const declared = try self.readU64();
+        if (declared > std.math.maxInt(usize)) return error.InvalidLength;
+        const available = self.remaining();
+        const min_size = comptime minWireSize(child);
+        if (min_size == 0) {
+            if (declared > available) return error.InvalidLength;
+        } else if (declared > available / min_size) {
+            return error.InvalidLength;
+        }
+        return @intCast(declared);
     }
 };
 
@@ -370,4 +543,177 @@ test "rejects truncated and trailing bytes" {
     trailing[bytes.len] = 0;
     try testing.expectError(error.TrailingBytes, deserialize(alloc, trailing, [2]u32));
     try testing.expectError(error.UnexpectedEnd, deserialize(alloc, bytes[0..3], [2]u32));
+}
+
+test "a length prefix larger than the remaining input is rejected" {
+    const alloc = std.testing.allocator;
+    var buf: [24]u8 = [_]u8{0} ** 24;
+
+    // len = 2^64-1 with nothing following it.
+    std.mem.writeInt(u64, buf[0..8], std.math.maxInt(u64), .little);
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, []const u32));
+
+    // len = 2^40 with nothing following it.
+    std.mem.writeInt(u64, buf[0..8], 1 << 40, .little);
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, []const u8));
+
+    // Three inner slices need at least 3 * 8 bytes; only 16 are left.
+    std.mem.writeInt(u64, buf[0..8], 3, .little);
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, []const []const u32));
+
+    // Two 16-byte structs need 32 bytes; only 16 are left.
+    std.mem.writeInt(u64, buf[0..8], 2, .little);
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, []const Inner));
+
+    // One element declared, zero bytes left for it.
+    const lone = [_]u8{ 1, 0, 0, 0, 0, 0, 0, 0 };
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &lone, []const u32));
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &lone, []const Inner));
+}
+
+test "an over-long length prefix never reaches the allocator" {
+    // The first allocation fails: if the length prefix were trusted until
+    // `allocator.alloc`, this would report OutOfMemory instead.
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    const huge = [_]u8{0xff} ** 8; // len = 2^64-1
+    try testing.expectError(error.InvalidLength, deserialize(failing.allocator(), &huge, []const u32));
+    try testing.expectEqual(@as(usize, 0), failing.alloc_index);
+
+    var failing2 = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    const one_element = [_]u8{ 1, 0, 0, 0, 0, 0, 0, 0 }; // len = 1, no element bytes
+    try testing.expectError(error.InvalidLength, deserialize(failing2.allocator(), &one_element, []const u32));
+    try testing.expectEqual(@as(usize, 0), failing2.alloc_index);
+}
+
+const Inner = struct { a: [8]u8, b: [8]u8 };
+
+/// Allocator and `owns_entries` fields are stored, never owned: the rollback
+/// must leave them alone.
+const Holder = struct {
+    allocator: std.mem.Allocator,
+    entries: []u32,
+    tail: []const u8,
+    owns_entries: bool = false,
+};
+
+test "a failure in a later field rolls back the earlier ones" {
+    const alloc = std.testing.allocator;
+    // entries: len 2 + two u32 (fully decoded), tail: len 8 with no bytes.
+    var buf: [24]u8 = [_]u8{0} ** 24;
+    std.mem.writeInt(u64, buf[0..8], 2, .little);
+    std.mem.writeInt(u32, buf[8..12], 0xdeadbeef, .little);
+    std.mem.writeInt(u32, buf[12..16], 0xfeedface, .little);
+    std.mem.writeInt(u64, buf[16..24], 8, .little);
+
+    // `std.testing.allocator` reports a leak if `entries` is not released.
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, Holder));
+}
+
+const NestedHolder = struct {
+    rows: []const []const u32,
+    tail: []const u8,
+};
+
+test "a failure inside a slice rolls back the elements already decoded" {
+    const alloc = std.testing.allocator;
+    // rows: two inner slices — the first with 2 u32 values, the second empty —
+    // which consumes the whole input, so `tail` cannot even read its prefix.
+    var buf: [32]u8 = [_]u8{0} ** 32;
+    std.mem.writeInt(u64, buf[0..8], 2, .little);
+    std.mem.writeInt(u64, buf[8..16], 2, .little);
+    std.mem.writeInt(u32, buf[16..20], 11, .little);
+    std.mem.writeInt(u32, buf[20..24], 22, .little);
+    std.mem.writeInt(u64, buf[24..32], 0, .little);
+
+    // `rows` (and its first element) were fully decoded; both must be freed.
+    try testing.expectError(error.UnexpectedEnd, deserialize(alloc, &buf, NestedHolder));
+}
+
+test "trailing bytes free the decoded value" {
+    const alloc = std.testing.allocator;
+    var buf: [21]u8 = [_]u8{0} ** 21;
+    std.mem.writeInt(u64, buf[0..8], 1, .little);
+    std.mem.writeInt(u32, buf[8..12], 7, .little);
+    std.mem.writeInt(u64, buf[12..20], 0, .little);
+    buf[20] = 0xff; // one stray trailing byte
+    try testing.expectError(error.TrailingBytes, deserialize(alloc, &buf, Holder));
+}
+
+test "optional payloads are rolled back too" {
+    const alloc = std.testing.allocator;
+    const WithOptional = struct { flag: bool, maybe: ?[]const u32 };
+    // optional present, 4 u32 declared, no bytes for them.
+    var buf: [12]u8 = [_]u8{0} ** 12;
+    buf[0] = 1;
+    buf[1] = 1;
+    std.mem.writeInt(u64, buf[2..10], 4, .little);
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &buf, WithOptional));
+
+    // A short payload is caught by the length check: for a fixed-size element
+    // the check is exact, so the cursor cannot run dry first.
+    const truncated = [_]u8{ 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb };
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &truncated, WithOptional));
+}
+
+test "an allocated optional payload is rolled back when a later field fails" {
+    const alloc = std.testing.allocator;
+    const Deep = struct { maybe: ?[]const u32, tail: [8]u8 };
+    // optional present with one u32 (allocated), then a fixed 8-byte field
+    // that the input no longer covers.
+    var buf: [13]u8 = [_]u8{0} ** 13;
+    buf[0] = 1;
+    std.mem.writeInt(u64, buf[1..9], 1, .little);
+    std.mem.writeInt(u32, buf[9..13], 0x1234, .little);
+    try testing.expectError(error.UnexpectedEnd, deserialize(alloc, &buf, Deep));
+}
+
+test "a length prefix that does not fit fails before the optional payload runs" {
+    const alloc = std.testing.allocator;
+    const Deep = struct { maybe: ?[]const []const u8 };
+    // present optional, outer len 1 (needs 8 bytes, only 5 are left).
+    const bytes = [_]u8{ 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xaa, 0xbb, 0xcc };
+    try testing.expectError(error.InvalidLength, deserialize(alloc, &bytes, Deep));
+}
+
+/// Has its own `deinit`, so the rollback must not call it on a partially
+/// decoded value: `tail` is still uninitialized when `rows` has to be freed.
+const WithDeinit = struct {
+    rows: []const []const u32,
+    tail: []const u8,
+
+    fn deinit(self: WithDeinit, a: std.mem.Allocator) void {
+        for (self.rows) |r| a.free(r);
+        a.free(self.rows);
+        a.free(self.tail);
+    }
+};
+
+test "rollback mirrors the read logic instead of calling a user deinit" {
+    const alloc = std.testing.allocator;
+    // rows: two inner slices, the first holding two u32s, the second empty;
+    // then nothing at all, so `tail` cannot be read.
+    var buf: [32]u8 = [_]u8{0} ** 32;
+    std.mem.writeInt(u64, buf[0..8], 2, .little);
+    std.mem.writeInt(u64, buf[8..16], 2, .little);
+    std.mem.writeInt(u32, buf[16..20], 5, .little);
+    std.mem.writeInt(u32, buf[20..24], 6, .little);
+    std.mem.writeInt(u64, buf[24..32], 0, .little);
+
+    // Three allocations (rows, rows[0], plus the read of rows[1]) must all be
+    // released, and `deinit` must not be called on the half-built value.
+    try testing.expectError(error.UnexpectedEnd, deserialize(alloc, &buf, WithDeinit));
+}
+
+test "a valid payload with empty elements still round-trips" {
+    // The `minWireSize` bound must not reject legitimate minimal encodings:
+    // an empty inner slice still costs its 8-byte length prefix.
+    const alloc = std.testing.allocator;
+    const S = struct { rows: []const []const u32 };
+    const value = S{ .rows = &.{ &.{}, &.{}, &.{} } };
+    const bytes = try serialize(alloc, value);
+    defer alloc.free(bytes);
+    const back = try deserialize(alloc, bytes, S);
+    defer alloc.free(back.rows);
+    try testing.expectEqual(@as(usize, 3), back.rows.len);
+    for (back.rows) |row| try testing.expectEqual(@as(usize, 0), row.len);
 }

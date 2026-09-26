@@ -285,12 +285,17 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
         /// `a^{-1} mod p` in canonical form. Iterates until `v == 0` (at which
         /// point `u == gcd(a, p) == 1` since `p` is prime).
         ///
+        /// Returns `null` for `a == 0`: zero has no inverse, and feeding it to
+        /// the loop below would never terminate (with `u == 0` the `u & 1 == 0`
+        /// branch is taken forever while `v` stays put). Callers must therefore
+        /// go through `invMontgomery`/`invMontgomeryChecked`, which do.
+        ///
         /// NOTE: The iteration count is input-dependent (between ~BITS and ~2*BITS
         /// iterations). This is NOT constant-time in the strict sense and leaks
         /// information through timing. Suitable for STARKs/zkSNARKs where field
         /// elements are public; NOT suitable for secret-key cryptography.
-        fn binaryGcdInverse(a: [n]u64) [n]u64 {
-            std.debug.assert(!ctIsZero(&a));
+        fn binaryGcdInverse(a: [n]u64) ?[n]u64 {
+            if (ctIsZero(&a)) return null;
             var u = a;
             var v = MODULUS_LIMBS;
             var x1 = CANONICAL_ONE;
@@ -326,9 +331,20 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
         /// Montgomery inverse: returns the Montgomery form of `x^{-1}`, i.e.
         /// `x^{-1} * R mod p`. Uses the binary extended GCD algorithm, which
         /// terminates in `O(bits)` iterations.
+        ///
+        /// Total by design: zero has no inverse, and the legacy signature
+        /// cannot report that, so `x == 0` yields zero instead of panicking or
+        /// (with the old assert compiled out in ReleaseFast/ReleaseSmall)
+        /// spinning forever inside the GCD loop. Use `invMontgomeryChecked` when
+        /// the caller must distinguish "inverse of zero" from a real value.
         pub fn invMontgomery(x: [n]u64) [n]u64 {
+            return invMontgomeryChecked(x) catch ZERO_LIMBS;
+        }
+
+        /// Checked Montgomery inverse: `error.InverseOfZero` when `x == 0`.
+        pub fn invMontgomeryChecked(x: [n]u64) error{InverseOfZero}![n]u64 {
             const a = fromMontgomery(x);
-            const inv = binaryGcdInverse(a);
+            const inv = binaryGcdInverse(a) orelse return error.InverseOfZero;
             return toMontgomery(inv);
         }
 
@@ -406,6 +422,30 @@ test "BLS12_381 Montgomery edge cases" {
     try std.testing.expectEqual(@as(u512, 1), bigint.limbsToInt(P.NUM_LIMBS, u512, &P.fromMontgomery(P.mul(minus_one, minus_one))));
     try std.testing.expectEqual(@as(u512, 0), bigint.limbsToInt(P.NUM_LIMBS, u512, &P.fromMontgomery(P.sub(minus_one, minus_one))));
     try std.testing.expectEqual(p - 1, bigint.limbsToInt(P.NUM_LIMBS, u512, &P.fromMontgomery(P.neg(one))));
+}
+
+test "Montgomery inverse of zero is defined (no hang, no crash)" {
+    const P = Montgomery(2147483647); // M31
+    const zero = P.ZERO_LIMBS;
+
+    // Legacy API: returns zero instead of asserting (Debug) or spinning
+    // forever in the GCD loop (ReleaseFast).
+    const inv = P.invMontgomery(zero);
+    try std.testing.expect(P.ctLimbsEql(&inv, &P.ZERO_LIMBS));
+    try std.testing.expectEqual(@as(u512, 0), bigint.limbsToInt(P.NUM_LIMBS, u512, &P.fromMontgomery(inv)));
+
+    // Checked API: reports the missing inverse.
+    try std.testing.expectError(error.InverseOfZero, P.invMontgomeryChecked(zero));
+
+    // A non-zero input still round-trips.
+    const one = P.toMontgomery(bigint.intToLimbsRuntime(P.NUM_LIMBS, 1));
+    try std.testing.expectEqual(@as(u512, 1), bigint.limbsToInt(P.NUM_LIMBS, u512, &P.fromMontgomery(P.mul(one, P.invMontgomery(one)))));
+}
+
+test "BLS12_381 Montgomery inverse of zero is defined" {
+    const P = Montgomery(0x1A0111EA397FE69A4B1BA7B6434BACD764774B84F38512BF6730D2A0F6B0F6241EABFFFEB153FFFFB9FEFFFFFFFFAAAB);
+    try std.testing.expectError(error.InverseOfZero, P.invMontgomeryChecked(P.ZERO_LIMBS));
+    try std.testing.expect(P.ctLimbsEql(&P.invMontgomery(P.ZERO_LIMBS), &P.ZERO_LIMBS));
 }
 
 test "Constant-time primitives" {

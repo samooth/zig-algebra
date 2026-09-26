@@ -271,10 +271,11 @@ fn SmallField(comptime modulus: comptime_int) type {
         /// Random element in [0, min(bound, MODULUS)).
         /// Uses rejection sampling: draws a full-width u64 and accepts only
         /// values below the limit, giving a uniform distribution.
+        /// `bound == 0` yields zero (the empty range) instead of dividing by
+        /// zero in `uintLessThan`, which is UB once asserts are compiled out.
         pub fn randomBounded(rnd: std.Random, bound: u64) Self {
-            std.debug.assert(bound > 0);
             const limit = @min(bound, MODULUS);
-            if (limit == 1) return zero();
+            if (limit <= 1) return zero();
             return .{ .value = rnd.uintLessThan(u64, limit) };
         }
 
@@ -346,8 +347,22 @@ fn SmallField(comptime modulus: comptime_int) type {
         }
 
         /// Inverse via binary extended Euclidean algorithm (fast, not constant-time).
+        ///
+        /// Total: `inv(0) == zero()`. Zero has no inverse, and this signature
+        /// cannot report it, so the legacy API returns zero rather than
+        /// asserting (Debug/ReleaseSafe) or looping forever (ReleaseFast, where
+        /// the assert is compiled out and the GCD loop never terminates with
+        /// `a == 0`). Returning zero keeps every derived value zero instead of
+        /// fabricating a plausible-looking element. Use `invChecked` to reject
+        /// a non-invertible value.
         pub fn inv(self: Self) Self {
-            std.debug.assert(!self.isZero());
+            return self.invChecked() catch zero();
+        }
+
+        /// Checked inverse: returns `error.InverseOfZero` when `self == 0`.
+        /// Inverse via binary extended Euclidean algorithm (not constant-time).
+        pub fn invChecked(self: Self) error{InverseOfZero}!Self {
+            if (self.isZero()) return error.InverseOfZero;
             // Binary extended GCD algorithm using u128 for intermediate to avoid overflow
             var a: u128 = self.value;
             var b: u128 = MODULUS;
@@ -382,25 +397,53 @@ fn SmallField(comptime modulus: comptime_int) type {
             return .{ .value = @truncate(x) };
         }
 
-        /// Alias for `inv` (trait compatibility).
+        /// Alias for `inv` (trait compatibility). Total, like `inv`.
         pub fn inverse(self: Self) Self {
             return self.inv();
         }
 
         /// Batch inversion using Montgomery's trick: O(n) muls + 1 inv.
-        /// Panics if any input is zero.
+        ///
+        /// Total by design: `outputs` is left untouched if the two slices
+        /// differ in length (the old assert was compiled out in ReleaseFast,
+        /// where `outputs[i] = acc` then wrote out of bounds), and a zero input
+        /// produces `zero()` at its own position while every other position is
+        /// still inverted correctly. Use `batchInvChecked` to detect either
+        /// condition.
         pub fn batchInv(inputs: []const Self, outputs: []Self) void {
-            std.debug.assert(inputs.len == outputs.len);
+            if (inputs.len != outputs.len) return;
+            batchInvNonZeroTolerated(inputs, outputs);
+        }
+
+        /// Checked batch inversion: `error.LengthMismatch` if the slices
+        /// differ in length, `error.InverseOfZero` if any input is zero. On
+        /// error `outputs` is left untouched.
+        pub fn batchInvChecked(inputs: []const Self, outputs: []Self) error{ LengthMismatch, InverseOfZero }!void {
+            if (inputs.len != outputs.len) return error.LengthMismatch;
+            for (inputs) |x| {
+                if (x.isZero()) return error.InverseOfZero;
+            }
+            batchInvNonZeroTolerated(inputs, outputs);
+        }
+
+        /// Montgomery's trick over inputs that may contain zeros: the running
+        /// product skips them so the single inverse below always exists.
+        fn batchInvNonZeroTolerated(inputs: []const Self, outputs: []Self) void {
             var acc = Self.one();
-            for (inputs, 0..) |x, i| {
-                std.debug.assert(!x.isZero());
-                outputs[i] = acc;
+            for (inputs, outputs) |x, *out| {
+                if (x.isZero()) {
+                    out.* = Self.zero();
+                    continue;
+                }
+                out.* = acc;
                 acc = acc.mul(x);
             }
+            // `acc` is a product of non-zero elements, hence non-zero.
             acc = acc.inv();
             var i: usize = inputs.len;
             while (i > 0) {
                 i -= 1;
+                if (inputs[i].isZero()) continue;
                 outputs[i] = outputs[i].mul(acc);
                 acc = acc.mul(inputs[i]);
             }
@@ -569,9 +612,19 @@ fn SmallField(comptime modulus: comptime_int) type {
         }
 
         /// Division: `self / other` = `self * other.inv()`.
+        ///
+        /// Total: `self / 0 == zero()` (the inverse of zero is zero, so the
+        /// product stays zero). Use `divChecked` to reject a zero divisor.
         pub fn div(self: Self, other: Self) Self {
-            std.debug.assert(!other.isZero());
             return self.mul(other.inv());
+        }
+
+        /// Checked division: `error.DivisionByZero` when `other == 0`
+        /// (`error.InverseOfZero` is unreachable, the zero divisor is rejected
+        /// above).
+        pub fn divChecked(self: Self, other: Self) error{ DivisionByZero, InverseOfZero }!Self {
+            if (other.isZero()) return error.DivisionByZero;
+            return self.mul(try other.invChecked());
         }
 
         /// Hash for HashMap support.
@@ -695,13 +748,17 @@ fn SmallField(comptime modulus: comptime_int) type {
             return result;
         }
 
-        /// Construct Vec8 from [8]u32 slice (exactly 8 elements).
+        /// Construct Vec8 from a `[8]u32` slice.
+        ///
+        /// Total: a shorter slice leaves the remaining lanes zero and a longer
+        /// one is truncated to its first 8 entries, so the previous
+        /// `assert(slice.len == 8)` cannot read past the end in ReleaseFast.
         pub fn fromSlice8(slice: []const u32) Vec8 {
             if (!mersenne or BITS != 31) @compileError("fromSlice8 is only available for M31 (Mersenne-31)");
-            std.debug.assert(slice.len == 8);
-            var result: Vec8 = undefined;
+            const n = @min(slice.len, 8);
+            var result: Vec8 = @splat(0);
             inline for (0..8) |i| {
-                result[i] = @as(u64, slice[i]);
+                if (i < n) result[i] = @as(u64, slice[i]);
             }
             return result;
         }
@@ -921,10 +978,12 @@ fn BigField(comptime modulus: comptime_int) type {
         /// Random element in [0, min(bound, MODULUS)).
         /// Uses rejection sampling: draws NUM_BYTES random bytes, interprets
         /// as u512, and accepts only values below the limit.
+        /// `bound == 0` yields zero (the empty range) instead of looping
+        /// forever on an unsatisfiable `v < limit` test, which is what the
+        /// removed assert used to catch only in Debug/ReleaseSafe.
         pub fn randomBounded(rnd: std.Random, bound: u512) Self {
-            std.debug.assert(bound > 0);
             const limit = @min(bound, @as(u512, MODULUS));
-            if (limit == 1) return zero();
+            if (limit <= 1) return zero();
             var bits: usize = 0;
             var value = limit - 1;
             while (value != 0) : (value >>= 1) bits += 1;
@@ -981,30 +1040,69 @@ fn BigField(comptime modulus: comptime_int) type {
         /// Inverse via binary extended GCD (not constant-time; ~2·BITS
         /// iterations of limb add/sub/shift vs BITS Montgomery multiplications
         /// for Fermat's little theorem).
+        ///
+        /// Total: `inv(0) == zero()`. Zero has no inverse, and this signature
+        /// cannot report it, so the legacy API returns zero rather than
+        /// asserting (Debug/ReleaseSafe) or looping forever in the GCD loop
+        /// (ReleaseFast, where the assert is compiled out). Use `invChecked` to
+        /// reject a non-invertible value.
         pub fn inv(self: Self) Self {
-            std.debug.assert(!self.isZero());
-            return .{ .limbs = Mont.invMontgomery(self.limbs) };
+            return self.invChecked() catch zero();
         }
 
-        /// Alias for `inv` (trait compatibility).
+        /// Checked inverse: returns `error.InverseOfZero` when `self == 0`.
+        pub fn invChecked(self: Self) error{InverseOfZero}!Self {
+            if (self.isZero()) return error.InverseOfZero;
+            return .{ .limbs = try Mont.invMontgomeryChecked(self.limbs) };
+        }
+
+        /// Alias for `inv` (trait compatibility). Total, like `inv`.
         pub fn inverse(self: Self) Self {
             return self.inv();
         }
 
         /// Batch inversion using Montgomery's trick: O(n) muls + 1 inv.
-        /// Panics if any input is zero.
+        ///
+        /// Total by design: `outputs` is left untouched if the two slices
+        /// differ in length (the old assert was compiled out in ReleaseFast,
+        /// where `outputs[i] = acc` then wrote out of bounds), and a zero input
+        /// produces `zero()` at its own position while every other position is
+        /// still inverted correctly. Use `batchInvChecked` to detect either
+        /// condition.
         pub fn batchInv(inputs: []const Self, outputs: []Self) void {
-            std.debug.assert(inputs.len == outputs.len);
+            if (inputs.len != outputs.len) return;
+            batchInvNonZeroTolerated(inputs, outputs);
+        }
+
+        /// Checked batch inversion: `error.LengthMismatch` if the slices
+        /// differ in length, `error.InverseOfZero` if any input is zero. On
+        /// error `outputs` is left untouched.
+        pub fn batchInvChecked(inputs: []const Self, outputs: []Self) error{ LengthMismatch, InverseOfZero }!void {
+            if (inputs.len != outputs.len) return error.LengthMismatch;
+            for (inputs) |x| {
+                if (x.isZero()) return error.InverseOfZero;
+            }
+            batchInvNonZeroTolerated(inputs, outputs);
+        }
+
+        /// Montgomery's trick over inputs that may contain zeros: the running
+        /// product skips them so the single inverse below always exists.
+        fn batchInvNonZeroTolerated(inputs: []const Self, outputs: []Self) void {
             var acc = Self.one();
-            for (inputs, 0..) |x, i| {
-                std.debug.assert(!x.isZero());
-                outputs[i] = acc;
+            for (inputs, outputs) |x, *out| {
+                if (x.isZero()) {
+                    out.* = Self.zero();
+                    continue;
+                }
+                out.* = acc;
                 acc = acc.mul(x);
             }
+            // `acc` is a product of non-zero elements, hence non-zero.
             acc = acc.inv();
             var i: usize = inputs.len;
             while (i > 0) {
                 i -= 1;
+                if (inputs[i].isZero()) continue;
                 outputs[i] = outputs[i].mul(acc);
                 acc = acc.mul(inputs[i]);
             }
@@ -1185,9 +1283,19 @@ fn BigField(comptime modulus: comptime_int) type {
         }
 
         /// Division: `self / other` = `self * other.inv()`.
+        ///
+        /// Total: `self / 0 == zero()` (the inverse of zero is zero, so the
+        /// product stays zero). Use `divChecked` to reject a zero divisor.
         pub fn div(self: Self, other: Self) Self {
-            std.debug.assert(!other.isZero());
             return self.mul(other.inv());
+        }
+
+        /// Checked division: `error.DivisionByZero` when `other == 0`
+        /// (`error.InverseOfZero` is unreachable, the zero divisor is rejected
+        /// above).
+        pub fn divChecked(self: Self, other: Self) error{ DivisionByZero, InverseOfZero }!Self {
+            if (other.isZero()) return error.DivisionByZero;
+            return self.mul(try other.invChecked());
         }
 
         /// Hash for HashMap support.

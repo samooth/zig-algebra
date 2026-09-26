@@ -37,11 +37,22 @@ pub const BN254_Fp2 = extension.BN254_Fp2;
 
 // M31-specific Vec8 SIMD NTT (stays in zig-field)
 pub const Vec8NttM31 = struct {
-    // Forward NTT using 8-lane SIMD for M31
+    const std = @import("std");
+
+    // Forward NTT using 8-lane SIMD for M31.
+    //
+    // `data.len` must be exactly `8 * 2^log_n`. The legacy `void` entry point
+    // leaves `data` untouched when it does not match (the old assert was
+    // compiled out in ReleaseFast, where the butterflies then read and wrote
+    // out of bounds); use `nttVec8M31Checked` to detect the mismatch.
     pub fn nttVec8M31(data: []M31, log_n: usize, root: M31) void {
-        const std = @import("std");
-        const n = std.math.pow(usize, 2, log_n);
-        std.debug.assert(data.len == 8 * n);
+        Vec8NttM31.nttVec8M31Checked(data, log_n, root) catch {};
+    }
+
+    pub fn nttVec8M31Checked(data: []M31, log_n: usize, root: M31) !void {
+        const n = try transformSize(log_n);
+        const expected = std.math.mul(usize, 8, n) catch return error.InvalidLength;
+        if (data.len != expected) return error.InvalidLength;
 
         // Bit-reversal per lane
         var lane: usize = 0;
@@ -94,19 +105,34 @@ pub const Vec8NttM31 = struct {
         }
     }
 
+    // Inverse NTT: forward transform with inverted twiddles, then scale by 1/n.
+    // Same length contract as `nttVec8M31`.
     pub fn inttVec8M31(data: []M31, log_n: usize, root: M31) void {
-        const std = @import("std");
-        const n = std.math.pow(usize, 2, log_n);
-        std.debug.assert(data.len == 8 * n);
+        Vec8NttM31.inttVec8M31Checked(data, log_n, root) catch {};
+    }
 
+    pub fn inttVec8M31Checked(data: []M31, log_n: usize, root: M31) !void {
+        const n = try transformSize(log_n);
+        const expected = std.math.mul(usize, 8, n) catch return error.InvalidLength;
+        if (data.len != expected) return error.InvalidLength;
+
+        // `n >= 1`, so `n` is invertible; a zero `root` has no inverse and
+        // yields a zero transform (see `M31.inv`) instead of hanging.
         const root_inv = root.inv();
-        Vec8NttM31.nttVec8M31(data, log_n, root_inv);
+        try Vec8NttM31.nttVec8M31Checked(data, log_n, root_inv);
 
         const n_inv = M31.fromInt(n).inv();
         var i: usize = 0;
         while (i < data.len) : (i += 1) {
             data[i] = data[i].mul(n_inv);
         }
+    }
+
+    /// `2^log_n`, rejecting sizes whose `8 * 2^log_n` would not fit in a
+    /// `usize` (and hence whose length check could not be trusted).
+    fn transformSize(log_n: usize) !usize {
+        if (log_n >= @bitSizeOf(usize) - 3) return error.InvalidLength;
+        return @as(usize, 1) << @intCast(log_n);
     }
 };
 
@@ -206,13 +232,18 @@ pub fn MerkleTree(comptime F: type) type {
             return std.mem.eql(u8, &current, &root);
         }
 
+        /// Batch verification of Merkle openings.
+        ///
+        /// Fail-closed on a length mismatch: the old `std.debug.assert` was
+        /// compiled out in ReleaseFast, where the multi-slice `for` then
+        /// verified only the first `min(len)` entries and still returned `true`.
         pub fn verifyBatch(
             root: Hash,
             indices: []const usize,
             proofs: []const []const Hash,
             leaves: []const F,
         ) bool {
-            std.debug.assert(indices.len == proofs.len and proofs.len == leaves.len);
+            if (indices.len != proofs.len or proofs.len != leaves.len) return false;
             for (indices, proofs, leaves) |idx, prf, leaf| {
                 if (!verify(root, idx, prf, leaf)) return false;
             }
@@ -244,6 +275,8 @@ pub const Ipa = ipa_.Ipa;
 // M31 Vec8 SIMD NTT
 pub const nttVec8M31 = Vec8NttM31.nttVec8M31;
 pub const inttVec8M31 = Vec8NttM31.inttVec8M31;
+pub const nttVec8M31Checked = Vec8NttM31.nttVec8M31Checked;
+pub const inttVec8M31Checked = Vec8NttM31.inttVec8M31Checked;
 
 // ============================================================================
 // Property-based tests: ring/field axioms over random elements

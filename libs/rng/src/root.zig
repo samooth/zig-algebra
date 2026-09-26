@@ -34,6 +34,14 @@ pub const randomU8 = rng.randomU8;
 // Tests
 // ============================================================================
 
+test {
+    // Reference every public declaration so the `@import`s above are forced
+    // and `test` blocks declared inside imported modules (csprng.zig, ...)
+    // are collected by the test runner. Without this the CSPRNG tests are
+    // never compiled, let alone run.
+    std.testing.refAllDecls(@This());
+}
+
 // Minimal F7 field for rejection-sampling tests
 const F7 = struct {
     const Self = @This();

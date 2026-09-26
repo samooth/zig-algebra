@@ -101,8 +101,18 @@ pub fn BinaryField(comptime bits: u8, comptime reduction_constant: u128) type {
         }
 
         /// a^(2^bits - 2) = a^-1 for a != 0 (multiplicative group has order 2^bits - 1).
+        ///
+        /// Total: `inv(zero()) == zero()`. Zero has no inverse in GF(2^bits)
+        /// (`0^k == 0` for every k > 0, so the exponentiation below would
+        /// return zero), and this signature cannot report that; the old assert
+        /// only fired in Debug/ReleaseSafe. Use `invChecked` to reject it.
         pub fn inv(a: @This()) @This() {
-            std.debug.assert(a.value != 0);
+            return invChecked(a) catch zero();
+        }
+
+        /// Checked inverse: `error.InverseOfZero` when `a == 0`.
+        pub fn invChecked(a: @This()) error{InverseOfZero}!@This() {
+            if (a.value == 0) return error.InverseOfZero;
             if (bits == 4) return a.pow(14);
             if (bits == 128) return a.pow(std.math.maxInt(u128) - 1); // 2^128 - 2
             @compileError("inv: unsupported field size");
@@ -196,6 +206,14 @@ test "gf16 inverse" {
     }
 }
 
+test "gf16 inverse of zero is defined and checked" {
+    // Legacy API must not panic in Debug nor loop in ReleaseFast.
+    try std.testing.expect(Gf16.zero().inv().isZero());
+    try std.testing.expectError(error.InverseOfZero, Gf16.zero().invChecked());
+    // Non-zero values are still inverted.
+    try std.testing.expectEqual(@as(u128, 1), Gf16.fromInt(0x7).mul((try Gf16.fromInt(0x7).invChecked())).value);
+}
+
 test "gf16 powers of generator" {
     // 2 is a generator of GF(2^4)* (order 15).
     var acc = Gf16.one();
@@ -268,6 +286,11 @@ test "gf128 inverse" {
     const a = Gf128.fromInt(0xdead_beef_cafe_babe_1234_5678_9abc_def0);
     const inv = a.inv();
     try std.testing.expect(a.mul(inv).eq(Gf128.one()));
+}
+
+test "gf128 inverse of zero is defined and checked" {
+    try std.testing.expect(Gf128.zero().inv().isZero());
+    try std.testing.expectError(error.InverseOfZero, Gf128.zero().invChecked());
 }
 
 test "gf128 serialization round-trip" {

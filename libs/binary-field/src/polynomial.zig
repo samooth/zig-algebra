@@ -15,9 +15,20 @@ pub fn Multilinear(comptime Field: type) type {
         /// value of variable j (LSB first), and evals[i] = f(i's bits).
         evals: []const Field,
 
+        /// Number of variables `k`, so that `evals.len == 2^k`.
+        ///
+        /// Total: returns 0 for a table that is not a power of two (including
+        /// the empty table), which used to trip `log2_int(0)`/the assert. Use
+        /// `numVarsChecked` to detect the malformed case.
         pub fn numVars(self: Self) usize {
+            return numVarsChecked(self) catch 0;
+        }
+
+        /// `k` with `2^k == evals.len`, or `error.NotPowerOfTwo`.
+        pub fn numVarsChecked(self: Self) error{NotPowerOfTwo}!usize {
+            if (self.evals.len == 0) return error.NotPowerOfTwo;
             const k = std.math.log2_int(usize, self.evals.len);
-            std.debug.assert(self.evals.len == (@as(usize, 1) << @intCast(k)));
+            if ((@as(usize, 1) << @intCast(k)) != self.evals.len) return error.NotPowerOfTwo;
             return k;
         }
 
@@ -32,8 +43,14 @@ pub fn Multilinear(comptime Field: type) type {
         /// Standard repeated-folding: in each round every pair (a, b) at
         /// positions (2i, 2i+1) becomes a + r_i*(a + b). In characteristic 2,
         /// (1 - r_i)*a + r_i*b = a + r_i*(a + b).
+        ///
+        /// `error.NotPowerOfTwo` for a malformed table, `error.InvalidPointLength`
+        /// when `r.len != k` (the old assert let a short `r` fold the table
+        /// down past its first entry in ReleaseFast, and a long `r` fold it to
+        /// zero entries).
         pub fn eval(self: Self, allocator: std.mem.Allocator, r: []const Field) !Field {
-            std.debug.assert(r.len == self.numVars());
+            const k = try self.numVarsChecked();
+            if (r.len != k) return error.InvalidPointLength;
             var cur = try allocator.dupe(Field, self.evals);
             defer allocator.free(cur);
 
@@ -54,8 +71,12 @@ pub fn Multilinear(comptime Field: type) type {
         /// evaluation table over the remaining `k - r.len` variables. This is
         /// the same folding as `eval`, stopped early: `eval` is `extend`
         /// followed by a final hypercube sum.
+        ///
+        /// `error.NotPowerOfTwo` for a malformed table, `error.InvalidPointLength`
+        /// when `r.len > k` (checked before allocating, so nothing leaks).
         pub fn extend(self: Self, allocator: std.mem.Allocator, r: []const Field) ![]Field {
-            std.debug.assert(r.len <= self.numVars());
+            const k = try self.numVarsChecked();
+            if (r.len > k) return error.InvalidPointLength;
             var cur = try allocator.dupe(Field, self.evals);
             var len = cur.len;
             for (r) |ri| {
@@ -152,4 +173,42 @@ test "extend produces the full table from partial assignments" {
     // In char 2, 3 + 2*x1: x1=0 -> 3, x1=1 -> 3+2 = 1.
     try std.testing.expectEqual(@as(u128, 3), out[0].value);
     try std.testing.expectEqual(@as(u128, 1), out[1].value);
+}
+
+test "malformed tables and points are typed errors, not out-of-bounds access" {
+    const alloc = std.testing.allocator;
+    const evals = [_]FTest{ fe(0), fe(1), fe(2), fe(3) };
+
+    // Point longer than the table: rejected instead of folding to zero entries.
+    const too_long = [_]FTest{ fe(1), fe(2), fe(3) };
+    const p = fromEvals(FTest, &evals);
+    try std.testing.expectError(error.InvalidPointLength, p.eval(alloc, &too_long));
+    try std.testing.expectError(error.InvalidPointLength, p.extend(alloc, &too_long));
+
+    // Point shorter than the table: rejected instead of evaluating at the
+    // wrong dimension.
+    const too_short = [_]FTest{fe(1)};
+    try std.testing.expectError(error.InvalidPointLength, p.eval(alloc, &too_short));
+
+    // Non power-of-two and empty tables: `numVars` is total, `numVarsChecked`
+    // reports the problem, and eval/extend propagate it.
+    const odd = [_]FTest{ fe(1), fe(2), fe(3) };
+    const odd_p = fromEvals(FTest, &odd);
+    try std.testing.expectError(error.NotPowerOfTwo, odd_p.numVarsChecked());
+    try std.testing.expectEqual(@as(usize, 0), odd_p.numVars());
+    try std.testing.expectError(error.NotPowerOfTwo, odd_p.eval(alloc, &too_short));
+    try std.testing.expectError(error.NotPowerOfTwo, odd_p.extend(alloc, &too_short));
+
+    const empty = [_]FTest{};
+    const empty_p = fromEvals(FTest, &empty);
+    try std.testing.expectError(error.NotPowerOfTwo, empty_p.numVarsChecked());
+    try std.testing.expectEqual(@as(usize, 0), empty_p.numVars());
+    try std.testing.expectError(error.NotPowerOfTwo, empty_p.eval(alloc, &too_short));
+    try std.testing.expectError(error.NotPowerOfTwo, empty_p.extend(alloc, &too_short));
+
+    // Single-entry table is a valid 0-variable polynomial.
+    const single = [_]FTest{fe(9)};
+    const single_p = fromEvals(FTest, &single);
+    try std.testing.expectEqual(@as(usize, 0), try single_p.numVarsChecked());
+    try std.testing.expectEqual(@as(u128, 9), (try single_p.eval(alloc, &[_]FTest{})).value);
 }

@@ -22,10 +22,14 @@ fn testQuadratic(comptime Ext: type, comptime Base: type) !void {
         // Distributivity
         try std.testing.expect(a.mul(b.add(a)).eq(a.mul(b).add(a.mul(a))));
 
-        // Inverse
-        try std.testing.expect(!a.isZero() or !a.mul(a.inv()).eq(Ext.one()));
-        // Norm * inv = 1
-        try std.testing.expect(!a.isZero() or a.mul(a.inv()).eq(Ext.one()));
+        // Inverse: only meaningful for non-zero elements, and `inv` is total
+        // (`inv(0) == 0`), so the zero case is skipped explicitly.
+        if (!a.isZero()) {
+            try std.testing.expect(a.mul(a.inv()).eq(Ext.one()));
+            try std.testing.expect((try a.invChecked()).eq(a.inv()));
+            // x * x^-1 == 1 in both directions.
+            try std.testing.expect(a.inv().mul(a).eq(Ext.one()));
+        }
     }
 }
 
@@ -58,9 +62,33 @@ test "CubicExtension inverse and serialization" {
     const Ext = zf.CubicExtension(zf.M31, zf.M31.fromInt(5));
     const value = Ext.new(zf.M31.fromInt(3), zf.M31.fromInt(4), zf.M31.fromInt(5));
     try std.testing.expect(value.mul(value.inv()).eq(Ext.one()));
+    try std.testing.expect((try value.invChecked()).eq(value.inv()));
     const bytes = value.toBytes();
     const decoded = try Ext.fromBytes(&bytes);
     try std.testing.expect(decoded.eq(value));
+}
+
+test "inverse and division of zero are defined, checked variants report them" {
+    // Legacy APIs return zero instead of hanging (ReleaseFast) or asserting
+    // (Debug); the checked APIs report the missing inverse/divisor.
+    inline for (.{ zf.CM31, zf.QM31, zf.BN254_Fp2 }) |Ext| {
+        try std.testing.expect(Ext.zero().inv().isZero());
+        try std.testing.expect(Ext.zero().inverse().isZero());
+        try std.testing.expectError(error.InverseOfZero, Ext.zero().invChecked());
+
+        const a = Ext.fromInt(3);
+        const b = Ext.fromInt(7);
+        try std.testing.expect(a.div(b).eq(a.mul(b.inv())));
+        try std.testing.expect(a.div(Ext.zero()).isZero());
+        try std.testing.expectError(error.DivisionByZero, a.divChecked(Ext.zero()));
+        try std.testing.expect((try a.divChecked(b)).eq(a.div(b)));
+    }
+
+    const Cubic = zf.CubicExtension(zf.M31, zf.M31.fromInt(5));
+    try std.testing.expect(Cubic.zero().inv().isZero());
+    try std.testing.expectError(error.InverseOfZero, Cubic.zero().invChecked());
+    try std.testing.expect(Cubic.fromInt(9).div(Cubic.zero()).isZero());
+    try std.testing.expectError(error.DivisionByZero, Cubic.fromInt(9).divChecked(Cubic.zero()));
 }
 
 test "Roots of unity" {

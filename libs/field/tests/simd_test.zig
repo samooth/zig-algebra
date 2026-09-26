@@ -152,6 +152,44 @@ test "M31 SIMD constants match zig-stark expectations" {
     try std.testing.expect(M31.TWO_ADIC_ROOT == M31.MODULUS - 1);
 }
 
+test "Vec8 M31 NTT length guard and round trip" {
+    const M31 = zf.M31;
+    const log_n: usize = 1; // M31 has two-adicity 1
+    const n = @as(usize, 1) << log_n;
+    const root = M31.primitiveRootOfUnity(@intCast(log_n));
+
+    // Wrong length (and an absurd log_n) are reported, never read/written OOB.
+    var short: [8 * n - 1]M31 = @splat(M31.fromInt(7));
+    try std.testing.expectError(error.InvalidLength, zf.nttVec8M31Checked(&short, log_n, root));
+    try std.testing.expectError(error.InvalidLength, zf.nttVec8M31Checked(&short, 62, root));
+    // Legacy entry point leaves the data untouched on a length mismatch.
+    zf.nttVec8M31(&short, log_n, root);
+    for (short) |v| try std.testing.expect(v.eq(M31.fromInt(7)));
+    zf.inttVec8M31(&short, log_n, root);
+    for (short) |v| try std.testing.expect(v.eq(M31.fromInt(7)));
+
+    // A correctly sized buffer round-trips through forward then inverse.
+    var data: [8 * n]M31 = undefined;
+    var prng = std.Random.DefaultPrng.init(9);
+    const rnd = prng.random();
+    for (&data) |*v| v.* = M31.random(rnd);
+    const original = data;
+    try zf.nttVec8M31Checked(&data, log_n, root);
+    try zf.inttVec8M31Checked(&data, log_n, root);
+    for (data, original) |got, want| try std.testing.expect(got.eq(want));
+}
+
+test "fromSlice8 does not read past a short slice" {
+    const M31 = zf.M31;
+    const short = [_]u32{ 1, 2, 3 };
+    const vec8 = M31.fromSlice8(&short);
+    const arr: [8]u64 = @bitCast(vec8);
+    try std.testing.expectEqual(@as(u64, 1), arr[0]);
+    try std.testing.expectEqual(@as(u64, 2), arr[1]);
+    try std.testing.expectEqual(@as(u64, 3), arr[2]);
+    for (arr[3..]) |lane| try std.testing.expectEqual(@as(u64, 0), lane);
+}
+
 test "CM31 NON_RESIDUE and EXT_NON_RESIDUE" {
     const CM31 = zf.CM31;
     // NON_RESIDUE = -1 in M31

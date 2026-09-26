@@ -57,6 +57,22 @@ fn isRightSibling(pos: u64) bool {
     return (pos + 1) & (@as(u64, 1) << @intCast(h + 1)) == 0;
 }
 
+/// Shape check for a proof against the zero-padded tree used by `prove`/`root`.
+///
+/// The padded tree has width `2^depth`, where `2^depth` is the smallest power
+/// of two that covers `leaf_count`, so a well-formed proof carries exactly
+/// `depth` siblings and its leaf index lies below `2^depth`. Returns `false`
+/// for anything else instead of indexing a sibling array that is too short.
+fn validPathDepth(index: usize, leaf_count: u64, depth: usize) bool {
+    if (depth >= @bitSizeOf(usize)) return false;
+    const tree_size = @as(u64, 1) << @intCast(depth);
+    if (index >= tree_size) return false;
+    if (leaf_count > tree_size) return false;
+    // `tree_size` must be the *smallest* power of two covering `leaf_count`.
+    if (depth > 0 and leaf_count <= tree_size / 2) return false;
+    return true;
+}
+
 /// Peak entry: position and height
 const Peak = struct {
     pos: u64,
@@ -223,20 +239,28 @@ pub fn MMR(comptime H: type) type {
         }
 
         /// Verify an inclusion proof for leaf at `index`.
+        ///
+        /// Malformed proofs are rejected, never indexed: `siblings` and
+        /// `is_left_sibling` are parallel arrays and a proof whose two halves
+        /// disagree in length used to be walked by `siblings.len` while
+        /// indexing `is_left_sibling`, which is an out-of-bounds read
+        /// (a trap in Debug/ReleaseSafe, silent UB in ReleaseFast).
         pub fn verify(self: Self, root_hash: [HASH_LEN]u8, index: usize, leaf: []const u8, proof: MerkleProof) bool {
+            if (proof.siblings.len != proof.is_left_sibling.len) return false;
             if (index >= @as(usize, @intCast(self.leaf_count))) return false;
+            if (!validPathDepth(index, self.leaf_count, proof.siblings.len)) return false;
 
             const leaf_hash = H.hashBytes(leaf);
             var current = leaf_hash;
 
-            for (0..proof.siblings.len) |j| {
+            for (proof.siblings, proof.is_left_sibling) |sib, is_left| {
                 var concat: [HASH_LEN * 2]u8 = undefined;
-                if (proof.is_left_sibling[j]) {
-                    @memcpy(concat[0..HASH_LEN], &proof.siblings[j]);
+                if (is_left) {
+                    @memcpy(concat[0..HASH_LEN], &sib);
                     @memcpy(concat[HASH_LEN..], &current);
                 } else {
                     @memcpy(concat[0..HASH_LEN], &current);
-                    @memcpy(concat[HASH_LEN..], &proof.siblings[j]);
+                    @memcpy(concat[HASH_LEN..], &sib);
                 }
                 current = H.hashBytes(&concat);
             }
