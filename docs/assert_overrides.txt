@@ -1,0 +1,16 @@
+# Assert kind overrides.
+#
+# The scanner derives `fixture` (inside a test block) and `comptime` from the
+# source. It cannot derive `public` vs `internal` lexically: a `pub fn` may be
+# reachable only through another `pub fn`, and a non-`pub` helper may still be a
+# real precondition. Those are decided by a human, here, so the decision is
+# reviewable and the gate reproduces it without flags.
+#
+# Format: <path> <kind> <reason...>
+# Blank lines and lines starting with # are ignored.
+#
+# An occurrence in a file listed here takes the given kind. `internal` is the
+# only value that should appear: a `public` occurrence is a defect, not a
+# classification, and the gate fails on any of them.
+
+libs/bigint/src/bigint.zig internal subMag requires |a| >= |b|; all three callers (the cmp-then-subtract branches and the division remainder) establish that by control flow, never from caller input

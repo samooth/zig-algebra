@@ -169,9 +169,15 @@ _ = .{ bits, limbs4, value, runtime, order, carry, shl_out, shr_out, wide };
   `shr`, `mul`) are unaffected.
 - `limb.bitLength` takes a `comptime_int`. Calling it from a runtime scope fails
   to compile (`var v = value;` in the loop); wrap the call in `comptime`.
-- `BigInt.format` is declared but unusable on Zig 0.16.0 — its signature still
-  names the removed `std.fmt.FormatOptions`. `{}` therefore falls back to default
-  struct printing. Use `toString`.
+- `BigInt.format` needs the `{f}` specifier. It uses the Zig 0.16 signature, so
+  `"{f}"` formats and `{}` falls back to the default struct printing. Use
+  `toString`.
+- `limb.cmpLimbs` is total: slices of different lengths are compared with
+  zero-extension, which is the correct comparison of little-endian limb vectors
+  and what `BigInt` already does internally. `cmpLimbsChecked` returns
+  `error.LengthMismatch` when equal lengths are a requirement. Before this it
+  asserted, which is compiled out in `ReleaseFast` and read past the end of the
+  shorter slice — it is a `pub fn` over caller slices.
 - `divRem` for multi-limb divisors uses shift-and-subtract, not Knuth Algorithm
   D. It is correct but roughly `O(bits²)`; it is not used on any hot path.
 - `ExtendedGcd.egcd` and friends use `catch unreachable` internally, so they are
@@ -201,7 +207,7 @@ _ = .{ bits, limbs4, value, runtime, order, carry, shl_out, shr_out, wide };
 cd libs/bigint && zig build test
 ```
 
-18 tests in this release (root `zig build test` counts 18 for `zig-bigint`).
+19 tests in this release (root `zig build test` counts 19 for `zig-bigint`).
 
 ## License
 

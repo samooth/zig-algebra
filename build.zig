@@ -46,6 +46,19 @@ pub fn build(b: *std.Build) void {
     // Test step that runs all library tests
     const test_step = b.step("test", "Run all library tests");
 
+    // Assert ledger gate. See docs/assert-ledger.md for the convention.
+    // Fails if the tree contains an `std.debug.assert` the committed ledger
+    // does not account for, so a new precondition on a public entry point
+    // cannot land unnoticed.
+    const assert_ledger = b.step("assert-check", "Verify the assert ledger is in sync with the tree");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/assert_verify.py"));
+        verify.addArgs(&.{ "--root", "libs", "--ledger", "docs/assert_ledger.json" });
+        verify.has_side_effects = true;
+        assert_ledger.dependOn(&verify.step);
+    }
+
     // algebra-traits (no deps)
     const traits_mod = lib(
         b,

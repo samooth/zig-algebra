@@ -133,22 +133,35 @@ pub inline fn divDoubleLimb(dividend: DoubleLimb, divisor: Limb) struct { q: Lim
     return .{ .q = q, .r = r };
 }
 
-/// Compare two same-length little-endian limb slices.
+/// Compare two little-endian limb slices, treating missing limbs as zero.
 ///
 /// Returns `-1` if `a < b`, `0` if equal, `1` if `a > b`.
 ///
-/// # Panics
-/// Debug-asserts that both slices have the same length.
+/// Total: slices of different lengths are compared as zero-extended, which is
+/// the mathematically correct comparison of little-endian limb vectors and
+/// what `BigInt` already does internally via `@max(len, other.len)`. Before
+/// this was total the guard was a `std.debug.assert`, compiled out in
+/// `ReleaseFast`, where the loop then read past the end of the shorter slice --
+/// this is a `pub fn` taking caller slices, so it was reachable. Use
+/// `cmpLimbsChecked` when equal lengths are a requirement you want enforced.
 pub fn cmpLimbs(a: []const Limb, b: []const Limb) i2 {
-    const n = a.len;
-    std.debug.assert(n == b.len);
+    const n = @max(a.len, b.len);
     var i: usize = n;
     while (i > 0) {
         i -= 1;
-        if (a[i] < b[i]) return -1;
-        if (a[i] > b[i]) return 1;
+        const av: Limb = if (i < a.len) a[i] else 0;
+        const bv: Limb = if (i < b.len) b[i] else 0;
+        if (av < bv) return -1;
+        if (av > bv) return 1;
     }
     return 0;
+}
+
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`.
+pub fn cmpLimbsChecked(a: []const Limb, b: []const Limb) error{LengthMismatch}!i2 {
+    if (a.len != b.len) return error.LengthMismatch;
+    return cmpLimbs(a, b);
 }
 
 /// Return the number of significant limbs (strip leading zeros).
@@ -306,4 +319,25 @@ pub fn mul(comptime n: usize, a: *const [n]u64, b: *const [n]u64) [2 * n]u64 {
         out[i + n] = carry;
     }
     return out;
+}
+
+test "cmpLimbs is total over different lengths and cmpLimbsChecked rejects them" {
+    // Zero-extension: [1] == [1, 0] and [1] < [1, 1].
+    const one = [_]Limb{1};
+    const one_pad = [_]Limb{ 1, 0 };
+    const one_pad2 = [_]Limb{ 1, 0, 0 };
+    try std.testing.expectEqual(@as(i2, 0), cmpLimbs(&one, &one_pad));
+    try std.testing.expectEqual(@as(i2, 0), cmpLimbs(&one, &one_pad2));
+    try std.testing.expectEqual(@as(i2, 0), cmpLimbs(&one_pad2, &one));
+    try std.testing.expectEqual(@as(i2, -1), cmpLimbs(&one, &[_]Limb{ 1, 1 }));
+    try std.testing.expectEqual(@as(i2, 1), cmpLimbs(&[_]Limb{ 1, 1 }, &one));
+    // Empty is the zero limb vector, so it is strictly below any non-zero one.
+    try std.testing.expectEqual(@as(i2, -1), cmpLimbs(&[_]Limb{}, &one_pad2));
+    try std.testing.expectEqual(@as(i2, -1), cmpLimbs(&[_]Limb{}, &one));
+    try std.testing.expectEqual(@as(i2, 1), cmpLimbs(&one_pad2, &[_]Limb{}));
+    try std.testing.expectEqual(@as(i2, 0), cmpLimbs(&[_]Limb{}, &[_]Limb{}));
+
+    // The checked variant keeps the strictness available.
+    try std.testing.expectError(error.LengthMismatch, cmpLimbsChecked(&one, &one_pad));
+    try std.testing.expectEqual(@as(i2, 0), try cmpLimbsChecked(&one, &one));
 }

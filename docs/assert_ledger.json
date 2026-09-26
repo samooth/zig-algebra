@@ -1,0 +1,426 @@
+{
+  "code_occurrences": 54,
+  "counts_by_file_kind": [
+    {
+      "count": 1,
+      "file": "libs/bigint/src/bigint.zig",
+      "kind": "internal"
+    },
+    {
+      "count": 1,
+      "file": "libs/bigint/src/limb.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 1,
+      "file": "libs/binary-field/src/tower.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 7,
+      "file": "libs/curve/src/bls12_381.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 7,
+      "file": "libs/curve/src/bn254.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 3,
+      "file": "libs/curve/src/hash_to_curve.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 12,
+      "file": "libs/curve/src/pasta.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 1,
+      "file": "libs/field/src/bigint.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 4,
+      "file": "libs/field/src/extension.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 4,
+      "file": "libs/field/src/field.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 3,
+      "file": "libs/field/src/montgomery.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 1,
+      "file": "libs/hash/src/poseidon.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 1,
+      "file": "libs/ntt/src/root.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 2,
+      "file": "libs/pairing/src/bls12_381.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 2,
+      "file": "libs/pairing/src/bn254.zig",
+      "kind": "comptime"
+    },
+    {
+      "count": 4,
+      "file": "libs/pairing/src/tower.zig",
+      "kind": "comptime"
+    }
+  ],
+  "counts_by_kind": {
+    "comptime": 23,
+    "fixture": 30,
+    "internal": 1
+  },
+  "entries": [
+    {
+      "file": "libs/bigint/src/bigint.zig",
+      "fn": "subMag",
+      "kind": "internal",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/bigint/src/limb.zig",
+      "fn": "limbsToInt",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/binary-field/src/tower.zig",
+      "fn": "TowerField",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/hash_to_curve.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/hash_to_curve.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/hash_to_curve.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/src/pasta.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/bigint.zig",
+      "fn": "limbsToInt",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/extension.zig",
+      "fn": "QuadraticExtension",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/extension.zig",
+      "fn": "QuadraticExtension",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/extension.zig",
+      "fn": "CubicExtension",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/extension.zig",
+      "fn": "CubicExtension",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/field.zig",
+      "fn": "Field",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/field.zig",
+      "fn": "Field",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/field.zig",
+      "fn": "Field",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/field.zig",
+      "fn": "Field",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/montgomery.zig",
+      "fn": "Montgomery",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/montgomery.zig",
+      "fn": "Montgomery",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/src/montgomery.zig",
+      "fn": "Montgomery",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/hash/src/poseidon.zig",
+      "fn": "hash",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/ntt/src/root.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/bls12_381.zig",
+      "fn": "<module>",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/bn254.zig",
+      "fn": "<module>",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/tower.zig",
+      "fn": "<module>",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/tower.zig",
+      "fn": "frobenius2Direct",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/tower.zig",
+      "fn": "etaOnce",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/pairing/src/tower.zig",
+      "fn": "etaOnce",
+      "kind": "comptime",
+      "reason": "REPLACE"
+    }
+  ],
+  "gross_occurrences": 104,
+  "prose_only_occurrences": 50,
+  "root": "libs",
+  "scan_args": [
+    "--src-only"
+  ],
+  "scanner": "scripts/assert_scan.py",
+  "scanner_version": 1,
+  "schema": 1,
+  "source_commit": "c2c9bbf5cdd086806fef89bffad1adc7803fece0"
+}

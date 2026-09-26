@@ -9,8 +9,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (382 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 382 tests, seconds
+zig build test        # Run all library tests (383 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 383 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -24,7 +24,7 @@ zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (382 total vs. 498 summed over all per-library steps).
+tests only (383 total vs. 499 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -113,10 +113,10 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 382; per-library
-  `zig build test` totals sum to 498 (field 85, curve 98 include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 383; per-library
+  `zig build test` totals sum to 499 (field 85, curve 98 include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 18, binary-field 76, curve 98, field 85, fri 12, hash 18, kzg 6,
+  bigint 19, binary-field 76, curve 98, field 85, fri 12, hash 18, kzg 6,
   linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 
