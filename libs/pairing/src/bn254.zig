@@ -150,8 +150,19 @@ fn finalExp(f: Fp12) Fp12 {
 // ---------------------------------------------------------------------------
 
 /// Miller loop over bits of n = 6x+2 (positive for BN254, no conjugation).
+///
+/// `q` must not be the point at infinity. The guard used to be a
+/// `std.debug.assert`, which is compiled out in `ReleaseFast`, where a `q` at
+/// infinity then produced a garbage `Fp12` instead of an error; use
+/// `millerLoopChecked` when the inputs are untrusted.
 pub fn millerLoop(p: G1Point, q: G2Point) Fp12 {
-    std.debug.assert(!q.infinity);
+    return millerLoopChecked(p, q) catch Fp12.one();
+}
+
+/// # Errors
+/// `error.PointAtInfinity` when `q` is the point at infinity.
+pub fn millerLoopChecked(p: G1Point, q: G2Point) error{PointAtInfinity}!Fp12 {
+    if (q.infinity) return error.PointAtInfinity;
     if (p.infinity) return Fp12.one();
 
     var f = Fp12.one();

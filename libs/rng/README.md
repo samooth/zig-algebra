@@ -62,19 +62,19 @@ pub fn main() !void {
     // --- SHAKE256 XOF ---------------------------------------------------
     // init() takes no seed: absorb first, then squeeze (lazily finalized).
     var shake = zr.Shake256Rng.init();
-    shake.absorbSeed("my seed material");
+    try shake.absorbSeed("my seed material");
 
     var out: [48]u8 = undefined;
-    shake.squeezeInto(&out);           // allocation-free
+    try shake.squeezeInto(&out);       // allocation-free
 
     var shake2 = zr.Shake256Rng.init();
-    shake2.absorbSeed("my seed material");
+    try shake2.absorbSeed("my seed material");
     const heap = try shake2.squeeze(64, std.heap.page_allocator); // ![]u8
     defer std.heap.page_allocator.free(heap);
 
     // Convenience fixed-size squeezes also take an allocator:
     var s3 = zr.Shake256Rng.init();
-    s3.absorbSeed("x");
+    try s3.absorbSeed("x");
     const w = try s3.squeeze32(std.heap.page_allocator); // ![32]u8
 
     // --- Unbiased field element ----------------------------------------
@@ -117,11 +117,11 @@ pub fn main() !void {
 | Member | Signature | Notes |
 |--------|-----------|-------|
 | `init` | `() Self` | no seed argument; absorb first |
-| `absorbSeed` | `(self: *Self, seed: []const u8) void` | must precede squeezing |
-| `finalize` | `(self: *Self) void` | explicit; also called lazily |
+| `absorbSeed` | `(self: *Self, seed: []const u8) error{AlreadyFinalized}!void` | must precede squeezing |
+| `finalize` | `(self: *Self) error{AlreadyFinalized}!void` | explicit; also called lazily |
 | `squeeze` | `(self: *Self, len: usize, allocator) ![]u8` | heap; caller frees |
 | `squeeze32` / `squeeze64` | `(self: *Self, allocator) ![32]u8` / `![64]u8` | stack result |
-| `squeezeInto` | `(self: *Self, out: []u8) void` | allocation-free |
+| `squeezeInto` | `(self: *Self, out: []u8) error{AlreadyFinalized}!void` | allocation-free |
 
 `Shake256Rng` does **not** implement `randomBytes`, so it does **not** satisfy
 `RngTrait`; use it directly through `absorbSeed` + `squeezeInto`.
@@ -206,6 +206,10 @@ zr.csprng.bytes(&buf);
   random-byte generation. Use a `ChaCha20Rng` for that.
 - The deterministic hooks are process-wide and not per-instance; they exist for
   tests, not for production.
+- `Shake256Rng.absorbSeed` and `finalize` return `error.AlreadyFinalized`
+  instead of asserting. The `std.debug.assert(!self.finalized)` was compiled out
+  in `ReleaseFast`, where absorbing after squeezing (or finalizing twice)
+  corrupted the sponge state instead of being rejected.
 
 ## Design Notes
 
@@ -228,7 +232,7 @@ zr.csprng.bytes(&buf);
 cd libs/rng && zig build test
 ```
 
-23 tests: ChaCha20 determinism across two instances, distinct outputs for
+25 tests: ChaCha20 determinism across two instances, distinct outputs for
 distinct seeds, `randomU64Bounded`, `randomBytes` non-repetition, SHAKE256
 determinism and seed sensitivity, allocation-free `squeezeInto`, Fisher-Yates
 permutation validity, `randomPermutation`, `randomFieldElement` on an in-file

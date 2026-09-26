@@ -8,8 +8,13 @@
 const std = @import("std");
 
 /// Compute inner product (dot product) of two vectors.
-pub fn inner(comptime T: type, a: []const T, b: []const T) T {
-    std.debug.assert(a.len == b.len);
+///
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`. The old
+/// `std.debug.assert` is compiled out in `ReleaseFast`, where the
+/// `for (a, b)` loop then reads past the end of the shorter slice.
+pub fn inner(comptime T: type, a: []const T, b: []const T) error{LengthMismatch}!T {
+    if (a.len != b.len) return error.LengthMismatch;
     var acc = T.zero();
     for (a, b) |x, y| acc = acc.add(x.mul(y));
     return acc;
@@ -26,16 +31,24 @@ pub fn powers(comptime T: type, allocator: std.mem.Allocator, base: T, n: usize)
 }
 
 /// Element-wise vector addition: a + b.
-pub fn vecAdd(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) ![]T {
-    std.debug.assert(a.len == b.len);
+///
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`; the previous
+/// `std.debug.assert` disappeared in `ReleaseFast` and the element-wise loop
+/// then read out of bounds. Also `error.OutOfMemory`.
+pub fn vecAdd(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) error{ LengthMismatch, OutOfMemory }![]T {
+    if (a.len != b.len) return error.LengthMismatch;
     const out = try allocator.alloc(T, a.len);
     for (a, b, 0..) |x, y, i| out[i] = x.add(y);
     return out;
 }
 
 /// Element-wise vector subtraction: a - b.
-pub fn vecSub(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) ![]T {
-    std.debug.assert(a.len == b.len);
+///
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`, plus `error.OutOfMemory`.
+pub fn vecSub(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) error{ LengthMismatch, OutOfMemory }![]T {
+    if (a.len != b.len) return error.LengthMismatch;
     const out = try allocator.alloc(T, a.len);
     for (a, b, 0..) |x, y, i| out[i] = x.sub(y);
     return out;
@@ -49,8 +62,11 @@ pub fn vecScale(comptime T: type, allocator: std.mem.Allocator, s: T, a: []const
 }
 
 /// Element-wise vector multiplication (Hadamard product): a o b.
-pub fn hadamard(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) ![]T {
-    std.debug.assert(a.len == b.len);
+///
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`, plus `error.OutOfMemory`.
+pub fn hadamard(comptime T: type, allocator: std.mem.Allocator, a: []const T, b: []const T) error{ LengthMismatch, OutOfMemory }![]T {
+    if (a.len != b.len) return error.LengthMismatch;
     const out = try allocator.alloc(T, a.len);
     for (a, b, 0..) |x, y, i| out[i] = x.mul(y);
     return out;
@@ -110,8 +126,14 @@ test "inner product" {
     const a = [_]F7{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) };
     const b = [_]F7{ F7.fromInt(4), F7.fromInt(5), F7.fromInt(6) };
     // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32 mod 7 = 4
-    const result = inner(F7, &a, &b);
+    const result = try inner(F7, &a, &b);
     try testing.expect(result.eql(F7.fromInt(4)));
+}
+
+test "inner product rejects a length mismatch" {
+    const a = [_]F7{ F7.fromInt(1), F7.fromInt(2) };
+    const b = [_]F7{F7.fromInt(4)};
+    try testing.expectError(error.LengthMismatch, inner(F7, &a, &b));
 }
 
 test "powers" {
@@ -166,4 +188,12 @@ test "vecEql" {
     const c = [_]F7{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(4) };
     try testing.expect(vecEql(F7, &a, &b));
     try testing.expect(!vecEql(F7, &a, &c));
+}
+
+test "vecAdd/vecSub/hadamard reject a length mismatch" {
+    const a = [_]F7{ F7.fromInt(1), F7.fromInt(2) };
+    const b = [_]F7{F7.fromInt(4)};
+    try testing.expectError(error.LengthMismatch, vecAdd(F7, testing.allocator, &a, &b));
+    try testing.expectError(error.LengthMismatch, vecSub(F7, testing.allocator, &a, &b));
+    try testing.expectError(error.LengthMismatch, hadamard(F7, testing.allocator, &a, &b));
 }

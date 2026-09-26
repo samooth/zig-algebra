@@ -103,8 +103,10 @@ pub fn Fp6(comptime Fp2: type, comptime xi: Fp2) type {
         /// Closed-form inversion:
         /// inv(a) = (a0² − a1a2ξ, a2²ξ − a0a1, a1² − a0a2) / N,
         /// N = a0³ + a1³ξ + a2³ξ² − 3a0a1a2ξ.
+        /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+        /// new code that requires invertibility must call `invChecked`.
         pub fn inv(a: Self) Self {
-            std.debug.assert(!a.isZero());
+            if (a.isZero()) return zero();
 
             const t0 = a.c0.mul(a.c0).sub(a.c1.mul(a.c2).mul(xi));
             const t1 = a.c2.mul(a.c2).mul(xi).sub(a.c0.mul(a.c1));
@@ -295,8 +297,10 @@ pub fn Fp12(comptime Base6: type) type {
         }
 
         /// Norm inversion: (c0 + c1w)^{-1} = (c0 − c1w) / (c0² − ν c1²).
+        /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+        /// new code that requires invertibility must call `invChecked`.
         pub fn inv(a: Self) Self {
-            std.debug.assert(!a.isZero());
+            if (a.isZero()) return zero();
             const t0 = a.c0.sqr();
             const t1 = a.c1.sqr();
             const nu_t1 = mulByNu(t1);

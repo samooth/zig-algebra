@@ -46,8 +46,13 @@ pub const Shake256Rng = struct {
     }
 
     /// Absorb arbitrary seed material into the sponge.
-    pub fn absorbSeed(self: *Self, seed: []const u8) void {
-        std.debug.assert(!self.finalized);
+    ///
+    /// # Errors
+    /// `error.AlreadyFinalized` when the sponge is already in squeezing mode;
+    /// the old `std.debug.assert` is compiled out in `ReleaseFast`, where
+    /// absorbing afterwards corrupted the sponge state.
+    pub fn absorbSeed(self: *Self, seed: []const u8) error{AlreadyFinalized}!void {
+        if (self.finalized) return error.AlreadyFinalized;
         var in = seed;
         while (in.len > 0) {
             if (self.buf_len == RATE) {
@@ -61,8 +66,13 @@ pub const Shake256Rng = struct {
     }
 
     /// Finalize absorption and switch to squeezing mode.
-    pub fn finalize(self: *Self) void {
-        std.debug.assert(!self.finalized);
+    ///
+    /// # Errors
+    /// `error.AlreadyFinalized` when called twice; the old
+    /// `std.debug.assert` vanished in `ReleaseFast`, where the second call
+    /// re-permuted the sponge.
+    pub fn finalize(self: *Self) error{AlreadyFinalized}!void {
+        if (self.finalized) return error.AlreadyFinalized;
         if (self.buf_len == RATE) self.absorbBlock();
         self.buf[self.buf_len] = 0x1F;
         self.buf_len += 1;
@@ -75,7 +85,7 @@ pub const Shake256Rng = struct {
 
     /// Squeeze `len` pseudorandom bytes.
     pub fn squeeze(self: *Self, len: usize, allocator: std.mem.Allocator) ![]u8 {
-        if (!self.finalized) self.finalize();
+        if (!self.finalized) try self.finalize();
         const out = try allocator.alloc(u8, len);
         errdefer allocator.free(out);
         var off: usize = 0;
@@ -112,8 +122,11 @@ pub const Shake256Rng = struct {
     }
 
     /// Fill `out` with squeezed bytes (allocation-free for fixed-size slices).
-    pub fn squeezeInto(self: *Self, out: []u8) void {
-        if (!self.finalized) self.finalize();
+    ///
+    /// # Errors
+    /// Only via the implicit `finalize`, which cannot fail on a fresh sponge.
+    pub fn squeezeInto(self: *Self, out: []u8) error{AlreadyFinalized}!void {
+        if (!self.finalized) try self.finalize();
         var off: usize = 0;
         while (off < out.len) {
             if (self.squeeze_avail == 0) {

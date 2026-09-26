@@ -2,15 +2,15 @@
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
-version 0.4.0) covering fields, curves, pairings, and STARK building blocks.
+version 0.5.0) covering fields, curves, pairings, and STARK building blocks.
 No independent cryptographic audit exists; see SECURITY.md before making
 security claims.
 
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (354 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 354 tests, seconds
+zig build test        # Run all library tests (382 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 382 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -24,7 +24,7 @@ zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (354 total vs. 470 summed over all per-library steps).
+tests only (382 total vs. 498 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -52,7 +52,7 @@ pub fn fromBytes(bytes: []const u8) !Self;  // error on >= MODULUS
 ```
 Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
 
-### Checked Inverses and Division (0.4.0 rule)
+### Checked Inverses and Division (0.4.0 rule, extended 0.5.0)
 Invertible operations come in pairs: a total legacy wrapper and a checked one.
 New code MUST use the checked one.
 
@@ -113,11 +113,11 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 354; per-library
-  `zig build test` totals sum to 470 (field 85, curve 96 include the `tests/`
-  roots the root step skips). Per-library totals: algebra-traits 0,
-  bigint 18, binary-field 76, curve 96, field 85, fri 10, hash 17, kzg 6,
-  linalg 9, merkle 18, ntt 11, pairing 54, parallel 2, poly 20, rng 23,
+- Counts (Zig 0.16.0, verified): root `zig build test` = 382; per-library
+  `zig build test` totals sum to 498 (field 85, curve 98 include the `tests/`
+  roots the root step skips). Per-library totals: algebra-traits 4,
+  bigint 18, binary-field 76, curve 98, field 85, fri 12, hash 18, kzg 6,
+  linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 
 ### Property-Based Testing Pattern
@@ -144,9 +144,9 @@ test "property: associativity" {
 
 ## Versioning
 
-Root `build.zig.zon` carries the workspace version (`0.4.0`); each library has
+Root `build.zig.zon` carries the workspace version (`0.5.0`); each library has
 its own independent semver in `libs/<name>/build.zig.zon` (currently
-`0.1.0`–`0.4.0`). Bump the library version for API changes, the workspace
+`0.1.0`–`0.5.0`). Bump the library version for API changes, the workspace
 version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 
 ## Known Gaps (do not paper over these in docs)

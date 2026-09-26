@@ -96,13 +96,13 @@ fn nttSetup() void {
     const F = FrScalar;
     ntt_buf = std.heap.page_allocator.alloc(F, 1 << 20) catch @panic("oom");
     for (ntt_buf, 0..) |*x, i| x.* = F.fromInt(@as(u64, i % 1000));
-    const root = F.rootOfUnity(ntt_buf.len);
+    const root = try F.rootOfUnity(ntt_buf.len);
     ntt_tw = ntt_mod.precomputeTwiddles(F, 20, root, std.heap.page_allocator) catch @panic("oom");
 }
 
 fn nttFr() void {
     nttSetup();
-    ntt_mod.nttWithTwiddles(FrScalar, ntt_buf, 20, ntt_tw);
+    try ntt_mod.nttWithTwiddles(FrScalar, ntt_buf, 20, ntt_tw);
     sink ^= @intFromBool(ntt_buf[0].isZero());
 }
 

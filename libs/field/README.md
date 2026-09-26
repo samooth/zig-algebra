@@ -66,7 +66,7 @@ const inv = try a.invChecked();
 // M31 has two_adicity == 1, so it only exposes 2^1-roots — use a field with
 // a large 2-adic part (BabyBear has two_adicity == 27) for NTT-sized domains.
 const BB = zf.BabyBear;
-const root = BB.primitiveRootOfUnity(4); // 16th root of unity
+const root = try BB.primitiveRootOfUnity(4); // 16th root of unity
 std.debug.assert(root.pow(16).isOne());
 
 // Square roots and Legendre symbols
@@ -232,7 +232,7 @@ const F = zf.M31;
 // Windowed Pippenger algorithm: product(bases[i]^exponents[i])
 const bases = [_]F{ F.fromInt(2), F.fromInt(3), F.fromInt(5) };
 const exponents = [_]u64{ 10, 20, 30 };
-const result = F.multiExp(&bases, &exponents, 4); // 4-bit window
+const result = try F.multiExp(&bases, &exponents, 4); // 4-bit window
 ```
 
 ## Inner Product Argument (IPA)
@@ -253,8 +253,8 @@ for (0..8) |k| {
     b[k] = F.fromInt(9 - k);
 }
 
-const c = Ipa.innerProduct(&a, &b);          // <a, b>
-const commitment = ipa.commit(&a, &b, c);   // public commitment to the vectors
+const c = try Ipa.innerProduct(&a, &b);     // <a, b>
+const commitment = try ipa.commit(&a, &b, c); // public commitment to the vectors
 
 const proof = try ipa.prove(allocator, &a, &b);
 defer proof.deinit(allocator);
@@ -290,7 +290,11 @@ std.debug.assert(Tree.verify(root, 2, proof, leaves[2]));
 ## NTT / INTT
 
 The generic transform (Cooley-Tukey, in-place, optional precomputed twiddles)
-lives in `zig-ntt`. `zig-field` keeps only the M31 8-lane SIMD entry points.
+lives in `zig-ntt`, where every entry point validates its buffer shape and
+`log_n` with typed errors (`error.LengthMismatch`, `error.InvalidLength`,
+`error.InvalidTwiddles`, `error.LogTooLarge`). `zig-field` keeps only the M31
+8-lane SIMD entry points. The former `zig-field/src/ntt.zig`, an unreferenced
+duplicate of the `zig-ntt` transform, was removed.
 
 ```zig
 const zf = @import("zig-field");
@@ -300,21 +304,21 @@ const zntt = @import("zig-ntt");
 const F = zf.BabyBear;
 var data = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3), F.fromInt(4) };
 const log_n = 2;
-const root = F.primitiveRootOfUnity(log_n);
+const root = try F.primitiveRootOfUnity(log_n);
 
-zntt.ntt(F, &data, log_n, root);  // Forward NTT
-zntt.intt(F, &data, log_n, root); // Inverse NTT (round-trips)
+try zntt.ntt(F, &data, log_n, root);  // Forward NTT
+try zntt.intt(F, &data, log_n, root); // Inverse NTT (round-trips)
 
 const twiddles = try zntt.precomputeTwiddles(F, log_n, root, allocator);
 defer zntt.freeTwiddles(F, twiddles, allocator);
-zntt.nttWithTwiddles(F, &data, log_n, twiddles);
-zntt.inttWithTwiddles(F, &data, log_n, twiddles);
+try zntt.nttWithTwiddles(F, &data, log_n, twiddles);
+try zntt.inttWithTwiddles(F, &data, log_n, twiddles);
 
 // --- zig-field: M31 8-lane SIMD, data.len must be 8 * 2^log_n ---
 const M31 = zf.M31;
 var lanes: [16]M31 = undefined;
 for (&lanes, 0..) |*slot, k| slot.* = M31.fromInt(k + 1);
-const m31_root = M31.primitiveRootOfUnity(1); // 2^1-roots only on M31
+const m31_root = try M31.primitiveRootOfUnity(1); // 2^1-roots only on M31
 zf.nttVec8M31(&lanes, 1, m31_root);
 zf.inttVec8M31(&lanes, 1, m31_root);
 
@@ -356,14 +360,21 @@ The root `zig build test` compiles only the inline `src/` tests, so it counts
 - **`Vec8` and the `*Vec8` helpers are M31-only**; every other field gets
   `Vec8 = void`, and `Vec8.fromSlice8` is total (a short slice zero-fills the
   remaining lanes, a long one truncates to 8).
-- **`format` is dead** on the field and extension types: they declare
-  `options: std.fmt.FormatOptions`, removed in Zig 0.16, so `{}` on a field
-  element falls back to default struct printing.
+- **`format` needs the `{f}` specifier.** The field and extension types use the
+  Zig 0.16 signature (`fn (self, writer: *std.Io.Writer) std.Io.Writer.Error!void`),
+  which the formatter only selects for `{f}`: `std.debug.print("{f}", .{elem})`
+  prints the element, while `{}` still falls back to the default struct dump.
+- **`BigField.toU64` truncates** a value above `maxInt(u64)`. Use
+  `toU64Checked` (`error.Overflow`) when the fit is a precondition.
+- **`pow` / `powFast` `@panic` on a negative runtime exponent.** The exponent is
+  a typed integer argument and `@intCast` into `PowExp` would trap anyway, so
+  this is a caller-side precondition rather than a validation gap; there is no
+  checked variant because every exponent in the workspace is non-negative.
 
 ## Design Notes
 
 - **Montgomery constants** (`R^2`, `-p^{-1} mod 2^64`) are derived at comptime from the modulus using arbitrary-precision comptime integers
-- **Roots of unity** use the quadratic non-residue method: find `z` with `(z/p) = -1`, then `z^((p-1)/2^t)` has exact order `2^t` — no factorization of `p-1` needed. `primitiveRootOfUnity(t)` debug-asserts `t <= two_adicity`, which is why M31 (`two_adicity == 1`) cannot host an NTT domain
+- **Roots of unity** use the quadratic non-residue method: find `z` with `(z/p) = -1`, then `z^((p-1)/2^t)` has exact order `2^t` — no factorization of `p-1` needed. `primitiveRootOfUnity(t)` returns `error.OrderTooLarge` when `t > two_adicity` and `rootOfUnity(order)` returns `error.NotPowerOfTwo` when `order` is zero or not a power of two, which is why M31 (`two_adicity == 1`) cannot host an NTT domain
 - **Square roots** use Tonelli-Shanks with `p ≡ 3 mod 4` shortcut when two-adicity is 1
 - **Extension field inverses** use the norm-based formula: `(a + bv)^{-1} = (a - bv) / (a^2 - n b^2)` for `v^2 = n`
 - **Cubic extension inverse** uses the closed form with `v^3 = n`

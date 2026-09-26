@@ -5,14 +5,17 @@
 
 A modular ecosystem of 17 algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig 0.16.0.
 
-> **Status:** workspace version `0.4.0` (see [Versioning](#versioning)). No
+> **Status:** workspace version `0.5.0` (see [Versioning](#versioning)). No
 > independent cryptographic audit has been performed; "production candidate"
 > below means test-covered, not audited. Review `SECURITY.md` before use.
 >
-> `0.4.0` is a hardening release: input validation that used to be
+> `0.4.0` and `0.5.0` are hardening releases: input validation that used to be
 > `std.debug.assert` (invisible in `ReleaseFast`) is now typed errors, and the
-> legacy total wrappers are explicitly marked as such. See
-> [Known Limitations](#known-limitations).
+> legacy total wrappers are explicitly marked as such. `0.5.0` closes the same
+> defect class in the ten libraries `0.4.0` did not cover, including two on the
+> verification path for untrusted proof data (`zig-fri` `Domain.init`,
+> `zig-ntt` transforms). See [Known Limitations](#known-limitations) and
+> `SECURITY.md` advisory ZA-2026-003.
 
 ## Vision
 
@@ -70,32 +73,32 @@ parallel (no deps) · serialization (no deps)
 
 | Library | Description | Tests |
 |---------|-------------|-------|
-| [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | 0 (compile-time only) |
+| [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | 4 |
 | [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 18 |
-| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 17 |
+| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 18 |
 | [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 10 |
-| [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 10 |
-| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 23 |
+| [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 12 |
+| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 25 |
 | [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 85 |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 76 |
-| [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 96 |
-| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 54 |
-| [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 11 |
+| [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 98 |
+| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 57 |
+| [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 15 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 18 |
-| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 20 |
-| [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 9 |
+| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 28 |
+| [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 11 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 2 |
 | [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 15 |
 | [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM; synthetic setup, tests only) | 6 |
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **354 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
+> **382 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
 > compiles each library's inline `src/` tests only, so `field` and `curve` —
-> the two libraries with separate `tests/` roots — contribute 13 and 52 tests
-> there instead of 85 and 96. `algebra-traits` is compile-time only and
-> contributes 0 tests. The per-library steps sum to 470. `kzg` was added in
-> v0.2.2 as the 17th library.
+> the two libraries with separate `tests/` roots — contribute 13 and 54 tests
+> there instead of 85 and 98. The per-library steps sum to 498.
+> `algebra-traits` shipped with zero tests before `0.5.0` and now has 4. `kzg`
+> was added in v0.2.2 as the 17th library.
 
 ## API Status
 
@@ -110,10 +113,14 @@ checks; it does not claim an independent cryptographic audit or constant-time
 guarantee. Module-level gaps (e.g. the IPA verifier inside `zig-field`) are
 listed under [Known Limitations](#known-limitations).
 
-## Validation Contract (0.4.0)
+## Validation Contract (0.4.0, extended in 0.5.0)
 
 Input validation used to be expressed as `std.debug.assert`, which is compiled
-out in `ReleaseFast`. The affected entry points are now split in two:
+out in `ReleaseFast`. `0.4.0` covered `field`, `binary-field`, `merkle`,
+`rng`, `serialization` and `curve`; `0.5.0` closed the same class in
+`algebra-traits`, `poly`, `linalg`, `fri`, `ntt`, `field`, `rng`, `hash` and
+`pairing`. Most of those became error unions outright; where a signature had to
+stay total, the entry point is split in two:
 
 | Legacy (total) | Checked | Rejects |
 |----------------|---------|---------|
@@ -127,6 +134,22 @@ out in `ReleaseFast`. The affected entry points are now split in two:
 | `randomBounded(rnd, 0)` → `zero()` | — | (the empty range is defined) |
 | `csprng.setEntropy` → truncates to capacity | `setEntropyChecked` | `error.EntropyTooLong`, `error.InsufficientEntropy` |
 | `hashToPoint`, `generatorVector` (previously `catch unreachable`) | same names | `error.DomainTooLong`, `error.NoValidPoint` |
+| `ByteScalar.add/sub/mul/inv/neg/fromBytes` (previously `catch unreachable`) | `ByteScalar.reduce` (total) | `error.NotCanonical` |
+| `group_ops.scalarMul`, `evalGroupPoly` (previously `catch unreachable`) | same names | `error.NonCanonicalScalar` |
+| `millerLoop`, `millerLoopPair` → identity on an infinity input | `millerLoopChecked`, `millerLoopPairChecked` | `error.PointAtInfinity` |
+| `pairing` extension `inv()` → `zero()` on `0` | `invChecked()` | `error.InverseOfZero` |
+| `Shake256Rng.absorbSeed` / `finalize` → corrupt the sponge | same names | `error.AlreadyFinalized` |
+| `BigField.toU64()` → truncates above `u64` | `toU64Checked()` | `error.Overflow` |
+
+Everything in the following list became a **breaking** error union in `0.5.0`,
+so existing call sites need `try`: `algebra-traits`' `dotProduct`,
+`lagrangeInterpolate` and `lagrangeCoefficient`; all of `zig-poly`'s
+degree-increasing and vector helpers; `zig-linalg`'s `identity`, `trace`,
+`determinant`, `lu` and `solve`; `zig-fri`'s `Domain.init` and `Domain.fill`;
+`zig-ntt`'s `bitReverse`, `ntt`, `intt`, `nttWithTwiddles`, `inttWithTwiddles`
+and `precomputeTwiddles`; `zig-field`'s `batchAdd`/`batchSub`/`batchMul`,
+`multiExp`, `Ipa.innerProduct`, `Ipa.commit`, `primitiveRootOfUnity` and
+`rootOfUnity`; `zig-curve`'s `msm`; `zig-hash`'s `Poseidon.initFromSeed`.
 
 The legacy column is **kept for source compatibility only**. Where a legacy
 function used to assert, it previously panicked in Debug/ReleaseSafe and either
@@ -179,7 +202,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 354 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 382 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |
@@ -303,16 +326,25 @@ and print as `0 ns`.
 
 ## Versioning
 
-The workspace root manifest (`build.zig.zon`) is versioned as **`0.4.0`**, while
+The workspace root manifest (`build.zig.zon`) is versioned as **`0.5.0`**, while
 each library carries its own `build.zig.zon` with an independent semver
-(workspace `0.4.0`; libraries currently between `0.1.0` (`transcript`) and
-`0.4.0` (`curve`)). Library count grew over time: 14 libraries at v0.1.0, 16 at
-v0.2.0 (`fri` + `transcript`), 17 at v0.2.2 (`kzg`). The `0.4.0` workspace
-release carried the validation hardening of `field`, `binary-field`, `merkle`,
-`rng`, `serialization` and `curve`; their manifests were bumped accordingly
-(`field` and `binary-field` to `0.3.0`, `curve` to `0.4.0`, `rng` to `0.3.0`,
-`serialization` to `0.2.0`, `merkle` to `0.1.2`); every other manifest is
-unchanged. See `CHANGELOG.md` for the full history.
+(libraries currently between `0.1.0` (`transcript`) and `0.5.0` (`curve`)).
+Library count grew over time: 14 libraries at v0.1.0, 16 at v0.2.0
+(`fri` + `transcript`), 17 at v0.2.2 (`kzg`).
+
+- **`0.5.0`** (current) extends the validation hardening to `algebra-traits`,
+  `poly`, `linalg`, `fri`, `ntt`, `field`, `rng`, `hash` and `pairing`, and
+  fixes eight dead `format` methods. Bumped: `algebra-traits` 0.3.0, `bigint`
+  0.3.0, `curve` 0.5.0, `field` 0.4.0, `fri` 0.2.0, `hash` 0.3.0, `kzg` 0.2.1,
+  `linalg` 0.2.0, `ntt` 0.2.0, `pairing` 0.4.0, `poly` 0.2.0, `rng` 0.4.0.
+  `binary-field`, `merkle`, `parallel`, `serialization` and `transcript` are
+  unchanged.
+- **`0.4.0`** carried the same hardening for `field`, `binary-field`, `merkle`,
+  `rng`, `serialization` and `curve` (`field` and `binary-field` to `0.3.0`,
+  `curve` to `0.4.0`, `rng` to `0.3.0`, `serialization` to `0.2.0`, `merkle` to
+  `0.1.2`).
+
+See `CHANGELOG.md` for the full history.
 
 ## License
 

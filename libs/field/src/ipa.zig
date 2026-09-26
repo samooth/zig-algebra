@@ -74,8 +74,13 @@ pub fn Ipa(comptime F: type) type {
         // -- Inner product ---------------------------------------------------
 
         /// Compute `<a, b> = sum(a_i * b_i)`.
-        pub fn innerProduct(a: []const F, b: []const F) F {
-            std.debug.assert(a.len == b.len);
+        ///
+        /// # Errors
+        /// `error.LengthMismatch` when `a.len != b.len`; the old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// two-slice loop then read past the end of the shorter one.
+        pub fn innerProduct(a: []const F, b: []const F) error{LengthMismatch}!F {
+            if (a.len != b.len) return error.LengthMismatch;
             var result = F.zero();
             for (a, b) |ai, bi| {
                 result = result.add(ai.mul(bi));
@@ -87,8 +92,13 @@ pub fn Ipa(comptime F: type) type {
 
         /// Commit to vectors `a`, `b` with claimed inner product `c`.
         /// `C = <a, G> + <b, H> + c * U`.
-        pub fn commit(self: Self, a: []const F, b: []const F, c: F) F {
-            std.debug.assert(a.len == self.n and b.len == self.n);
+        ///
+        /// # Errors
+        /// `error.LengthMismatch` when `a.len != self.n` or `b.len != self.n`;
+        /// the old `std.debug.assert` is compiled out in `ReleaseFast`, where
+        /// the commitment loops then read past the shorter vector.
+        pub fn commit(self: Self, a: []const F, b: []const F, c: F) error{LengthMismatch}!F {
+            if (a.len != self.n or b.len != self.n) return error.LengthMismatch;
             var result = F.zero();
             for (a, self.g) |ai, gi| result = result.add(ai.mul(gi));
             for (b, self.h) |bi, hi| result = result.add(bi.mul(hi));
@@ -117,7 +127,7 @@ pub fn Ipa(comptime F: type) type {
             a_in: []const F,
             b_in: []const F,
         ) !Proof {
-            std.debug.assert(a_in.len == self.n and b_in.len == self.n);
+            if (a_in.len != self.n or b_in.len != self.n) return error.LengthMismatch;
             const log_n = @ctz(self.n);
 
             // Working copies (mutable)

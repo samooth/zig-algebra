@@ -10,12 +10,15 @@ Dense univariate polynomials over finite fields. Allocation-free polynomial arit
 - **Interpolation** — Lagrange interpolation from points
 - **Vanishing polynomial** — `Z_H(x) = ∏ (x - x_i)` over an explicit point set
 - **Composition and integer powers** — `compose`, `pow`
-- **Vector helpers** — `inner`, `powers`, `vecAdd`, `vecSub`, `vecScale`, `hadamard`, `vecSum`, `vecEql`
+- **Vector helpers** — `inner`, `powers`, `vecAdd`, `vecSub`, `vecScale`, `hadamard`, `vecSum`, `vecEql`. The two-input helpers return `error.LengthMismatch` on a length mismatch.
 
 > `max_degree` is a **compile-time bound on the result of every operation**,
-> not just storage. `mul`, `divRem` and `pow` debug-assert that the result
-> fits, so pick a value that covers the largest intermediate you need (two
-> degree-`d` polynomials multiply to degree `2d`).
+> not just storage. Every degree-increasing operation (`mul`, `compose`, `pow`)
+> and `divRem` return a typed error — `error.DegreeTooLarge` or
+> `error.DivisionByZero` — instead of asserting, so an over-capacity product
+> is reported rather than written out of the fixed coefficient array. Pick a
+> value that covers the largest intermediate you need (two degree-`d`
+> polynomials multiply to degree `2d`).
 
 ## Installation
 
@@ -47,14 +50,15 @@ const F = @import("zig-field").BN254_Fp;
 const P = zp.Polynomial(F, 8);
 
 // There is no `init`. Use `fromArray` with a comptime literal, or
-// `fromCoeffs` with a runtime slice.
+// `fromCoeffs` with a runtime slice. `fromCoeffs` returns
+// `error.DegreeTooLarge` when the slice is longer than the capacity.
 const p1 = P.fromArray(&.{ F.fromInt(1), F.fromInt(2), F.fromInt(3), F.fromInt(4) });
 const runtime_coeffs = [_]F{ F.fromInt(5), F.fromInt(6) };
-const p2 = P.fromCoeffs(&runtime_coeffs);
+const p2 = try P.fromCoeffs(&runtime_coeffs);
 
 // Arithmetic
 const sum = p1.add(p1);
-const prod = p1.mul(p1); // degree 3 * degree 3 = degree 6, fits in P
+const prod = try p1.mul(p1); // degree 3 * degree 3 = degree 6, fits in P
 std.debug.assert(prod.degree == 6);
 _ = p1.sub(p1);
 _ = p1.neg();
@@ -67,28 +71,31 @@ _ = y;
 // Lagrange interpolation. `max_degree` must be >= points.len - 1.
 const points = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3) };
 const values = [_]F{ F.fromInt(10), F.fromInt(20), F.fromInt(30) };
-const interpolated = zp.lagrangeInterpolate(F, 4, &points, &values);
+const interpolated = try zp.lagrangeInterpolate(F, 4, &points, &values);
 std.debug.assert(interpolated.eval(points[0]).eql(values[0]));
 std.debug.assert(interpolated.eval(points[2]).eql(values[2]));
 
 // Vanishing polynomial over a point set: Z(x) = ∏ (x - xs[i]),
 // so it vanishes on every point and nowhere else.
-const z_h = zp.vanishingPolynomial(F, 8, &points);
+const z_h = try zp.vanishingPolynomial(F, 8, &points);
 for (points) |pt| {
     std.debug.assert(z_h.eval(pt).isZero());
 }
 
 // Division with remainder: p1 == q * d + r
-const qr = p1.divRem(p1);
-std.debug.assert(p1.eql(qr.q.mul(p1).add(qr.r)));
+const qr = try p1.divRem(p1);
+std.debug.assert(p1.eql((try qr.q.mul(p1)).add(qr.r)));
 
 // Composition and integer powers.
-// `compose` computes self(other(x)); see the caveat in the API table.
-const x2 = P.x().mul(P.x());
-const substituted = p1.compose(x2); // p1(x^2) = c0 + c1x^2 + c2x^4 + c3x^6
+// `compose` computes self(other(x)). Every degree-increasing operation
+// (`mul`, `compose`, `pow`, `divRem`) returns `error.DegreeTooLarge` or
+// `error.DivisionByZero` instead of asserting, so an over-capacity product
+// is reported rather than written out of bounds.
+const x2 = try P.x().mul(P.x());
+const substituted = try p1.compose(x2); // p1(x^2) = c0 + c1x^2 + c2x^4 + c3x^6
 std.debug.assert(substituted.degree == 6);
-_ = p1.mul(P.x()); // p1(x) * x
-_ = P.x().pow(3); // x^3
+_ = try p1.mul(P.x()); // p1(x) * x
+_ = try P.x().pow(3); // x^3
 _ = P.constant(F.fromInt(7));
 _ = P.zero();
 std.debug.assert(P.MAX_DEGREE == 8);
@@ -106,7 +113,7 @@ const F = @import("zig-field").BN254_Fp;
 const a = [_]F{ F.fromInt(1), F.fromInt(2) };
 const b = [_]F{ F.fromInt(3), F.fromInt(4) };
 
-_ = zp.inner(F, &a, &b); // dot product, no allocation
+const dot = try zp.inner(F, &a, &b); // dot product, no allocation
 
 const pw = try zp.powers(F, allocator, F.fromInt(2), 3);
 defer allocator.free(pw);
@@ -153,12 +160,17 @@ general `q` (for example a constant) it silently returns a wrong polynomial —
 `p.compose(2)` collapses to a constant instead of `p(2x)`. Do not use it with
 a non-monomial `q` until the implementation is fixed.
 
+**Formatting** — the custom `format` method uses the Zig 0.16 signature
+(`fn (self, writer: *std.Io.Writer) std.Io.Writer.Error!void`) and is only
+consulted for the `{f}` specifier, so `p.toString(&buf)` (which formats with
+`{f}`) yields `1 + 2*x + 3*x^2`, while `std.debug.print("{}", .{p})` prints
+the default struct dump.
+
 **Known gaps** — declared but currently broken in `src/poly.zig`:
 
 | Function | Problem |
 |----------|---------|
-| `p.derivative()` | `poly.zig:269` — `@intCast` with an unknown result type; does not compile |
-| `p.toString(buf)` | `poly.zig:346` — returns `!usize` but `std.fmt.bufPrint` yields `![]u8`; does not compile |
+| `p.compose(q)` with a non-monomial `q` | Accumulates `Σ c_i · q(x)^i` with a plain `add`, so the result is only correct when `q` is `x^k`; with a general `q` it silently returns a wrong polynomial |
 
 ## Running Tests
 
@@ -166,7 +178,7 @@ a non-monomial `q` until the implementation is fixed.
 # From the monorepo root
 zig build test
 
-# Just this library (20 tests, all inline in src/root.zig)
+# Just this library (28 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
 cd libs/poly && zig build test
 ```
 

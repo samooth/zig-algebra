@@ -98,7 +98,7 @@ a specific rendering.
 | Method | Signature | Notes |
 |--------|-----------|-------|
 | `zero` | `() Self` | |
-| `identity` | `() Self` | debug-asserts `rows == cols` |
+| `identity` | `() error{NotSquare}!Self` | `error.NotSquare` when `rows != cols` |
 | `fromArray` | `(arr: [rows][cols]F) Self` | |
 | `get` / `set` | `(self, r, c)` / `(self: *Self, r, c, v)` | |
 | `row` / `col` | `(self: Self, r: usize) Vector(F, cols)` / `(self: Self, c: usize) Vector(F, rows)` | |
@@ -107,10 +107,10 @@ a specific rendering.
 | `transpose` | `(self: Self) Matrix(F, cols, rows)` | |
 | `mul` | `(self: Self, comptime OtherCols: usize, other: Matrix(F, cols, OtherCols)) Matrix(F, rows, OtherCols)` | |
 | `mulVec` | `(self: Self, vec: Vector(F, cols)) Vector(F, rows)` | |
-| `trace` | `(self: Self) F` | debug-asserts square |
-| `determinant` | `(self: Self) F` | debug-asserts square; `F.zero()` if singular |
-| `lu` | `(self: Self) LU(F, rows)` | debug-asserts square |
-| `solve` | `(self: Self, b: Vector(F, rows)) ?Vector(F, rows)` | `null` if singular |
+| `trace` | `(self: Self) error{NotSquare}!F` | `error.NotSquare` when not square |
+| `determinant` | `(self: Self) error{NotSquare}!F` | `error.NotSquare` when not square; `F.zero()` if singular |
+| `lu` | `(self: Self) error{NotSquare}!LU(F, rows)` | `error.NotSquare` when not square |
+| `solve` | `(self: Self, b: Vector(F, rows)) error{NotSquare}!?Vector(F, rows)` | `error.NotSquare` when not square; `null` if singular |
 | `eql` | `(self: Self, other: Self) bool` | |
 | field | `data: [rows][cols]F` | public |
 
@@ -144,9 +144,10 @@ and `eql`.
 
 ## Known limitations
 
-- `determinant` and `trace` and `identity` and `lu` all **debug-assert**
-  `rows == cols`. In ReleaseFast the assert vanishes and a non-square matrix
-  reads out of bounds or produces garbage rather than an error.
+- `determinant`, `trace`, `identity`, `lu` and `solve` return
+  `error.NotSquare` when `rows != cols`. Before 0.2.0 they debug-asserted
+  `rows == cols`, which vanishes in ReleaseFast and let a non-square matrix
+  read or write out of bounds.
 - `lu` does **not** report singularity: if a column has no non-zero pivot it
   `continue`s, leaving the corresponding `U` diagonal at zero. `solve` then
   detects it and returns `null`, but a direct `lu()` call gives you a
@@ -157,11 +158,11 @@ and `eql`.
 - `mul` requires the output column count as a **comptime** argument. That is
   what makes the shapes checkable, but it means dynamic `n` is impossible; you
   must monomorphise per shape.
-- The `Vector`/`Matrix` `format` methods declare `std.fmt.FormatOptions`, which
-  was removed in Zig 0.16. They are never selected by `{}` in practice, so
-  printing a vector falls back to the default struct form rather than the
-  intended `[a, b, c]`. (Same stale-signature issue as `zig-bigint`'s
-  `BigInt.format` and `zig-field`'s field `format`.)
+- The `Vector`/`Matrix` `format` methods use the Zig 0.16 signature, so they
+  are only selected by the `{f}` specifier: `std.debug.print("{f}", .{v})`
+  yields `[a, b, c]`, while `{}` still falls back to the default struct form.
+  (The same 0.16 rule applies to `zig-bigint`'s `BigInt.format` and
+  `zig-field`'s field `format`.)
 - `std.debug.assert(a.len == b.len)`-style shape checks are Debug-only, and
   there is no bounds-checked indexing; out-of-range `row`/`col`/`get` is
   undefined in ReleaseFast.
@@ -188,9 +189,11 @@ and `eql`.
 cd libs/linalg && zig build test
 ```
 
-9 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
+11 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
 solve, 3×3 operations including a computed inverse, singular detection,
-partial pivoting on a matrix needing a row swap, and a Goldilocks multiply.
+partial pivoting on a matrix needing a row swap, a Goldilocks multiply, the
+`error.NotSquare` rejections for non-square shapes, and the total-vs-checked
+`inv`/`div` contract of the in-file `F7`.
 The suite uses an in-file `F7` (which includes `lexicographicCmp`) plus
 `Goldilocks` from `zig-field`.
 

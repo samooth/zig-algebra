@@ -6,6 +6,142 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Security (P0 class, second sweep — advisory ZA-2026-003)
+
+The 0.4.0 sweep (ZA-2026-002) covered six libraries. A second, exhaustive sweep
+of every `std.debug.assert`, `catch unreachable` and `@panic` in the tree found
+the same defect class in **ten more**. Each one was a real bounds or
+arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
+
+- **algebra-traits** (0.2.0 -> **0.3.0**): `dotProduct` and
+  `lagrangeCoefficient` return `error.LengthMismatch` / `error.IndexOutOfBounds`
+  (the `for (a, b)` loop read past the shorter slice), and
+  `lagrangeInterpolate` returns `error.LengthMismatch` instead of indexing `ys`
+  out of bounds. The in-file `F7` gained `invChecked` / `divChecked`; `inv` and
+  `div` are total. **BREAKING:** all three are error unions now.
+- **poly** (0.1.1 -> **0.2.0**): the fixed `[max_degree + 1]F` coefficient array
+  was written past its end on an over-long `fromCoeffs` or an over-degree `mul`.
+  `fromCoeffs`, `mul`, `compose` and `pow` return `error.DegreeTooLarge`;
+  `divRem` / `div` / `rem` return `error.DivisionByZero` (a zero divisor made
+  the long-division loop non-terminating); `lagrangeInterpolate` returns
+  `error.LengthMismatch` / `error.EmptyInput` / `error.DegreeTooLarge` /
+  `error.DivisionByZero`; `vanishingPolynomial` returns `error.DegreeTooLarge`;
+  `vector.inner` / `vecAdd` / `vecSub` / `hadamard` return
+  `error.LengthMismatch`. `fromArray` keeps a comptime array literal and
+  `@compileError`s on an oversized one. **BREAKING:** all of the above are error
+  unions. Two previously declared-but-broken functions now work:
+  `p.derivative()` (an `@intCast` with no result type) and `p.toString(buf)`
+  (returned `!usize` from a `![]u8`).
+- **linalg** (0.1.1 -> **0.2.0**): `identity`, `trace`, `determinant`, `lu` and
+  `solve` return `error.NotSquare`. `identity` on a non-square `Matrix(F, r, c)`
+  wrote `m.data[i][i]` past the end of the shorter rows. **BREAKING:** error
+  unions; `solve` is now `error{NotSquare}!?Vector`.
+- **fri** (0.1.1 -> **0.2.0**): `Domain.init` returns `error.DomainTooLarge`
+  (the `two_adicity - log_n` shift underflowed, and `1 << shift` with a shift
+  >= 64 is undefined behaviour), `Domain.fill` returns
+  `error.LengthMismatch`, and `FriError` gained `DomainTooLarge` and
+  `OrderTooLarge`. **`verify` was also missing a check:** it compared
+  `log_domain` against `F.two_adicity` but not `log_final`, and `log_final`
+  comes from the proof, so a config whose `log_final` exceeded the two-adicity
+  underflowed the shift inside `Domain.init`. `verify` now returns `false` in
+  that case. **BREAKING:** error unions.
+- **curve** (0.4.0 -> **0.5.0**): `msm` returns `error.LengthMismatch` (the
+  scalar snapshot loop read past `scalars`). `ByteScalar.add` / `sub` / `mul` /
+  `inv` / `neg` / `fromBytes` return `error.NotCanonical` — they
+  `catch unreachable`d the stdlib non-canonical rejection, so a wire scalar >=
+  the group order aborted the process; `reduce` remains the total entry point.
+  `group_ops.scalarMul` and `group_poly.evalGroupPoly` / `evalGroupPolyVerify`
+  return `error.NonCanonicalScalar` for a stdlib pcurve point and a
+  non-canonical byte scalar. **BREAKING:** error unions.
+- **ntt** (0.1.1 -> **0.2.0**): `bitReverse` returns `error.InvalidLength`
+  (`@ctz(0)` on an empty slice is undefined), `ntt` / `intt` return
+  `error.LengthMismatch`, `nttWithTwiddles` / `inttWithTwiddles` add
+  `error.InvalidTwiddles` for a wrong table or stage length, and all of them
+  plus `precomputeTwiddles` return `error.LogTooLarge` because `2^log_n` was
+  computed with `std.math.pow(usize, 2, log_n)`, which overflows for
+  `log_n >= @bitSizeOf(usize)`. **BREAKING:** error unions.
+- **field** (0.3.0 -> **0.4.0**): `batchAdd` / `batchSub` / `batchMul` and
+  `multiExp` return `error.LengthMismatch` on both backends;
+  `Ipa.innerProduct` and `Ipa.commit` return `error.LengthMismatch`;
+  `primitiveRootOfUnity` returns `error.OrderTooLarge` and `rootOfUnity` adds
+  `error.NotPowerOfTwo` (`std.math.log2(0)` is undefined), on both base-field
+  backends and on `QuadraticExtension` / `CubicExtension`. Added
+  `toU64Checked` (`error.Overflow`); `toU64` keeps truncating. Removed
+  `src/ntt.zig` and `src/merkle.zig`, unreferenced duplicates of `zig-ntt` and
+  of `MerkleTree` in `lib.zig` (the field README already said the generic
+  transform lives in `zig-ntt`). **BREAKING:** error unions.
+- **rng** (0.3.0 -> **0.4.0**): `Shake256Rng.absorbSeed` and `finalize` return
+  `error.AlreadyFinalized`; absorbing or re-finalizing after the sponge was
+  squeezed corrupted its state in `ReleaseFast`. `squeezeInto` is an error union
+  for the same reason. The `byte_len` guard in `randomFieldElement` is now a
+  `@compileError` (it is comptime-known either way). **BREAKING:** error unions.
+- **hash** (0.2.0 -> **0.3.0**): `Poseidon(...).initFromSeed` returns
+  `error.NoValidMdsEntry`; the `assert(attempt < 256)` on the MDS search was
+  compiled out in `ReleaseFast`, where a failed search left `y[j]` undefined
+  and produced a singular MDS matrix. The `t >= 3` sponge requirement moved to
+  a `@compileError` in the `Poseidon` factory. **BREAKING:** new error in the
+  set.
+- **pairing** (0.3.0 -> **0.4.0**): `inv` is total (`inv(0) == zero()`) on the
+  cubic extension, both Fp6 towers and `Fp12Direct`, each with an `invChecked`
+  sibling; the closed-form inversions used to divide by a zero norm. Added
+  `millerLoopChecked` (bn254), `millerLoopPairChecked` (bn254 direct and tower),
+  all returning `error.PointAtInfinity`; the unchecked `millerLoop` /
+  `millerLoopPair` fall back to the identity element instead of producing a
+  garbage Fp12. `Fp12Direct` gained `invChecked`.
+
+### Fixed (not a P0 defect)
+
+- **`format` methods were dead code.** Eight `format` implementations
+  (`zig-field` base and both extension towers, `zig-bigint`, `zig-poly`,
+  `zig-linalg`, `zig-pairing`, `zig-algebra-traits`) still declared the
+  pre-0.16 signature `(self, comptime fmt, options: std.fmt.FormatOptions,
+  writer)`. Zig 0.16 only consults a method named `format` for the **`{f}`**
+  specifier, and with that signature nothing consulted it at all, so every
+  `std.debug.print("{}", .{value})` printed the default struct dump. All eight
+  are now `pub fn format(self, writer: *std.Io.Writer) std.Io.Writer.Error!void`
+  and work with `{f}`. This is why `zig-poly`'s `toString` now yields
+  `1 + 2*x + 3*x^2` instead of a struct listing.
+
+### Versioning
+
+- Root `build.zig.zon` is now **`0.5.0`** (was `0.4.0`); every library keeps
+  its own independent semver. Manifests bumped for this release:
+  `algebra-traits` 0.2.0 -> 0.3.0, `bigint` 0.2.0 -> 0.3.0 (the `format`
+  signature), `curve` 0.4.0 -> 0.5.0, `field` 0.3.0 -> 0.4.0, `fri` 0.1.1 ->
+  0.2.0, `hash` 0.2.0 -> 0.3.0, `kzg` 0.2.0 -> 0.2.1 (internal error
+  propagation only), `linalg` 0.1.1 -> 0.2.0, `ntt` 0.1.1 -> 0.2.0, `pairing`
+  0.3.0 -> 0.4.0, `poly` 0.1.1 -> 0.2.0, `rng` 0.3.0 -> 0.4.0.
+  `binary-field`, `merkle`, `parallel`, `serialization` and `transcript` are
+  unchanged, so the per-library range stays `0.1.0` (`transcript`) to `0.5.0`
+  (`curve`).
+- **Test counts.** The root `zig build test` step now runs **382 tests**
+  (verified on Zig 0.16.0 in Debug and ReleaseFast), up from 354; per-library
+  `zig build test` steps sum to **498**, up from 470, because `field` (85) and
+  `curve` (98) also compile their separate `tests/` roots. Per-library totals:
+  algebra-traits 4, bigint 18, binary-field 76, curve 98, field 85, fri 12,
+  hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28,
+  rng 25, serialization 15, transcript 10. The new tests are the negative cases
+  for every error above (mismatched lengths, non-power-of-two lengths, over-
+  capacity degrees, non-canonical scalars, points at infinity, out-of-range
+  two-adicity, double finalization).
+- **`algebra-traits` has tests now.** It previously shipped a `test` step with
+  zero tests, so the generic algorithms were never exercised.
+
+### Docs
+
+- Every affected library README documents its new error union, and the
+  "Known limitations" entries that described the old assert-based behaviour are
+  replaced by the contract that now holds.
+- `zig-ntt`'s README records that `root` itself is still unvalidated: only the
+  buffer shape and `log_n` are checked, so a root of the wrong order still
+  produces a wrong transform.
+- `zig-field`'s README records the removal of `src/ntt.zig` / `src/merkle.zig`
+  and the `{f}` formatting rule.
+- `zig-poly`'s README now lists `compose` with a non-monomial `q` as the one
+  remaining known gap; `derivative` and `toString` are fixed and removed from it.
+
+## [v0.4.0] — 2026-09-27
+
 ### Security (P0 class: asserted preconditions)
 
 The preconditions of several public entry points were expressed as
@@ -76,7 +212,7 @@ signature could not change. `SECURITY.md` records the full advisory as
 
 ### Versioning
 
-- Root `build.zig.zon` is now **`0.4.0`** (was `0.3.2`); every library keeps
+- Root `build.zig.zon` shipped **`0.4.0`** (was `0.3.2`); every library keeps
   its own independent semver in `libs/<name>/build.zig.zon`. The manifests
   bumped for this release are `field` `0.3.0`, `binary-field` `0.3.0`,
   `merkle` `0.1.2`, `rng` `0.3.0`, `serialization` `0.2.0` and `curve`
@@ -86,8 +222,9 @@ signature could not change. `SECURITY.md` records the full advisory as
 ### Docs
 - Documentation pass so every top-level document matches the current tree.
   Historical entries are retained, with factual corrections noted here.
-- **Test counts.** The root `zig build test` step runs **354 tests** (verified
-  on Zig 0.16.0 in both Debug and ReleaseFast); per-library `zig build test`
+- **Test counts.** The root `zig build test` step ran **354 tests** in this
+  release (verified on Zig 0.16.0 in both Debug and ReleaseFast; the current
+  tree is at 382 / 498 — see [Unreleased]); per-library `zig build test`
   steps sum to 470 because `field` (85) and `curve` (96) also compile their
   separate `tests/` roots. Older documents quoted 222, 297 and 316; the 297
   figure in `SECURITY.md` was accurate for the suite as it stood when advisory

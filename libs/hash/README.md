@@ -158,7 +158,7 @@ try std.testing.expectError(error.SeedTooLong, MiMCF.initFromSeed(too_long));
 # From the monorepo root
 zig build test
 
-# Just this library (17 tests, all inline in src/root.zig)
+# Just this library (18 tests, all inline in src/root.zig)
 cd libs/hash && zig build test
 ```
 
@@ -180,7 +180,15 @@ cd libs/hash && zig build test
 - The `Hash` shim (`zh.Hash`) exposes `hashBytes` and `hash2`; note that
   `Hash.hash2` currently does **not** compile (it calls the pre-0.16 Blake3
   API), so use `zh.Blake3` directly for two-child hashing
-- Poseidon `hash` debug-asserts `t >= 3`
+- Poseidon's sponge needs a rate of at least two, so the `Poseidon` factory
+  `@compileError`s when `t < 3` (it used to be a `std.debug.assert` inside
+  `hash`, compiled out in `ReleaseFast`, which then indexed a `[0]` state)
+- `Poseidon(...).initFromSeed` returns `error.NoValidMdsEntry` if the 256-round
+  search for a valid MDS entry finds nothing. That guard used to be a
+  `std.debug.assert`, compiled out in `ReleaseFast`, where the failed search
+  left `y[j]` undefined and produced a singular MDS matrix
+- Custom `format` methods need the `{f}` specifier in Zig 0.16; `{}` prints the
+  default struct form
 
 ## License
 

@@ -24,11 +24,16 @@ pub fn eql(comptime Point: type, a: Point, b: Point) bool {
 }
 
 /// Multiply `p` by a scalar (bytes or integer, per point type convention).
-pub fn scalarMul(p: anytype, scalar: anytype) @TypeOf(p) {
+///
+/// # Errors
+/// `error.NonCanonicalScalar` when the point type is a stdlib pcurve and the
+/// byte scalar is `>= n`; the stdlib `mul` rejection used to be
+/// `catch unreachable`, so a non-canonical wire scalar aborted the process.
+pub fn scalarMul(p: anytype, scalar: anytype) error{NonCanonicalScalar}!@TypeOf(p) {
     const P = @TypeOf(p);
     if (@hasDecl(P, "scalarMul")) return p.scalarMul(scalar);
     // stdlib pcurves: mul(self, [32]u8, endian)
-    return p.mul(scalar, .big) catch unreachable;
+    return p.mul(scalar, .big) catch return error.NonCanonicalScalar;
 }
 
 /// Identity element of a point type (any naming convention).

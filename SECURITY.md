@@ -110,9 +110,10 @@ zig build test --summary all -Doptimize=ReleaseFast
 zig build stark
 ```
 
-Both test modes passed **354/354 tests**, and the STARK demo (Fibonacci over
-Goldilocks) accepted the honest proof while rejecting a tampered proof. The FRI
-tests also pass through the standalone `libs/fri` build.
+Both test modes passed **382/382 tests** (354/354 at the time of the
+ZA-2026-001 fix), and the STARK demo (Fibonacci over Goldilocks) accepted the
+honest proof while rejecting a tampered proof. The FRI tests also pass through
+the standalone `libs/fri` build. The per-library steps sum to **498**.
 
 > History: when the fix above landed, the same commands reported 297/297
 > tests — that was the suite size at the time, not a different result. The
@@ -181,6 +182,59 @@ them. Two caveats survive by design and must not be read away:
 2. `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe` deliberately
    bypass the `F.BITS >= 128` requirement to keep the historical 4-bit on-chain
    format testable. They are toy-only and unsound for remote proofs.
+
+## Advisory ZA-2026-003 — the asserted-precondition class was not fully closed
+
+**Affected:** the `zig-algebra` tree through workspace release 0.4.0, in
+`algebra-traits`, `poly`, `linalg`, `fri`, `curve`, `ntt`, `field`, `rng`,
+`hash` and `pairing`.
+
+**Status:** addressed in the current tree (workspace `0.5.0`). Same caveat as
+ZA-2026-002: not independently audited, and not by itself a production
+security claim.
+
+**Class of defect:** identical to ZA-2026-002 — a precondition expressed as
+`std.debug.assert`, `catch unreachable` or an unbounded search guard, which
+Zig compiles out in `ReleaseFast`/`ReleaseSmall`. ZA-2026-002 covered six
+libraries; an exhaustive sweep of the remaining tree found the same class in
+ten more. Two of these are reachable from **attacker-supplied proof data**:
+
+| Affected entry point | ReleaseFast behaviour before the fix |
+|---------------------|------------------------------------|
+| `zig-fri` `Domain.init`, and `verify`'s `log_final` | `two_adicity - log_n` underflowed, then `1 << shift` with `shift >= 64` (undefined behaviour). `log_final` comes from the proof and was never compared against `two_adicity` |
+| `zig-ntt` all transforms | `2^log_n` came from `std.math.pow(usize, 2, log_n)`, which overflows for `log_n >= 64`; length and twiddle mismatches indexed out of bounds |
+| `zig-poly` `fromCoeffs` / `mul` / `compose` / `pow` / `divRem` / `lagrangeInterpolate` / `vanishingPolynomial` | wrote past the fixed `[max_degree + 1]F` array; a zero divisor made the long-division loop non-terminating |
+| `zig-linalg` `identity` / `trace` / `determinant` / `lu` / `solve` | `identity` on a non-square `Matrix(F, r, c)` wrote `data[i][i]` past the end of the shorter rows |
+| `zig-hash` `Poseidon.initFromSeed` | a failed MDS search left `y[j]` undefined, producing a singular MDS matrix from a seed string |
+| `zig-rng` `Shake256Rng.absorbSeed` / `finalize` | absorbing or re-finalizing after squeezing corrupted the sponge state |
+| `zig-curve` `msm`, `ByteScalar.*`, `group_ops.scalarMul`, `group_poly.evalGroupPoly` | out-of-bounds scalar snapshot; `catch unreachable` on a non-canonical wire scalar aborted the process |
+| `zig-field` `batchAdd/Sub/Mul`, `multiExp`, `Ipa.innerProduct/commit`, `primitiveRootOfUnity`, `rootOfUnity`, `toU64` | out-of-bounds batch writes and multi-exp reads; `two_adicity - log_size` underflowed the shift; `std.math.log2(0)` is undefined; `toU64` truncated silently |
+| `zig-pairing` extension `inv`, `millerLoop` / `millerLoopPair` | divided by a zero norm and returned a fabricated element; an infinity input produced a garbage Fp12 |
+| `zig-algebra-traits` `dotProduct`, `lagrangeInterpolate`, `lagrangeCoefficient` | out-of-bounds reads over the shorter slice / out-of-range index |
+
+**Impact:** the same as ZA-2026-002 — denial of service, undefined behaviour,
+and silently wrong cryptographic output. The `fri` and `ntt` rows are the
+serious ones: both sit on the verification path for untrusted proof data.
+
+**Fix:** typed errors throughout, with the same legacy-total-plus-checked
+pattern (`inv` / `invChecked`, `millerLoop` / `millerLoopChecked`,
+`ByteScalar.add` / `reduce`, `toU64` / `toU64Checked`). `verify` now rejects a
+`log_final` above the two-adicity. Two unreferenced duplicate modules
+(`zig-field/src/ntt.zig`, `zig-field/src/merkle.zig`) were removed so the
+checked implementations are the only ones.
+
+**Residual risk, unchanged by this advisory:**
+
+1. Legacy total wrappers still exist for source compatibility. Calling them is
+   not a validation step.
+2. `SumcheckUnsafe` / `MlePcsUnsafe` / `CommittedMlePcsUnsafe` remain toy-only.
+3. `pow` / `powFast` still `@panic` on a negative runtime exponent, and
+   `BigField.toU64` still truncates above `u64`. Both are caller-side
+   preconditions on a typed integer argument, and both have a checked sibling
+   for the case that matters (`toU64Checked`); neither is reachable from
+   attacker-controlled proof data in this workspace.
+4. A `millerLoop` root or an NTT `root` of the wrong order is still not
+   validated — only buffer shapes and `log_n` are checked.
 
 ## Reporting
 

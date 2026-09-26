@@ -20,6 +20,10 @@ pub const MAX_SEED_LEN: usize = 1 << 20;
 
 pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize, comptime partial_rounds: usize, comptime alpha: u64) type {
     traits.assertField(F);
+    // The sponge needs a rate of at least two (`rate = t - 1`) and a non-empty
+    // capacity. This used to be a `std.debug.assert(t >= 3)` inside `hash`,
+    // which is compiled out in ReleaseFast and then indexed a `[0]` state.
+    if (t < 3) @compileError("Poseidon: width t must be >= 3");
 
     const total_rounds = full_rounds + partial_rounds;
 
@@ -38,8 +42,17 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
             };
         }
 
-        /// Generate round constants and MDS matrix deterministically from a seed string.
-        pub fn initFromSeed(seed: []const u8) !Self {
+        /// Generate round constants and MDS matrix deterministically from a
+        /// seed string.
+        ///
+        /// # Errors
+        /// `error.SeedTooLong` when `seed.len > MAX_SEED_LEN`, and
+        /// `error.NoValidMdsEntry` when the 256-attempt search for an MDS
+        /// entry with `x_i + candidate != 0` for every `i` and distinct from
+        /// the previous `y[j]` finds nothing. That `std.debug.assert(attempt <
+        /// 256)` was compiled out in `ReleaseFast`, where a failed search left
+        /// `y[j]` undefined and produced a singular MDS matrix.
+        pub fn initFromSeed(seed: []const u8) error{ SeedTooLong, NoValidMdsEntry }!Self {
             if (seed.len > MAX_SEED_LEN) return error.SeedTooLong;
             var rc: [total_rounds][t]F = undefined;
             var mds: [t][t]F = undefined;
@@ -81,7 +94,7 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
                     }
                     candidate = candidate.add(F.one());
                 }
-                std.debug.assert(attempt < 256);
+                if (attempt == 256) return error.NoValidMdsEntry;
             }
             for (0..t) |i| {
                 for (0..t) |j| mds[i][j] = F.inv(x[i].add(y[j]));
@@ -162,7 +175,7 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
         /// Hash a message (sponge construction, simplified).
         /// For t=3: rate=2, capacity=1 (2 elements absorbed per block).
         pub fn hash(self: Self, msg: []const F) [2]F {
-            std.debug.assert(t >= 3);
+            comptime std.debug.assert(t >= 3);
             const rate = t - 1;
 
             var state: [t]F = std.mem.zeroes([t]F);

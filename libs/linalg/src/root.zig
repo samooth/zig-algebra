@@ -73,14 +73,7 @@ pub fn Vector(comptime F: type, comptime n: usize) type {
             return true;
         }
 
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("[", .{});
             for (0..n) |i| {
                 if (i > 0) try writer.print(", ", .{});
@@ -103,8 +96,12 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
             return .{ .data = std.mem.zeroes([rows][cols]F) };
         }
 
-        pub fn identity() Self {
-            std.debug.assert(rows == cols);
+        /// # Errors
+        /// `error.NotSquare` when `rows != cols`. The old `std.debug.assert` is
+        /// compiled out in `ReleaseFast`, where `m.data[i][i]` then wrote past
+        /// the end of the shorter rows.
+        pub fn identity() error{NotSquare}!Self {
+            if (rows != cols) return error.NotSquare;
             var m: Self = .zero();
             for (0..rows) |i| m.data[i][i] = F.one();
             return m;
@@ -206,15 +203,21 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
             return result;
         }
 
-        pub fn trace(self: Self) F {
-            std.debug.assert(rows == cols);
+        /// # Errors
+        /// `error.NotSquare` when `rows != cols`; the old `std.debug.assert`
+        /// vanished in `ReleaseFast` and the diagonal read went out of bounds.
+        pub fn trace(self: Self) error{NotSquare}!F {
+            if (rows != cols) return error.NotSquare;
             var sum = F.zero();
             for (0..rows) |i| sum = sum.add(self.data[i][i]);
             return sum;
         }
 
-        pub fn determinant(self: Self) F {
-            std.debug.assert(rows == cols);
+        /// # Errors
+        /// `error.NotSquare` when `rows != cols`; the old `std.debug.assert`
+        /// vanished in `ReleaseFast` and the elimination indexed out of bounds.
+        pub fn determinant(self: Self) error{NotSquare}!F {
+            if (rows != cols) return error.NotSquare;
             if (rows == 1) return self.data[0][0];
             if (rows == 2) {
                 return self.data[0][0].mul(self.data[1][1]).sub(self.data[0][1].mul(self.data[1][0]));
@@ -263,11 +266,15 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
 
         /// LU decomposition: returns (L, U, P) where P * A = L * U
         /// L is lower triangular with unit diagonal, U is upper triangular
-        pub fn lu(self: Self) LU(F, rows) {
-            std.debug.assert(rows == cols);
-            var L = Matrix(F, rows, rows).identity();
+        /// # Errors
+        /// `error.NotSquare} when `rows != cols`; the old `std.debug.assert`
+        /// vanished in `ReleaseFast` and the decomposition indexed out of
+        /// bounds.
+        pub fn lu(self: Self) error{NotSquare}!LU(F, rows) {
+            if (rows != cols) return error.NotSquare;
+            var L = try Matrix(F, rows, rows).identity();
             var U = self;
-            var P = Matrix(F, rows, rows).identity();
+            var P = try Matrix(F, rows, rows).identity();
 
             for (0..rows) |col_idx| {
                 // Find pivot
@@ -316,10 +323,14 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
             return .{ .L = L, .U = U, .P = P };
         }
 
-        /// Solve A * x = b using LU decomposition
-        pub fn solve(self: Self, b: Vector(F, rows)) ?Vector(F, rows) {
-            std.debug.assert(rows == cols);
-            const lu_decomp = self.lu();
+        /// Solve A * x = b using LU decomposition.
+        ///
+        /// # Errors
+        /// `error.NotSquare` when `rows != cols`; the old `std.debug.assert`
+        /// vanished in `ReleaseFast` and the substitution indexed out of
+        /// bounds. A `null` result means the matrix is singular.
+        pub fn solve(self: Self, b: Vector(F, rows)) error{NotSquare}!?Vector(F, rows) {
+            const lu_decomp = try self.lu();
             // Apply permutation: Pb
             const Pb = lu_decomp.P.mulVec(b);
             // Forward substitution: L * y = Pb
@@ -355,14 +366,7 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
             return true;
         }
 
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("[", .{});
             for (0..rows) |i| {
                 if (i > 0) try writer.print(",\n ", .{});
@@ -422,13 +426,24 @@ fn F7Type() type {
         pub fn mul(a: Self, b: Self) Self {
             return fromInt(a.value * b.value);
         }
+        /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+        /// new code that requires invertibility must call `invChecked`.
         pub fn inv(a: Self) Self {
-            std.debug.assert(!a.isZero());
+            if (a.isZero()) return zero();
+            return pow(a, modulus - 2);
+        }
+        pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+            if (a.isZero()) return error.InverseOfZero;
             return pow(a, modulus - 2);
         }
         pub const inverse = inv;
+        /// Legacy total division: `x / 0 == zero()`. Zero is not a quotient;
+        /// new code that requires an invertible divisor must call `divChecked`.
         pub fn div(a: Self, b: Self) Self {
             return mul(a, inv(b));
+        }
+        pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+            return mul(a, try b.invChecked());
         }
         pub fn pow(base: Self, exp: u64) Self {
             var r = one();
@@ -450,7 +465,7 @@ fn F7Type() type {
         pub fn random() Self {
             return fromInt(1);
         }
-        pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
+        pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
             try w.print("{}", .{self.value});
         }
     };
@@ -517,16 +532,16 @@ test "Matrix basic operations" {
     })));
 
     // Trace
-    try std.testing.expect(A.trace().eql(F7.fromInt(5)));
+    try std.testing.expect((try A.trace()).eql(F7.fromInt(5)));
 
     // Determinant
-    try std.testing.expect(A.determinant().eql(F7.fromInt(5))); // 1*4 - 2*3 = 4 - 6 = -2 = 5 (mod 7)
+    try std.testing.expect((try A.determinant()).eql(F7.fromInt(5))); // 1*4 - 2*3 = 4 - 6 = -2 = 5 (mod 7)
 }
 
 test "Matrix identity" {
     const F7 = F7Type();
     const M3 = Matrix(F7, 3, 3);
-    const I = M3.identity();
+    const I = try M3.identity();
     for (0..3) |i| {
         for (0..3) |j| {
             try std.testing.expect(I.data[i][j].eql(if (i == j) F7.one() else F7.zero()));
@@ -565,14 +580,14 @@ test "LU decomposition and solve" {
     const b = V2.fromArray(.{ F7.fromInt(1), F7.fromInt(2) });
 
     // x = A^{-1} b
-    const x = A.solve(b) orelse unreachable;
+    const x = try A.solve(b) orelse unreachable;
 
     // Verify A * x = b
     const Ax = A.mulVec(x);
     try std.testing.expect(Ax.eql(b));
 
     // Also test LU decomposition
-    const lu_decomp = A.lu();
+    const lu_decomp = try A.lu();
     // P * A = L * U
     const PA = lu_decomp.P.mul(2, A);
     const LU_prod = lu_decomp.L.mul(2, lu_decomp.U);
@@ -589,13 +604,13 @@ test "Matrix 3x3 operations" {
     });
 
     // Determinant
-    const det = A.determinant();
+    const det = try A.determinant();
     try std.testing.expect(!det.isZero());
 
     // Solve system
     const V3 = Vector(F7, 3);
     const b = V3.fromArray(.{ F7.fromInt(1), F7.fromInt(0), F7.fromInt(1) });
-    const x = A.solve(b) orelse unreachable;
+    const x = try A.solve(b) orelse unreachable;
     const Ax = A.mulVec(x);
     try std.testing.expect(Ax.eql(b));
 
@@ -604,7 +619,7 @@ test "Matrix 3x3 operations" {
     for (0..3) |i| {
         var e = V3.zero();
         e.data[i] = F7.one();
-        const col = A.solve(e) orelse unreachable;
+        const col = try A.solve(e) orelse unreachable;
         for (0..3) |j| inv.data[j][i] = col.data[j];
     }
     const I = A.mul(3, inv);
@@ -626,8 +641,8 @@ test "Singular matrix detection" {
         .{ F7.fromInt(2), F7.fromInt(4) },
     });
 
-    try std.testing.expect(A.determinant().isZero());
-    try std.testing.expect(A.solve(V2.fromArray(.{ F7.fromInt(1), F7.fromInt(1) })) == null);
+    try std.testing.expect((try A.determinant()).isZero());
+    try std.testing.expect(try A.solve(V2.fromArray(.{ F7.fromInt(1), F7.fromInt(1) })) == null);
 }
 
 test "LU decomposition with partial pivoting" {
@@ -641,7 +656,7 @@ test "LU decomposition with partial pivoting" {
         .{ F7.fromInt(1), F7.fromInt(1), F7.fromInt(0) },
     });
 
-    const lu_decomp = A.lu();
+    const lu_decomp = try A.lu();
     const PA = lu_decomp.P.mul(3, A);
     const LU_prod = lu_decomp.L.mul(3, lu_decomp.U);
     try std.testing.expect(PA.eql(LU_prod));
@@ -649,7 +664,7 @@ test "LU decomposition with partial pivoting" {
     // Test solve with this matrix
     const V3 = Vector(F7, 3);
     const b = V3.fromArray(.{ F7.fromInt(1), F7.fromInt(1), F7.fromInt(1) });
-    const x = A.solve(b) orelse unreachable;
+    const x = try A.solve(b) orelse unreachable;
     const Ax = A.mulVec(x);
     try std.testing.expect(Ax.eql(b));
 }
@@ -674,8 +689,39 @@ test "Matrix with real field (Goldilocks)" {
     })));
 
     // Determinant: 1*4 - 2*3 = -2
-    const det = A.determinant();
+    const det = try A.determinant();
     try std.testing.expect(!det.isZero());
+}
+
+test "Non-square matrices reject identity/trace/determinant/lu/solve" {
+    const F7 = F7Type();
+    const V2 = Vector(F7, 2);
+    const Rect = Matrix(F7, 2, 3);
+    const A = Rect.zero();
+    const v2 = V2.fromArray(.{ F7.fromInt(1), F7.fromInt(2) });
+    try std.testing.expectError(error.NotSquare, Rect.identity());
+    try std.testing.expectError(error.NotSquare, A.trace());
+    try std.testing.expectError(error.NotSquare, A.determinant());
+    try std.testing.expectError(error.NotSquare, A.lu());
+    try std.testing.expectError(error.NotSquare, A.solve(v2));
+
+    // A row-vector shape fails the same way, in the other direction.
+    const Wide = Matrix(F7, 3, 2);
+    try std.testing.expectError(error.NotSquare, Wide.identity());
+}
+
+test "F7 legacy inv/div are total and the checked variants reject zero" {
+    const F7 = F7Type();
+    try std.testing.expect(F7.inv(F7.zero()).isZero());
+    try std.testing.expect(F7.div(F7.one(), F7.zero()).isZero());
+    try std.testing.expectError(error.InverseOfZero, F7.invChecked(F7.zero()));
+    try std.testing.expectError(error.InverseOfZero, F7.divChecked(F7.one(), F7.zero()));
+    // Non-zero inverse is the real inverse.
+    for ([_]u64{ 1, 2, 3, 4, 5, 6 }) |v| {
+        const a = F7.fromInt(v);
+        try std.testing.expect((try a.invChecked()).mul(a).eql(F7.one()));
+        try std.testing.expect((try a.divChecked(F7.fromInt(3))).eql(a.mul(try F7.fromInt(3).invChecked())));
+    }
 }
 
 // Example program
@@ -698,7 +744,7 @@ pub fn main() !void {
         Goldilocks.fromInt(6),
     });
 
-    const x = A.solve(b) orelse {
+    const x = (try A.solve(b)) orelse {
         std.debug.print("No solution\n", .{});
         return;
     };

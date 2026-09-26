@@ -22,11 +22,15 @@ fn ptIdentity(comptime Point: type) Point {
 }
 
 /// Scalar multiplication under either convention.
-fn ptScalarMul(p: anytype, bytes: [32]u8) @TypeOf(p) {
+///
+/// # Errors
+/// `error.NonCanonicalScalar` when the point type is a stdlib pcurve and
+/// `bytes` is `>= n`. This used to be `catch unreachable`.
+fn ptScalarMul(p: anytype, bytes: [32]u8) error{NonCanonicalScalar}!@TypeOf(p) {
     const P = @TypeOf(p);
     if (@hasDecl(P, "scalarMul")) return p.scalarMul(bytes);
     // stdlib pcurves: mul(self, [32]u8, endian)
-    return p.mul(bytes, .big) catch unreachable;
+    return p.mul(bytes, .big) catch return error.NonCanonicalScalar;
 }
 
 /// Evaluate a group-element polynomial at scalar `x` using Horner's method.
@@ -39,12 +43,16 @@ fn ptScalarMul(p: anytype, bytes: [32]u8) @TypeOf(p) {
 ///
 /// `Point` must support `add` and scalar multiplication; `Scalar` is a
 /// stdlib-style scalar whose `toBytes(.big)` yields the 32-byte multiplier.
+///
+/// # Errors
+/// `error.NonCanonicalScalar` when `x.toBytes(.big)` is not a canonical
+/// scalar for a stdlib pcurve `Point`.
 pub fn evalGroupPoly(
     comptime Point: type,
     comptime Scalar: type,
     commitments: []const Point,
     x: Scalar,
-) Point {
+) error{NonCanonicalScalar}!Point {
     if (commitments.len == 0) return ptIdentity(Point);
     if (commitments.len == 1) return commitments[0];
 
@@ -54,21 +62,24 @@ pub fn evalGroupPoly(
     while (i > 0) {
         i -= 1;
         // result = C_i + x * result
-        const x_times_result = ptScalarMul(result, x.toBytes(.big));
+        const x_times_result = try ptScalarMul(result, x.toBytes(.big));
         result = commitments[i].add(x_times_result);
     }
     return result;
 }
 
 /// Evaluate a group-element polynomial and verify against an expected value.
+///
+/// # Errors
+/// `error.NonCanonicalScalar`, as in `evalGroupPoly`.
 pub fn evalGroupPolyVerify(
     comptime Point: type,
     comptime Scalar: type,
     commitments: []const Point,
     x: Scalar,
     expected: Point,
-) bool {
-    const result = evalGroupPoly(Point, Scalar, commitments, x);
+) error{NonCanonicalScalar}!bool {
+    const result = try evalGroupPoly(Point, Scalar, commitments, x);
     return ptEql(Point, result, expected);
 }
 
@@ -92,7 +103,7 @@ test "evalGroupPoly single element" {
 
     const c0 = Secp256k1.basePoint;
     const x = scalarFromU64(42);
-    const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{c0}, x);
+    const result = try evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{c0}, x);
     try testing.expect(ptEql(Secp256k1, result, c0));
 }
 
@@ -105,7 +116,7 @@ test "evalGroupPoly two elements" {
     const x = scalarFromU64(1);
 
     // C_0 + x * C_1 = G + 1*G = 2G
-    const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{ c0, c1 }, x);
+    const result = try evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{ c0, c1 }, x);
     const expected = Secp256k1.basePoint.dbl();
     try testing.expect(ptEql(Secp256k1, result, expected));
 }
@@ -115,6 +126,6 @@ test "evalGroupPoly empty" {
     const Scalar = Secp256k1.scalar.Scalar;
 
     const x = scalarFromU64(42);
-    const result = evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{}, x);
+    const result = try evalGroupPoly(Secp256k1, Scalar, &[_]Secp256k1{}, x);
     try testing.expect(ptEql(Secp256k1, result, Secp256k1.identityElement));
 }

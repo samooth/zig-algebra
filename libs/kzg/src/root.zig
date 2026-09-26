@@ -192,8 +192,11 @@ fn msmG1(
     g1_pows: []const G1,
     scalars: []const Fr,
 ) KzgError!G1Proj {
+    if (g1_pows.len != scalars.len) return KzgError.InvalidPolynomial;
     return zc.msm.msm(G1, G1Proj, Fr, allocator, g1_pows, scalars) catch |err| switch (err) {
         error.OutOfMemory => KzgError.OutOfMemory,
+        // Pre-checked above; kept for exhaustiveness.
+        error.LengthMismatch => KzgError.InvalidPolynomial,
     };
 }
 

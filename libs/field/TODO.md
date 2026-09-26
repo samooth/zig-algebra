@@ -53,8 +53,10 @@ complete but have no declaration, no test and no caller anywhere in `src/`.
 
 ### Transforms and proofs building blocks
 
-- [x] `src/ntt.zig` — in-place NTT/INTT, `precomputeTwiddles` / `freeTwiddles` /
-      `nttWithTwiddles` / `inttWithTwiddles`
+- [x] in-place NTT/INTT, `precomputeTwiddles` / `freeTwiddles` /
+      `nttWithTwiddles` / `inttWithTwiddles` — the generic transform lives in
+      `zig-ntt`; the unreferenced local `src/ntt.zig` duplicate was removed in
+      `0.4.0` and only the M31 `Vec8` entry points remain here
 - [x] `nttVec8M31()` / `inttVec8M31()` — 8-lane SIMD NTT for M31, plus the
       `nttVec8M31Checked` / `inttVec8M31Checked` pair that enforces
       `data.len == 8 * 2^log_n` with `error.InvalidLength`

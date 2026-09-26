@@ -10,6 +10,10 @@
 
 const std = @import("std");
 
+/// Error set of every `ByteScalar` operation that parses caller-supplied
+/// bytes. `error.NotCanonical` means the input was `>= n` (the field order).
+pub const ByteScalarError = error{NotCanonical};
+
 /// Byte-scalar arithmetic over a scalar field.
 ///
 /// `ScalarType` must support:
@@ -45,8 +49,11 @@ pub fn ByteScalar(comptime ScalarType: type, comptime N: usize) type {
         }
 
         /// Validate canonical scalar bytes.
-        pub fn fromBytes(bytes: [N]u8) ![N]u8 {
-            _ = try ScalarType.fromBytes(bytes, .big);
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when `bytes >= n`.
+        pub fn fromBytes(bytes: [N]u8) ByteScalarError![N]u8 {
+            _ = try parseChecked(bytes);
             return bytes;
         }
 
@@ -61,29 +68,49 @@ pub fn ByteScalar(comptime ScalarType: type, comptime N: usize) type {
         }
 
         /// a + b (mod n).
-        pub fn add(a: [N]u8, b: [N]u8) [N]u8 {
-            return parse(a).add(parse(b)).toBytes(.big);
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when either input is `>= n`. The old
+        /// implementation `catch unreachable`d the stdlib
+        /// `fromBytes(...)` rejection, so a wire scalar of `n` or more
+        /// aborted the process. Use `reduce` first, or `fromBytes` to
+        /// validate, when the input is untrusted.
+        pub fn add(a: [N]u8, b: [N]u8) ByteScalarError![N]u8 {
+            return (try parseChecked(a)).add(try parseChecked(b)).toBytes(.big);
         }
 
         /// a - b (mod n).
-        pub fn sub(a: [N]u8, b: [N]u8) [N]u8 {
-            return parse(a).sub(parse(b)).toBytes(.big);
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when either input is `>= n`.
+        pub fn sub(a: [N]u8, b: [N]u8) ByteScalarError![N]u8 {
+            return (try parseChecked(a)).sub(try parseChecked(b)).toBytes(.big);
         }
 
         /// a * b (mod n).
-        pub fn mul(a: [N]u8, b: [N]u8) [N]u8 {
-            return parse(a).mul(parse(b)).toBytes(.big);
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when either input is `>= n`.
+        pub fn mul(a: [N]u8, b: [N]u8) ByteScalarError![N]u8 {
+            return (try parseChecked(a)).mul(try parseChecked(b)).toBytes(.big);
         }
 
         /// a^-1 (mod n); zero has no inverse and maps to zero.
-        pub fn inv(a: [N]u8) [N]u8 {
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when `a >= n`. Zero still maps to zero
+        /// (the legacy total behaviour, and zero is not an inverse).
+        pub fn inv(a: [N]u8) ByteScalarError![N]u8 {
             if (isZero(a)) return zero();
-            return parse(a).invert().toBytes(.big);
+            return (try parseChecked(a)).invert().toBytes(.big);
         }
 
         /// -a (mod n).
-        pub fn neg(a: [N]u8) [N]u8 {
-            return parse(a).neg().toBytes(.big);
+        ///
+        /// # Errors
+        /// `error.NotCanonical` when `a >= n`.
+        pub fn neg(a: [N]u8) ByteScalarError![N]u8 {
+            return (try parseChecked(a)).neg().toBytes(.big);
         }
 
         /// Constant-time equality of two canonical scalars.
@@ -96,8 +123,10 @@ pub fn ByteScalar(comptime ScalarType: type, comptime N: usize) type {
             return std.mem.allEqual(u8, &a, 0);
         }
 
-        fn parse(bytes: [N]u8) ScalarType {
-            return ScalarType.fromBytes(bytes, .big) catch unreachable;
+        /// Parse canonical bytes, mapping the stdlib non-canonical rejection
+        /// onto `error.NotCanonical`. Never panics on caller input.
+        fn parseChecked(bytes: [N]u8) ByteScalarError!ScalarType {
+            return ScalarType.fromBytes(bytes, .big) catch return error.NotCanonical;
         }
     };
 }
@@ -108,6 +137,33 @@ pub fn ByteScalar(comptime ScalarType: type, comptime N: usize) type {
 
 const testing = std.testing;
 
+test "ByteScalar rejects non-canonical input instead of panicking" {
+    const SecpScalar = std.crypto.ecc.Secp256k1.scalar.Scalar;
+    const BS = ByteScalar(SecpScalar, 32);
+
+    // The field order itself is not a canonical scalar: every operation used
+    // to `catch unreachable` this stdlib rejection.
+    // secp256k1 group order, big-endian.
+    const order = [32]u8{
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+        0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B,
+        0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41,
+    };
+    try testing.expectError(error.NotCanonical, BS.fromBytes(order));
+    try testing.expectError(error.NotCanonical, BS.add(order, BS.one()));
+    try testing.expectError(error.NotCanonical, BS.sub(order, BS.one()));
+    try testing.expectError(error.NotCanonical, BS.mul(order, BS.one()));
+    try testing.expectError(error.NotCanonical, BS.inv(order));
+    try testing.expectError(error.NotCanonical, BS.neg(order));
+    try testing.expectError(error.NotCanonical, BS.add(BS.one(), order));
+
+    // `reduce` is the total entry point for untrusted bytes.
+    const reduced = BS.reduce(order);
+    try testing.expect(BS.eql(reduced, BS.zero()));
+    _ = try BS.add(reduced, BS.one());
+}
+
 test "ByteScalar basic operations" {
     const SecpScalar = std.crypto.ecc.Secp256k1.scalar.Scalar;
     const BS = ByteScalar(SecpScalar, 32);
@@ -116,17 +172,17 @@ test "ByteScalar basic operations" {
     const b = BS.fromInt(3);
 
     // Addition
-    const sum = BS.add(a, b);
+    const sum = try BS.add(a, b);
     const expected_sum = BS.fromInt(8);
     try testing.expect(BS.eql(sum, expected_sum));
 
     // Subtraction
-    const diff = BS.sub(a, b);
+    const diff = try BS.sub(a, b);
     const expected_diff = BS.fromInt(2);
     try testing.expect(BS.eql(diff, expected_diff));
 
     // Multiplication
-    const prod = BS.mul(a, b);
+    const prod = try BS.mul(a, b);
     const expected_prod = BS.fromInt(15);
     try testing.expect(BS.eql(prod, expected_prod));
 
@@ -140,8 +196,8 @@ test "ByteScalar inverse" {
     const BS = ByteScalar(SecpScalar, 32);
 
     const a = BS.fromInt(7);
-    const a_inv = BS.inv(a);
-    const product = BS.mul(a, a_inv);
+    const a_inv = try BS.inv(a);
+    const product = try BS.mul(a, a_inv);
     try testing.expect(BS.eql(product, BS.one()));
 }
 
@@ -150,7 +206,7 @@ test "ByteScalar zero inverse" {
     const BS = ByteScalar(SecpScalar, 32);
 
     const z = BS.zero();
-    const z_inv = BS.inv(z);
+    const z_inv = try BS.inv(z);
     try testing.expect(BS.eql(z_inv, BS.zero()));
 }
 
@@ -159,7 +215,7 @@ test "ByteScalar negation" {
     const BS = ByteScalar(SecpScalar, 32);
 
     const a = BS.fromInt(42);
-    const neg_a = BS.neg(a);
-    const sum = BS.add(a, neg_a);
+    const neg_a = try BS.neg(a);
+    const sum = try BS.add(a, neg_a);
     try testing.expect(BS.eql(sum, BS.zero()));
 }

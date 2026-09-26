@@ -664,14 +664,7 @@ pub fn BigInt(comptime max_limbs: usize) type {
         }
 
         /// Standard `std.fmt` formatting.
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             var gpa = std.heap.DebugAllocator(.{}){};
             defer _ = gpa.deinit();
             const s = try self.toString(gpa.allocator());

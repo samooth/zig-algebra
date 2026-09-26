@@ -5,8 +5,49 @@ All notable changes to `zig-field` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Library version: **0.3.0** (`libs/field/build.zig.zon`). The workspace version
-lives in the root `build.zig.zon` (`0.4.0`).
+Library version: **0.4.0** (`libs/field/build.zig.zon`). The workspace version
+lives in the root `build.zig.zon` (`0.5.0`).
+
+---
+
+## [0.4.0] — 2026-09-27
+
+### Security
+
+- `batchAdd` / `batchSub` / `batchMul` and `multiExp` return
+  `error{LengthMismatch}`. The `std.debug.assert` that guarded the slice
+  lengths is compiled out in `ReleaseFast`, where the three-way batch loop
+  wrote past `out` and the `multiExp` window loop read past `exponents`.
+  `multiExp`'s `window_bits` range is a comptime parameter, so it is now a
+  `@compileError` rather than a runtime assert.
+- `Ipa.innerProduct` and `Ipa.commit` return `error.LengthMismatch`; the
+  asserts vanished in `ReleaseFast` and the two-slice loops read out of bounds.
+- `primitiveRootOfUnity` returns `error.OrderTooLarge` and `rootOfUnity` adds
+  `error.NotPowerOfTwo`, on `SmallField`, `BigField`, `QuadraticExtension` and
+  `CubicExtension`. The old asserts vanished in `ReleaseFast`, where
+  `two_adicity - log_size` underflowed the exponent shift and
+  `std.math.log2(0)` is undefined.
+
+### Added
+
+- `BigField.toU64Checked` (`error.Overflow`). `toU64` keeps truncating, which
+  is a source-compatible legacy result and never a validation step.
+
+### Removed
+
+- `src/ntt.zig` and `src/merkle.zig`, both unreferenced duplicates (of
+  `zig-ntt`'s transform and of `MerkleTree` in `lib.zig` respectively). Their
+  asserts were compiled out in `ReleaseFast` and the checked implementations
+  are the exported ones. `zig-ntt` and `lib.zig` are now the only
+  implementations.
+
+### Fixed
+
+- The `format` methods on the field and extension types used the pre-0.16
+  signature `(self, comptime fmt, options: std.fmt.FormatOptions, writer)`.
+  Zig 0.16 only selects a `format` method for `{f}`, so all of them were dead
+  and `{}` printed the default struct dump. They now use
+  `fn (self, writer: *std.Io.Writer) std.Io.Writer.Error!void`.
 
 ---
 

@@ -77,13 +77,23 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+    /// new code that requires invertibility must call `invChecked`.
     pub fn inv(a: Self) Self {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return zero();
+        return pow(a, modulus - 2);
+    }
+    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+        if (a.isZero()) return error.InverseOfZero;
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
+    /// Legacy total division: `x / 0 == zero()`.
     pub fn div(a: Self, b: Self) Self {
         return mul(a, inv(b));
+    }
+    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+        return mul(a, try b.invChecked());
     }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
@@ -146,9 +156,9 @@ test "ChaCha20Rng randomBytes" {
 
 test "Shake256Rng deterministic" {
     var rng1 = Shake256Rng.init();
-    rng1.absorbSeed("test seed");
+    try rng1.absorbSeed("test seed");
     var rng2 = Shake256Rng.init();
-    rng2.absorbSeed("test seed");
+    try rng2.absorbSeed("test seed");
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -164,9 +174,9 @@ test "Shake256Rng deterministic" {
 
 test "Shake256Rng different seeds" {
     var rng1 = Shake256Rng.init();
-    rng1.absorbSeed("seed A");
+    try rng1.absorbSeed("seed A");
     var rng2 = Shake256Rng.init();
-    rng2.absorbSeed("seed B");
+    try rng2.absorbSeed("seed B");
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -182,14 +192,14 @@ test "Shake256Rng different seeds" {
 
 test "Shake256Rng squeezeInto allocation-free" {
     var shake1 = Shake256Rng.init();
-    shake1.absorbSeed("fixed");
+    try shake1.absorbSeed("fixed");
     var out: [48]u8 = undefined;
-    shake1.squeezeInto(&out);
+    try shake1.squeezeInto(&out);
 
     var shake2 = Shake256Rng.init();
-    shake2.absorbSeed("fixed");
+    try shake2.absorbSeed("fixed");
     var out2: [48]u8 = undefined;
-    shake2.squeezeInto(&out2);
+    try shake2.squeezeInto(&out2);
 
     try std.testing.expectEqualSlices(u8, &out, &out2);
 }
@@ -252,4 +262,24 @@ test "rejection sampling fails after a bounded number of attempts" {
     var rejecting = RejectingRng{};
     try std.testing.expectError(error.RejectionSamplingFailed, randomU64Bounded(RejectingRng, &rejecting, 100));
     try std.testing.expectError(error.RejectionSamplingFailed, randomFieldElement(F7, RejectingRng, &rejecting));
+}
+
+test "Shake256 rejects absorb/finalize after finalization" {
+    var shake = Shake256Rng.init();
+    try shake.absorbSeed("seed");
+    try shake.finalize();
+
+    // The old asserts on `!self.finalized` were compiled out in ReleaseFast,
+    // where absorbing or re-finalizing corrupted the sponge state.
+    try std.testing.expectError(error.AlreadyFinalized, shake.absorbSeed("late"));
+    try std.testing.expectError(error.AlreadyFinalized, shake.finalize());
+}
+
+test "F7 legacy inv/div are total and the checked variants reject zero" {
+    try std.testing.expect(F7.inv(F7.zero()).isZero());
+    try std.testing.expect(F7.div(F7.one(), F7.zero()).isZero());
+    try std.testing.expectError(error.InverseOfZero, F7.invChecked(F7.zero()));
+    try std.testing.expectError(error.InverseOfZero, F7.divChecked(F7.one(), F7.zero()));
+    const a = F7.fromInt(3);
+    try std.testing.expect((try a.invChecked()).mul(a).eql(F7.one()));
 }

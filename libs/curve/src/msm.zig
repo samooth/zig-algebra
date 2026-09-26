@@ -26,6 +26,12 @@ pub fn windowSize(n: usize) usize {
     return std.math.clamp(c, 3, 8);
 }
 
+/// # Errors
+/// - `error.LengthMismatch` when `points.len != scalars.len`. The old
+///   `std.debug.assert` is compiled out in `ReleaseFast`, where the
+///   `for (scalars, 0..n)` snapshot loop then read past the end of the
+///   shorter slice.
+/// - `error.OutOfMemory` from the bucket/point allocations.
 pub fn msm(
     comptime Aff: type,
     comptime Proj: type,
@@ -33,8 +39,8 @@ pub fn msm(
     allocator: std.mem.Allocator,
     points: []const Aff,
     scalars: []const Scalar,
-) !Proj {
-    std.debug.assert(points.len == scalars.len);
+) error{ LengthMismatch, OutOfMemory }!Proj {
+    if (points.len != scalars.len) return error.LengthMismatch;
     const n = points.len;
     if (n == 0) return Proj.zero();
 
@@ -161,6 +167,23 @@ test "msm: zero scalar contributes nothing" {
     const r = try msm(bn254.G1, G1P, Fr, stdt.allocator, &pts, &.{ Fr.zero(), Fr.fromInt(9) });
     const ref = toProj(G1P, pts[1]).scalarMul(@as(u64, 9));
     try stdt.expect(r.eql(ref));
+}
+
+test "msm: rejects a length mismatch instead of reading out of bounds" {
+    const bn254 = @import("bn254.zig");
+    const Fr = bn254.Fr;
+    const pts = [_]bn254.G1{ bn254.G1_generator, bn254.G1_generator.scalarMul(3) };
+    const scs = [_]Fr{Fr.fromInt(7)};
+    try stdt.expectError(
+        error.LengthMismatch,
+        msm(bn254.G1, bn254.G1Projective, Fr, stdt.allocator, &pts, &scs),
+    );
+    const one_pt = [_]bn254.G1{pts[0]};
+    const two_sc = [_]Fr{ Fr.fromInt(7), Fr.fromInt(9) };
+    try stdt.expectError(
+        error.LengthMismatch,
+        msm(bn254.G1, bn254.G1Projective, Fr, stdt.allocator, &one_pt, &two_sc),
+    );
 }
 
 test "msm: window size heuristic" {

@@ -190,8 +190,19 @@ pub const Fp12Direct = struct {
 
     /// Multiplicative inverse: a^(p^12 − 2) via SA&M over precomputed limbs.
     /// Non-CT (public data only).
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+    /// new code that requires invertibility must call `invChecked`.
     pub fn inv(a: Fp12Direct) Fp12Direct {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return ZERO;
+        return a.powByLimbs(&P12_MINUS_2_LIMBS);
+    }
+
+    /// # Errors
+    /// `error.InverseOfZero` when `a` is the zero element. The old
+    /// `std.debug.assert` was compiled out in `ReleaseFast`, where
+    /// `a^(p^12 - 2)` on zero returned zero without the caller noticing.
+    pub fn invChecked(a: Fp12Direct) error{InverseOfZero}!Fp12Direct {
+        if (a.isZero()) return error.InverseOfZero;
         return a.powByLimbs(&P12_MINUS_2_LIMBS);
     }
 };
@@ -295,8 +306,27 @@ fn lineDen(px: Fp, tx: Fp2) VertCoeffs {
 ///
 /// Convention (strict divisor formalism): doubling contributes
 /// ℓ_{T,T}(P)/v_{2T}(P); addition contributes ℓ_{T,Q}(P)/v_{T+Q}(P).
-pub fn millerLoopPair(p: G1Point, q: G2Point) struct { num: Fp12Direct, den: Fp12Direct } {
-    std.debug.assert(!p.infinity and !q.infinity);
+pub const NumDenDirect = struct {
+    num: Fp12Direct,
+    den: Fp12Direct,
+
+    pub fn init() NumDenDirect {
+        return .{ .num = Fp12Direct.ONE, .den = Fp12Direct.ONE };
+    }
+};
+///
+/// `p` and `q` must not be the point at infinity. The guard used to be a
+/// `std.debug.assert`, compiled out in `ReleaseFast`, where an infinity input
+/// then produced a garbage `Fp12Direct`; use `millerLoopPairChecked` when the
+/// inputs are untrusted.
+pub fn millerLoopPair(p: G1Point, q: G2Point) NumDenDirect {
+    return millerLoopPairChecked(p, q) catch NumDenDirect.init();
+}
+
+/// # Errors
+/// `error.PointAtInfinity` when either input is the point at infinity.
+pub fn millerLoopPairChecked(p: G1Point, q: G2Point) error{PointAtInfinity}!NumDenDirect {
+    if (p.infinity or q.infinity) return error.PointAtInfinity;
     var gnum = Fp12Direct.ONE;
     var gden = Fp12Direct.ONE;
     var t = TwistAffine{ .x = q.x, .y = q.y };

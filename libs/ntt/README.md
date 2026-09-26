@@ -46,13 +46,13 @@ pub fn main() !void {
     const root = F.primitiveRootOfUnity(log_n);
 
     // Forward NTT, then inverse: the round trip restores `data`.
-    zntt.ntt(F, &data, log_n, root);
+    try zntt.ntt(F, &data, log_n, root);
     const transformed = data;
-    zntt.intt(F, &data, log_n, root);
+    try zntt.intt(F, &data, log_n, root);
 
     // Bit-reversal takes the FIELD TYPE and the slice; it derives log_n itself.
     var rev = [_]F{ F.fromInt(0), F.fromInt(1), F.fromInt(2), F.fromInt(3) };
-    zntt.bitReverse(F, &rev);                 // -> { 0, 2, 1, 3 }
+    try zntt.bitReverse(F, &rev);                 // -> { 0, 2, 1, 3 }
 
     // With precomputed twiddles (faster for repeated transforms).
     var gpa = std.heap.DebugAllocator(.{}){};
@@ -62,8 +62,8 @@ pub fn main() !void {
     defer zntt.freeTwiddles(F, twiddles, allocator);
 
     var d2 = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3), F.fromInt(4) };
-    zntt.nttWithTwiddles(F, &d2, log_n, twiddles);   // same output as ntt()
-    zntt.inttWithTwiddles(F, &d2, log_n, twiddles);  // inverse, includes 1/n
+    try zntt.nttWithTwiddles(F, &d2, log_n, twiddles);   // same output as ntt()
+    try zntt.inttWithTwiddles(F, &d2, log_n, twiddles);  // inverse, includes 1/n
 
     std.debug.print("ntt={any} roundtrip_ok={} twiddle_lens={any}\n", .{
         transformed, data[0].eql(F.fromInt(1)), [_]usize{ twiddles[0].len, twiddles[1].len } });
@@ -76,13 +76,13 @@ Every function takes the field type as the first `comptime` argument.
 
 | Function | Signature | Notes |
 |----------|-----------|-------|
-| `ntt` | `(comptime F, data: []F, log_n: usize, root: F) void` | in place; asserts `data.len == 2^log_n` |
-| `intt` | `(comptime F, data: []F, log_n: usize, root: F) void` | in place; multiplies by `n⁻¹` |
-| `bitReverse` | `(comptime F, data: []F) void` | **no `log_n` argument** — derived from `data.len` |
-| `precomputeTwiddles` | `(comptime F, log_n: usize, root: F, allocator) ![]const []const F` | `log_n` slices, caller frees |
+| `ntt` | `(comptime F, data: []F, log_n: usize, root: F) error{LogTooLarge, LengthMismatch, InvalidLength}!void` | in place; `error.LengthMismatch` when `data.len != 2^log_n` |
+| `intt` | `(comptime F, data: []F, log_n: usize, root: F) error{LogTooLarge, LengthMismatch, InvalidLength}!void` | in place; multiplies by `n⁻¹` |
+| `bitReverse` | `(comptime F, data: []F) error{InvalidLength}!void` | **no `log_n` argument** — derived from `data.len`; `error.InvalidLength` when it is zero or not a power of two |
+| `precomputeTwiddles` | `(comptime F, log_n: usize, root: F, allocator) error{LogTooLarge, OutOfMemory}![]const []const F` | `log_n` slices, caller frees |
 | `freeTwiddles` | `(comptime F, twiddles: []const []const F, allocator) void` | frees the slices and the outer array |
-| `nttWithTwiddles` | `(comptime F, data: []F, log_n: usize, twiddles: []const []const F) void` | asserts `twiddles.len == log_n` |
-| `inttWithTwiddles` | `(comptime F, data: []F, log_n: usize, twiddles: []const []const F) void` | asserts `twiddles.len == log_n` |
+| `nttWithTwiddles` | `(comptime F, data: []F, log_n: usize, twiddles: []const []const F) error{LogTooLarge, LengthMismatch, InvalidTwiddles, InvalidLength}!void` | `error.InvalidTwiddles` when the table or a stage has the wrong length |
+| `inttWithTwiddles` | `(comptime F, data: []F, log_n: usize, twiddles: []const []const F) error{LogTooLarge, LengthMismatch, InvalidTwiddles, InvalidLength}!void` | `error.InvalidTwiddles` when the table or a stage has the wrong length |
 
 The field must satisfy the `Field` trait (checked with `zig-algebra-traits`), and
 `root` must be a primitive `2^log_n`-th root of unity, which is what
@@ -125,7 +125,7 @@ the usable `log_n` is bounded by it:
 
 So "works with M31, BabyBear, BN254, BLS12-381" is true only in the sense that
 they *compile*: BN254_Fp, BLS12_381_Fp, M31 and M61 only admit `log_n <= 1`
-(2-point transforms), and asking for `log_n = 2` on them panics the assertion in
+(2-point transforms), and asking for `log_n = 2` on them aborts the assertion in
 `roots.primitiveRootOfUnity`. For a 256+-point transform you need Goldilocks,
 BabyBear, KoalaBear, Pallas/Vesta or StarkNet.
 
@@ -134,15 +134,25 @@ BabyBear, KoalaBear, Pallas/Vesta or StarkNet.
 `zig-field` ships an 8-lane SIMD NTT for M31 as
 `zf.nttVec8M31(data, log_n, root)` and `zf.inttVec8M31(data, log_n, root)`, using
 `M31.Vec8` (`@Vector(8, u64)`) butterflies to run eight transforms in parallel.
-It lives in `zig-field/src/ntt.zig`, not here, and it inherits M31's
-`two_adicity = 1` limit.
+It lives in `zig-field/src/lib.zig` (`Vec8NttM31`), not here, and it inherits
+M31's `two_adicity = 1` limit. The checked variants
+`zf.nttVec8M31Checked` / `zf.inttVec8M31Checked` return `error.InvalidLength`
+for a mismatched buffer; the plain ones leave it untouched.
 
 ## Known limitations
 
-- The `std.debug.assert` on `data.len == 2^log_n` and on `log_size <=
-  F.two_adicity` are **runtime asserts**: they abort in Debug/ReleaseSafe and
-  vanish in ReleaseFast. A wrong `log_n` in a release build is undefined
-  behaviour (out-of-bounds access), not a clean error.
+- The length and shape contracts of `ntt`, `intt`, `bitReverse` and the twiddle
+  variants are typed errors, not asserts. Before 0.2.0 they were
+  `std.debug.assert`s, which abort in Debug/ReleaseSafe and vanish in
+  ReleaseFast, where a wrong `log_n` was out-of-bounds access.
+- `2^log_n` is computed with an explicit `error.LogTooLarge` for
+  `log_n >= @bitSizeOf(usize)`; the old `std.math.pow(usize, 2, log_n)`
+  overflowed there.
+- `root` is *not* validated: passing a root of the wrong order produces a wrong
+  transform rather than an error. Only the buffer shape is checked.
+- `F.primitiveRootOfUnity(log_size)` in `zig-field` still debug-asserts
+  `log_size <= F.two_adicity`, so asking a two-adicity-1 field (M31, M61,
+  BN254_Fp, BLS12_381_Fp) for `log_n = 2` aborts inside `zig-field`, not here.
 - No radix-4/8 path and no Bluestein fallback: lengths must be powers of two.
 - `precomputeTwiddles` allocates `log_n` slices (one per stage), so it is not
   optimal for a single one-shot transform; use `ntt` for that.
@@ -171,7 +181,7 @@ It lives in `zig-field/src/ntt.zig`, not here, and it inherits M31's
 cd libs/ntt && zig build test
 ```
 
-11 tests: bit-reversal involution, bit-reversal for `n = 4`, `ntt`/`intt`
+15 tests: bit-reversal involution, bit-reversal for `n = 4`, `ntt`/`intt`
 round-trips for M31, BabyBear, Goldilocks, BN254_Fp and BLS12_381_Fp, the
 twiddled round trip, cyclic convolution via the transform, twiddle
 precomputation/free with per-entry verification, and `nttWithTwiddles` matching

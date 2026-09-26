@@ -13,8 +13,8 @@ test "IPA basic prove and verify" {
 
     const a = [_]zf.M31{ zf.M31.fromInt(1), zf.M31.fromInt(2), zf.M31.fromInt(3), zf.M31.fromInt(4) };
     const b = [_]zf.M31{ zf.M31.fromInt(5), zf.M31.fromInt(6), zf.M31.fromInt(7), zf.M31.fromInt(8) };
-    const c = Ipa.innerProduct(&a, &b);
-    const commitment = ipa.commit(&a, &b, c);
+    const c = try Ipa.innerProduct(&a, &b);
+    const commitment = try ipa.commit(&a, &b, c);
     var proof = try ipa.prove(std.testing.allocator, &a, &b);
     defer proof.deinit(std.testing.allocator);
 
@@ -27,8 +27,8 @@ test "IPA verify fails with wrong commitment" {
 
     const a = [_]zf.M31{ zf.M31.fromInt(1), zf.M31.fromInt(2), zf.M31.fromInt(3), zf.M31.fromInt(4) };
     const b = [_]zf.M31{ zf.M31.fromInt(5), zf.M31.fromInt(6), zf.M31.fromInt(7), zf.M31.fromInt(8) };
-    const c = Ipa.innerProduct(&a, &b);
-    const commitment = ipa.commit(&a, &b, c);
+    const c = try Ipa.innerProduct(&a, &b);
+    const commitment = try ipa.commit(&a, &b, c);
     var proof = try ipa.prove(std.testing.allocator, &a, &b);
     defer proof.deinit(std.testing.allocator);
 

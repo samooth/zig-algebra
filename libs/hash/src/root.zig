@@ -90,13 +90,23 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+    /// new code that requires invertibility must call `invChecked`.
     pub fn inv(a: Self) Self {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return zero();
+        return pow(a, modulus - 2);
+    }
+    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+        if (a.isZero()) return error.InverseOfZero;
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
+    /// Legacy total division: `x / 0 == zero()`.
     pub fn div(a: Self, b: Self) Self {
         return mul(a, inv(b));
+    }
+    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+        return mul(a, try b.invChecked());
     }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
@@ -310,4 +320,13 @@ test "Blake3 empty message" {
     const out = blake3.hash("");
     const out2 = blake3.hash("");
     try std.testing.expectEqualSlices(u8, &out, &out2);
+}
+
+test "F7 legacy inv/div are total and the checked variants reject zero" {
+    try std.testing.expect(F7.inv(F7.zero()).isZero());
+    try std.testing.expect(F7.div(F7.one(), F7.zero()).isZero());
+    try std.testing.expectError(error.InverseOfZero, F7.invChecked(F7.zero()));
+    try std.testing.expectError(error.InverseOfZero, F7.divChecked(F7.one(), F7.zero()));
+    const a = F7.fromInt(3);
+    try std.testing.expect((try a.invChecked()).mul(a).eql(F7.one()));
 }

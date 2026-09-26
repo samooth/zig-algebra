@@ -96,7 +96,7 @@ test "Roots of unity" {
     // Slow path (t > 1) is too slow in Debug mode
     var t: usize = 0;
     while (t <= 1) : (t += 1) {
-        const w = zf.CM31.primitiveRootOfUnity(t);
+        const w = try zf.CM31.primitiveRootOfUnity(t);
         try std.testing.expect(w.pow(@as(u128, 1) << @intCast(t)).isOne());
         if (t > 0) {
             try std.testing.expect(!w.pow(@as(u128, 1) << @intCast(t - 1)).isOne());
@@ -142,17 +142,17 @@ test "SmallField batchAdd/batchSub/batchMul" {
         b[i] = F.random(rnd);
     }
 
-    F.batchAdd(&a, &b, &out);
+    try F.batchAdd(&a, &b, &out);
     for (0..10) |i| {
         try std.testing.expect(out[i].eq(a[i].add(b[i])));
     }
 
-    F.batchSub(&a, &b, &out);
+    try F.batchSub(&a, &b, &out);
     for (0..10) |i| {
         try std.testing.expect(out[i].eq(a[i].sub(b[i])));
     }
 
-    F.batchMul(&a, &b, &out);
+    try F.batchMul(&a, &b, &out);
     for (0..10) |i| {
         try std.testing.expect(out[i].eq(a[i].mul(b[i])));
     }
@@ -171,17 +171,17 @@ test "BigField batchAdd/batchSub/batchMul" {
         b[i] = F.random(rnd);
     }
 
-    F.batchAdd(&a, &b, &out);
+    try F.batchAdd(&a, &b, &out);
     for (0..5) |i| {
         try std.testing.expect(out[i].eq(a[i].add(b[i])));
     }
 
-    F.batchSub(&a, &b, &out);
+    try F.batchSub(&a, &b, &out);
     for (0..5) |i| {
         try std.testing.expect(out[i].eq(a[i].sub(b[i])));
     }
 
-    F.batchMul(&a, &b, &out);
+    try F.batchMul(&a, &b, &out);
     for (0..5) |i| {
         try std.testing.expect(out[i].eq(a[i].mul(b[i])));
     }

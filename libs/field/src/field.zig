@@ -294,24 +294,36 @@ fn SmallField(comptime modulus: comptime_int) type {
 
         /// Batch addition: out[i] = a[i] + b[i] for all i.
         /// Panics if slices have different lengths.
-        pub fn batchAdd(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchAdd(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.add(y);
             }
         }
 
         /// Batch subtraction: out[i] = a[i] - b[i] for all i.
-        pub fn batchSub(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchSub(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.sub(y);
             }
         }
 
         /// Batch multiplication: out[i] = a[i] * b[i] for all i.
-        pub fn batchMul(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchMul(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.mul(y);
             }
@@ -451,13 +463,19 @@ fn SmallField(comptime modulus: comptime_int) type {
 
         /// Multi-scalar exponentiation: product(bases[i]^exponents[i]).
         /// Windowed Pippenger-style algorithm. ~10-50x faster than n individual pow calls.
+        ///
+        /// # Errors
+        /// `error.LengthMismatch` when `bases.len != exponents.len`. The old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// window loop then read past the end of `exponents`. `window_bits` is
+        /// a comptime parameter, so its 1..8 range is a compile-time invariant.
         pub fn multiExp(
             bases: []const Self,
             exponents: []const u64,
             comptime window_bits: u4,
-        ) Self {
-            std.debug.assert(bases.len == exponents.len);
-            std.debug.assert(window_bits >= 1 and window_bits <= 8);
+        ) error{LengthMismatch}!Self {
+            if (window_bits < 1 or window_bits > 8) @compileError("multiExp: window_bits must be in 1..8");
+            if (bases.len != exponents.len) return error.LengthMismatch;
             const window_size = @as(usize, 1) << window_bits;
             const mask = window_size - 1;
             const num_windows = (BITS + window_bits - 1) / window_bits;
@@ -603,11 +621,19 @@ fn SmallField(comptime modulus: comptime_int) type {
         }
 
         /// Primitive `2^log_size`-th root of unity.
-        pub fn primitiveRootOfUnity(log_size: usize) Self {
+        ///
+        /// # Errors
+        /// `error.OrderTooLarge` when `log_size > two_adicity`.
+        pub fn primitiveRootOfUnity(log_size: usize) error{OrderTooLarge}!Self {
             return roots.primitiveRootOfUnity(Self, log_size);
         }
 
-        pub fn rootOfUnity(order: usize) Self {
+        /// `order`-th root of unity, `order` a power of two.
+        ///
+        /// # Errors
+        /// `error.NotPowerOfTwo` when `order` is zero or not a power of two,
+        /// `error.OrderTooLarge` when it exceeds `two_adicity`.
+        pub fn rootOfUnity(order: usize) error{ NotPowerOfTwo, OrderTooLarge }!Self {
             return roots.rootOfUnity(Self, order);
         }
 
@@ -641,9 +667,7 @@ fn SmallField(comptime modulus: comptime_int) type {
         }
 
         /// Format for debugging.
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("{}", .{self.value});
         }
 
@@ -945,10 +969,20 @@ fn BigField(comptime modulus: comptime_int) type {
         pub fn toU512(self: Self) u512 {
             return limbsToU512(Mont.fromMontgomery(self.limbs));
         }
+        /// Legacy truncating accessor: `@truncate` on a value above
+        /// `maxInt(u64)` yields a wrong scalar (the old `std.debug.assert` is
+        /// compiled out in `ReleaseFast`). Use `toU64Checked` when the fit is
+        /// a precondition.
         pub fn toU64(self: Self) u64 {
+            return @truncate(self.toU512());
+        }
+
+        /// # Errors
+        /// `error.Overflow` when the canonical value does not fit in `u64`.
+        pub fn toU64Checked(self: Self) error{Overflow}!u64 {
             const val = self.toU512();
-            std.debug.assert(val <= std.math.maxInt(u64));
-            return @truncate(val);
+            if (val > std.math.maxInt(u64)) return error.Overflow;
+            return @intCast(val);
         }
         pub fn toInt(self: Self) u512 {
             return self.toU512();
@@ -1004,24 +1038,36 @@ fn BigField(comptime modulus: comptime_int) type {
         }
         /// Batch addition: out[i] = a[i] + b[i] for all i.
         /// Panics if slices have different lengths.
-        pub fn batchAdd(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchAdd(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.add(y);
             }
         }
 
         /// Batch subtraction: out[i] = a[i] - b[i] for all i.
-        pub fn batchSub(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchSub(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.sub(y);
             }
         }
 
         /// Batch multiplication: out[i] = a[i] * b[i] for all i.
-        pub fn batchMul(a: []const Self, b: []const Self, out: []Self) void {
-            std.debug.assert(a.len == b.len and b.len == out.len);
+        /// # Errors
+        /// `error.LengthMismatch` when the three slices differ in length. The
+        /// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// three-way `for` loop then wrote outside `out`.
+        pub fn batchMul(a: []const Self, b: []const Self, out: []Self) error{LengthMismatch}!void {
+            if (a.len != b.len or b.len != out.len) return error.LengthMismatch;
             for (a, b, out) |x, y, *r| {
                 r.* = x.mul(y);
             }
@@ -1110,13 +1156,19 @@ fn BigField(comptime modulus: comptime_int) type {
 
         /// Multi-scalar exponentiation: product(bases[i]^exponents[i]).
         /// Windowed Pippenger-style algorithm. ~10-50x faster than n individual pow calls.
+        ///
+        /// # Errors
+        /// `error.LengthMismatch` when `bases.len != exponents.len`; the old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// window loop then read past the end of `exponents`. `window_bits` is
+        /// a comptime parameter, so its 1..8 range is a compile-time invariant.
         pub fn multiExp(
             bases: []const Self,
             exponents: []const u512,
             comptime window_bits: u4,
-        ) Self {
-            std.debug.assert(bases.len == exponents.len);
-            std.debug.assert(window_bits >= 1 and window_bits <= 8);
+        ) error{LengthMismatch}!Self {
+            if (window_bits < 1 or window_bits > 8) @compileError("multiExp: window_bits must be in 1..8");
+            if (bases.len != exponents.len) return error.LengthMismatch;
             const window_size = @as(usize, 1) << window_bits;
             const mask: u512 = @as(u512, window_size - 1);
             const num_windows = (BITS + window_bits - 1) / window_bits;
@@ -1271,14 +1323,20 @@ fn BigField(comptime modulus: comptime_int) type {
         pub fn sqrt(self: Self) ?Self {
             return roots.sqrt(Self, self);
         }
-
         /// Primitive `2^log_size`-th root of unity.
-        pub fn primitiveRootOfUnity(log_size: usize) Self {
+        ///
+        /// # Errors
+        /// `error.OrderTooLarge` when `log_size > two_adicity`.
+        pub fn primitiveRootOfUnity(log_size: usize) error{OrderTooLarge}!Self {
             return roots.primitiveRootOfUnity(Self, log_size);
         }
 
-        /// `order`-th root of unity (`order` a power of two).
-        pub fn rootOfUnity(order: usize) Self {
+        /// `order`-th root of unity, `order` a power of two.
+        ///
+        /// # Errors
+        /// `error.NotPowerOfTwo` when `order` is zero or not a power of two,
+        /// `error.OrderTooLarge` when it exceeds `two_adicity`.
+        pub fn rootOfUnity(order: usize) error{ NotPowerOfTwo, OrderTooLarge }!Self {
             return roots.rootOfUnity(Self, order);
         }
 
@@ -1315,9 +1373,7 @@ fn BigField(comptime modulus: comptime_int) type {
         }
 
         /// Format for debugging.
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("{}", .{self.toU512()});
         }
     };

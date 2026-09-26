@@ -1031,11 +1031,16 @@ pub fn egcd(comptime T: type, a: T, b: T) struct { gcd: T, x: T, y: T } {
 /// ```zig
 /// const a = [_]F7{ F7.fromInt(1), F7.fromInt(2) };
 /// const b = [_]F7{ F7.fromInt(3), F7.fromInt(4) };
-/// const d = dotProduct(V2, F7, &a, &b); // 1*3 + 2*4 = 11 mod 7 = 4
+/// const d = try dotProduct(V2, F7, &a, &b); // 1*3 + 2*4 = 11 mod 7 = 4
 /// ```
-pub fn dotProduct(comptime V: type, comptime F: type, a: []const V, b: []const V) V {
+///
+/// # Errors
+/// `error.LengthMismatch` when `a.len != b.len`. The previous
+/// `std.debug.assert` was compiled out in `ReleaseFast`, where the
+/// `for (a, b)` loop then read past the end of the shorter slice.
+pub fn dotProduct(comptime V: type, comptime F: type, a: []const V, b: []const V) error{LengthMismatch}!V {
     VectorSpaceTrait(V, F).assert();
-    std.debug.assert(a.len == b.len);
+    if (a.len != b.len) return error.LengthMismatch;
 
     var result = V.zero();
     for (a, b) |ai, bi| {
@@ -1086,9 +1091,14 @@ pub fn evalPolyHorner(comptime F: type, coeffs: []const F, x: F) F {
 /// defer allocator.free(coeffs);
 /// // coeffs represents the polynomial p(x) = 1 + 2x
 /// ```
-pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, allocator: std.mem.Allocator) ![]F {
+///
+/// # Errors
+/// `error.LengthMismatch` when `xs.len != ys.len`, plus `error.OutOfMemory`.
+/// The length check used to be a `std.debug.assert`, which the compiler drops
+/// in `ReleaseFast`; the loop then indexed `ys` past its end.
+pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, allocator: std.mem.Allocator) error{ LengthMismatch, OutOfMemory }![]F {
     FieldTrait(F).assert();
-    std.debug.assert(xs.len == ys.len);
+    if (xs.len != ys.len) return error.LengthMismatch;
     const n = xs.len;
 
     var result = try allocator.alloc(F, n);
@@ -1141,9 +1151,16 @@ pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, alloc
 ///
 /// # Constraints
 /// `F` must satisfy `FieldTrait`. All `xs` must be distinct.
-pub fn lagrangeCoefficient(comptime F: type, xs: []const F, i: usize, x: F) F {
+///
+/// # Errors
+/// `error.IndexOutOfBounds` when `i >= xs.len`. The old `std.debug.assert`
+/// vanished in `ReleaseFast`, where `xs[i]` then read out of bounds. The
+/// divisor is only guaranteed to be invertible when the `xs` are distinct;
+/// `F.inv` is the total legacy wrapper, so it yields zero for a degenerate
+/// (duplicated `xs`) configuration.
+pub fn lagrangeCoefficient(comptime F: type, xs: []const F, i: usize, x: F) error{IndexOutOfBounds}!F {
     FieldTrait(F).assert();
-    std.debug.assert(i < xs.len);
+    if (i >= xs.len) return error.IndexOutOfBounds;
     var num = F.one();
     var den = F.one();
     for (0..xs.len) |j| {

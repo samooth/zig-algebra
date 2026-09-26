@@ -78,7 +78,7 @@ pub fn main() !void {
     try config.validate();
 
     // The natural-order subgroup domain: domain[i] = g_k^i.
-    const domain = zfri.Domain(F).init(F, config.log_domain);
+    const domain = try zfri.Domain(F).init(F, config.log_domain);
     std.debug.assert(domain.size() == (@as(usize, 1) << config.log_domain));
 
     // p(x) = x^2 + x + 1, low degree, so the honest proof verifies.
@@ -112,12 +112,12 @@ with `two_adicity` and `primitiveRootOfUnity`.
 
 | Member | Signature | Notes |
 |--------|-----------|-------|
-| `init` | `(comptime Field: type, log_n: u6) Self` | debug-asserts `log_n <= Field.two_adicity` |
+| `init` | `(comptime Field: type, log_n: u6) error{DomainTooLarge, OrderTooLarge}!Self` | `error.DomainTooLarge` when `log_n > Field.two_adicity` (the shift would underflow); `error.OrderTooLarge` from the field |
 | `log_n` | `u6` field | |
 | `step_gen` | `F` field | the generator `g_k` |
 | `size` | `(self: Self) usize` | `2^log_n` |
 | `at` | `(self: Self, i: usize) F` | `g_k^i`, natural order |
-| `fill` | `(self: Self, buf: []F) void` | debug-asserts `buf.len == size()` |
+| `fill` | `(self: Self, buf: []F) error{LengthMismatch}!void` | `error.LengthMismatch` when `buf.len != size()` |
 
 ### `Config`
 
@@ -211,10 +211,15 @@ acceptance probability for maximally-far data is about `1/B`, so rejection is
 overwhelming. This is textbook FRI, and the exact constants depend on the field
 and on `num_queries`; there is no independent audit.
 
+`verify` rejects (returns `false`) when `log_domain > two_adicity` or
+`log_final > two_adicity`; before 0.1.2 only `log_domain` was checked, and a
+`log_final` beyond the two-adicity underflowed the shift inside
+`Domain.init`.
+
 ## Requirements on `F`
 
-A `zig-field` field with `two_adicity >= log_domain` that exposes
-`add/sub/mul/div/inv/pow/one/zero/fromInt/toBytes/fromBytes`. Goldilocks
+A `zig-field` field with `two_adicity >= max(log_domain, log_final)` that
+exposes `add/sub/mul/div/inv/pow/one/zero/fromInt/toBytes/fromBytes`. Goldilocks
 (`two_adicity = 32`) is the reference field. **M31 has `two_adicity = 1` and
 cannot be used** for any `log_domain > 1`.
 
@@ -236,6 +241,13 @@ cannot be used** for any `log_domain > 1`.
   empty-but-allocated ones; a hand-rolled `Proof` that was not produced by
   `prove` will confuse it.
 - Not constant-time; FRI operates on public data by construction.
+- `Domain.init` returns `error.DomainTooLarge` when `log_n > F.two_adicity`;
+  the old `std.debug.assert` was compiled out in `ReleaseFast`, where
+  `two_adicity - log_n` underflowed and `1 << shift` with a shift >= 64 is
+  undefined behaviour. `Domain.init` also forwards
+  `error.OrderTooLarge` from `F.primitiveRootOfUnity`.
+- `Domain.fill` returns `error.LengthMismatch`; the old assert vanished in
+  `ReleaseFast` and the loop wrote past the end of `buf`.
 
 ## Running Tests
 
@@ -243,7 +255,7 @@ cannot be used** for any `log_domain > 1`.
 cd libs/fri && zig build test
 ```
 
-10 tests: a degree-2 polynomial verifies; **random data must be rejected**
+12 tests: a degree-2 polynomial verifies; **random data must be rejected**
 (regression for ZA-2026-001, which v1 accepted 16/16 of); an over-degree
 polynomial must be rejected; a tampered query value is rejected; a truncated
 Merkle path is rejected; a wrong transcript label is rejected; the

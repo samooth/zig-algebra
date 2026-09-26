@@ -42,7 +42,7 @@ pub fn randomFieldElement(comptime F: type, comptime R: type, rng: *R) !F {
         const bits = std.math.log2_int(@TypeOf(order), order) + 1;
         break :blk (bits + 7) / 8;
     };
-    std.debug.assert(byte_len > 0 and byte_len <= 64);
+    if (byte_len == 0 or byte_len > 64) @compileError("randomFieldElement: field byte length must be in 1..64");
 
     const order_wide: u512 = @intCast(order);
     var buf: [byte_len]u8 = undefined;

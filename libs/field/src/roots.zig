@@ -140,8 +140,14 @@ pub fn powByLimbs(comptime F: type, self: F, exp: []const u64) F {
 /// Let `z` be a quadratic non-residue. Then `z^((p-1)/2^t)` has exact order
 /// `2^t` because raising it to `2^(t-1)` yields `z^((p-1)/2) == -1`.
 /// No factorization of `p - 1` is required.
-pub fn primitiveRootOfUnity(comptime F: type, log_size: usize) F {
-    std.debug.assert(log_size <= F.two_adicity);
+///
+/// # Errors
+/// `error.OrderTooLarge` when `log_size > F.two_adicity`. The old
+/// `std.debug.assert` is compiled out in `ReleaseFast`, where
+/// `F.two_adicity - log_size` then underflowed and
+/// `F.odd_part << shift` shifted past the width of the exponent.
+pub fn primitiveRootOfUnity(comptime F: type, log_size: usize) error{OrderTooLarge}!F {
+    if (log_size > F.two_adicity) return error.OrderTooLarge;
 
     var z = F.fromInt(2);
     while (legendre(F, z) != -1) z = z.add(F.one());
@@ -152,8 +158,14 @@ pub fn primitiveRootOfUnity(comptime F: type, log_size: usize) F {
 }
 
 /// An `order`-th root of unity, where `order` must be a power of two.
-pub fn rootOfUnity(comptime F: type, order: usize) F {
-    std.debug.assert(order & (order - 1) == 0);
+///
+/// # Errors
+/// `error.NotPowerOfTwo` when `order` is zero or not a power of two (the old
+/// `std.debug.assert` vanished in `ReleaseFast`, where `std.math.log2(0)` is
+/// undefined), and `error.OrderTooLarge` when the order exceeds the field's
+/// two-adicity.
+pub fn rootOfUnity(comptime F: type, order: usize) error{ NotPowerOfTwo, OrderTooLarge }!F {
+    if (order == 0 or (order & (order - 1)) != 0) return error.NotPowerOfTwo;
     const log = std.math.log2(order);
     return primitiveRootOfUnity(F, log);
 }

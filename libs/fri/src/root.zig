@@ -61,6 +61,12 @@ const HASH_LEN = 32;
 pub const FriError = error{
     InvalidParameters,
     InvalidProof,
+    /// `Domain.init` was asked for a domain larger than the field's
+    /// two-adicity (the shift `two_adicity - log_n` would underflow).
+    DomainTooLarge,
+    /// `F.primitiveRootOfUnity` was asked for an order above the field's
+    /// two-adicity.
+    OrderTooLarge,
     OutOfMemory,
 };
 
@@ -95,9 +101,18 @@ pub fn Domain(comptime F: type) type {
 
         const Self = @This();
 
-        pub fn init(comptime Field: type, log_n: u6) Self {
-            std.debug.assert(log_n <= Field.two_adicity);
-            const omega = Field.primitiveRootOfUnity(Field.two_adicity);
+        /// # Errors
+        /// `error.DomainTooLarge` when `log_n > Field.two_adicity` (the shift
+        /// `two_adicity - log_n` would underflow), and `error.OrderTooLarge` when
+        /// the field itself has no root of that order. The old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where
+        /// `two_adicity - log_n` then underflowed and `1 << shift` with a
+        /// shift >= 64 is undefined behaviour. `log_n` reaches this function
+        /// from the prover config and from `proof.log_final`, so it is
+        /// caller-controlled in the verifier.
+        pub fn init(comptime Field: type, log_n: u6) error{ DomainTooLarge, OrderTooLarge }!Self {
+            if (log_n > Field.two_adicity) return error.DomainTooLarge;
+            const omega = try Field.primitiveRootOfUnity(Field.two_adicity);
             const shift: u6 = @intCast(Field.two_adicity - log_n);
             return .{ .log_n = log_n, .step_gen = omega.pow(@as(u64, 1) << shift) };
         }
@@ -112,8 +127,13 @@ pub fn Domain(comptime F: type) type {
         }
 
         /// Fill `buf` (len == size) with the domain elements.
-        pub fn fill(self: Self, buf: []F) void {
-            std.debug.assert(buf.len == self.size());
+        ///
+        /// # Errors
+        /// `error.LengthMismatch` when `buf.len != self.size()`; the old
+        /// `std.debug.assert` vanished in `ReleaseFast` and the loop then
+        /// wrote past the end of `buf`.
+        pub fn fill(self: Self, buf: []F) error{LengthMismatch}!void {
+            if (buf.len != self.size()) return error.LengthMismatch;
             var x = F.one();
             const g = self.step_gen;
             for (buf) |*slot| {
@@ -326,7 +346,7 @@ pub fn prove(
 
         // Fold with the antipodal pair (j, j + half): the child lands at
         // position j of the half-size natural domain (x_j^2 = g_{k-1}^j).
-        const dom = Domain(F).init(F, log_cur);
+        const dom = try Domain(F).init(F, log_cur);
         const next = allocator.alloc(F, half) catch return FriError.OutOfMemory;
         for (0..half) |j| {
             const x = dom.at(j);
@@ -386,7 +406,7 @@ fn interpolateToCoeffs(
     log_final: u6,
 ) FriError![]F {
     const m = values.len; // == 2^log_final
-    const dom = Domain(F).init(F, log_final);
+    const dom = try Domain(F).init(F, log_final);
     // Solve the Vandermonde system V·c = v with V[i][j] = x_i^j.
     const mat = allocator.alloc(F, m * (m + 1)) catch return FriError.OutOfMemory;
     defer allocator.free(mat);
@@ -532,6 +552,11 @@ pub fn verify(
     if (proof.log_final != config.log_final) return FriError.InvalidProof;
     if (proof.log_residual_degree != config.log_residual_degree) return FriError.InvalidProof;
     if (config.log_domain > F.two_adicity) return false;
+    // `log_final` drives its own `Domain.init`; before this check only
+    // `log_domain` was compared against the two-adicity, so a config with a
+    // small two-adicity field and `log_final > two_adicity` underflowed the
+    // shift inside `Domain.init`.
+    if (config.log_final > F.two_adicity) return false;
     if (proof.layers.len != rounds) return FriError.InvalidProof;
     const residual_len: usize = @as(usize, 1) << config.log_residual_degree;
     if (proof.residual.len != residual_len) return FriError.InvalidProof;
@@ -564,7 +589,7 @@ pub fn verify(
     // 2^log_final > degree bound): rate < 1 gives the soundness distance.
     var final_evals_buf: [4096]F = undefined;
     if (final_len > 4096) return FriError.InvalidProof;
-    const dom_final = Domain(F).init(F, proof.log_final);
+    const dom_final = try Domain(F).init(F, proof.log_final);
     for (0..final_len) |i| {
         const xi = dom_final.at(i);
         var acc = F.zero();
@@ -603,7 +628,7 @@ pub fn verify(
             }
 
             // Fold: child at layer r+1, position j.
-            const dom_r = Domain(F).init(F, layer_log);
+            const dom_r = try Domain(F).init(F, layer_log);
             const xv = dom_r.at(j);
             const even = x.add(negx).mul(half_inv);
             const odd = x.sub(negx).div(xv).mul(half_inv);
@@ -667,7 +692,7 @@ test "fri v2: degree-2 poly verifies" {
     const log_n: u6 = 8; // 256
     const n: usize = @as(usize, 1) << log_n;
     const cfg = testConfig(log_n, 8);
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -720,7 +745,7 @@ test "fri v2: over-degree poly must be rejected" {
     const log_n: u6 = 8;
     const n: usize = @as(usize, 1) << log_n;
     const cfg = testConfig(log_n, 8);
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -750,7 +775,7 @@ test "fri v2: tampered query value rejected" {
     const log_n: u6 = 8;
     const n: usize = @as(usize, 1) << log_n;
     const cfg = testConfig(log_n, 8);
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -775,7 +800,7 @@ test "fri v2: truncated Merkle path rejected" {
     const log_n: u6 = 8;
     const n: usize = @as(usize, 1) << log_n;
     const cfg = testConfig(log_n, 8);
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -799,7 +824,7 @@ test "fri v2: wrong transcript (statement binding) rejected" {
     const log_n: u6 = 8;
     const n: usize = @as(usize, 1) << log_n;
     const cfg = testConfig(log_n, 8);
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -818,7 +843,7 @@ test "fri v2: interpolateToCoeffs recovers a degree-1 polynomial" {
     const a = testing.allocator;
     const log_f: u6 = 6;
     const m: usize = @as(usize, 1) << log_f;
-    const dom = Domain(Goldilocks).init(Goldilocks, log_f);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_f);
 
     var values = try a.alloc(Goldilocks, m);
     defer a.free(values);
@@ -839,11 +864,11 @@ test "fri v2: interpolateToCoeffs recovers a degree-1 polynomial" {
 test "fri v2: domain structure — antipodal pairs and squaring" {
     const t = std.testing;
     const log_n: u6 = 6;
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
     const n = dom.size();
 
     var buf: [64]Goldilocks = undefined;
-    dom.fill(buf[0..n]);
+    try dom.fill(buf[0..n]);
 
     // x and x + n/2 are negatives (exponent differs by 2^(k-1)).
     for (0..n / 2) |i| {
@@ -852,7 +877,7 @@ test "fri v2: domain structure — antipodal pairs and squaring" {
 
     // Squaring collapses {x, -x} pairs: element j of H_k squares to
     // element j of H_{k-1} (natural layout fold).
-    const dom2 = Domain(Goldilocks).init(Goldilocks, log_n - 1);
+    const dom2 = try Domain(Goldilocks).init(Goldilocks, log_n - 1);
     for (0..n / 2) |i| {
         try t.expect(buf[i].sqr().eql(dom2.at(i)));
     }
@@ -897,7 +922,7 @@ test "fri v2: larger domain, honest degree-bounded poly verifies" {
     const n: usize = @as(usize, 1) << log_n;
     // degree bound 32 (log_final=8 => 256-point final domain, rate 1/8)
     const cfg = Config{ .log_domain = log_n, .log_initial_degree = 7, .log_final = 8, .log_residual_degree = 5, .num_queries = 20 };
-    const dom = Domain(Goldilocks).init(Goldilocks, log_n);
+    const dom = try Domain(Goldilocks).init(Goldilocks, log_n);
 
     var evals = try a.alloc(Goldilocks, n);
     defer a.free(evals);
@@ -913,4 +938,21 @@ test "fri v2: larger domain, honest degree-bounded poly verifies" {
     defer proof.deinit(a);
     var vt = Transcript.init("fri-v2-test");
     try testing.expect(try verify(Goldilocks, &vt, &proof, cfg));
+}
+
+test "Domain.init rejects a domain beyond the field two-adicity" {
+    // Goldilocks has two_adicity == 32, so 33 is out of range and the shift
+    // `two_adicity - log_n` would underflow.
+    try testing.expectError(error.DomainTooLarge, Domain(Goldilocks).init(Goldilocks, 33));
+    try testing.expect((try Domain(Goldilocks).init(Goldilocks, 32)).size() == @as(usize, 1) << 32);
+}
+
+test "Domain.fill rejects a buffer of the wrong length" {
+    const dom = try Domain(Goldilocks).init(Goldilocks, 4);
+    var ok: [16]Goldilocks = undefined;
+    try dom.fill(&ok);
+    var short: [15]Goldilocks = undefined;
+    try testing.expectError(error.LengthMismatch, dom.fill(&short));
+    var long: [17]Goldilocks = undefined;
+    try testing.expectError(error.LengthMismatch, dom.fill(&long));
 }

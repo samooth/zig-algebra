@@ -72,7 +72,7 @@ fn testRoots(comptime F: type) !void {
     const t_max = @min(F.two_adicity, 12);
     var t: usize = 0;
     while (t <= t_max) : (t += 1) {
-        const w = F.primitiveRootOfUnity(t);
+        const w = try F.primitiveRootOfUnity(t);
         try std.testing.expect(w.pow(@as(u128, 1) << @intCast(t)).isOne());
         if (t > 0) {
             try std.testing.expect(!w.pow(@as(u128, 1) << @intCast(t - 1)).isOne());
@@ -469,7 +469,7 @@ test "SmallField: multiExp correctness" {
         rnd.int(u64) % (F.MODULUS - 1), rnd.int(u64) % (F.MODULUS - 1),
     };
 
-    const multi_result = F.multiExp(&bases, &exponents, 4);
+    const multi_result = try F.multiExp(&bases, &exponents, 4);
 
     // Compare with individual pow and mul
     var expected = F.one();
@@ -492,7 +492,7 @@ test "SmallField: multiExp simple case" {
     const bases = [_]F{ F.fromInt(2), F.fromInt(3) };
     const exponents = [_]u64{ 2, 3 };
 
-    const multi_result = F.multiExp(&bases, &exponents, 2);
+    const multi_result = try F.multiExp(&bases, &exponents, 2);
 
     var expected = F.one();
     for (bases, exponents) |base_, exp| {
@@ -512,7 +512,7 @@ test "SmallField: multiExp with zero exponents" {
     const bases = [_]F{ F.fromInt(2), F.fromInt(3), F.fromInt(5) };
     const exponents = [_]u64{ 0, 0, 0 };
 
-    const result = F.multiExp(&bases, &exponents, 3);
+    const result = try F.multiExp(&bases, &exponents, 3);
     try std.testing.expect(result.isOne());
 }
 
@@ -529,7 +529,7 @@ test "BigField: multiExp correctness" {
         rnd.int(u512) % (F.MODULUS - 1), rnd.int(u512) % (F.MODULUS - 1),
     };
 
-    const multi_result = F.multiExp(&bases, &exponents, 4);
+    const multi_result = try F.multiExp(&bases, &exponents, 4);
 
     // Compare with individual pow and mul
     var expected = F.one();

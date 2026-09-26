@@ -19,7 +19,7 @@ pub fn main() !void {
         Goldilocks.fromInt(6),
     });
 
-    const x = A.solve(b) orelse {
+    const x = (try A.solve(b)) orelse {
         std.debug.print("No solution\n", .{});
         return;
     };

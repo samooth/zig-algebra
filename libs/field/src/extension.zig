@@ -232,9 +232,7 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         }
 
         /// Format for debugging.
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("{{c0: {}, c1: {}}}", .{ self.c0.toU512(), self.c1.toU512() });
         }
 
@@ -335,11 +333,16 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         /// is embedded (cheap path). Otherwise a quadratic non-residue `z` in
         /// the extension is found and raised to `(p^2 - 1) / 2^log_size`,
         /// which has exact order `2^log_size`.
-        pub fn primitiveRootOfUnity(log_size: usize) Self {
-            std.debug.assert(log_size <= two_adicity);
+        ///
+        /// # Errors
+        /// `error.OrderTooLarge` when `log_size > two_adicity`. The old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where
+        /// `orderExponent(log_size)` then shifted past the exponent width.
+        pub fn primitiveRootOfUnity(log_size: usize) error{OrderTooLarge}!Self {
+            if (log_size > two_adicity) return error.OrderTooLarge;
 
             if (log_size <= BaseField.two_adicity) {
-                return Self.fromBase(BaseField.primitiveRootOfUnity(log_size));
+                return Self.fromBase(try BaseField.primitiveRootOfUnity(log_size));
             }
 
             var z = Self.fromInt(2);
@@ -348,8 +351,12 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         }
 
         /// `order`-th root of unity (`order` a power of two).
-        pub fn rootOfUnity(order: usize) Self {
-            std.debug.assert(order & (order - 1) == 0);
+        ///
+        /// # Errors
+        /// `error.NotPowerOfTwo` when `order` is zero or not a power of two
+        /// (`std.math.log2(0)` is undefined), plus `error.OrderTooLarge`.
+        pub fn rootOfUnity(order: usize) error{ NotPowerOfTwo, OrderTooLarge }!Self {
+            if (order == 0 or (order & (order - 1)) != 0) return error.NotPowerOfTwo;
             return primitiveRootOfUnity(std.math.log2(order));
         }
 
@@ -642,9 +649,7 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         }
 
         /// Format for debugging.
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("{{c0: {}, c1: {}, c2: {}}}", .{ self.c0.toU512(), self.c1.toU512(), self.c2.toU512() });
         }
     };

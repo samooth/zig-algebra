@@ -120,8 +120,15 @@ pub fn Fp6(comptime BaseFp2: type, comptime non_residue: BaseFp2) type {
             const c2 = a.c0.mul(b.c2).add(a.c1.mul(b.c1)).add(a.c2.mul(b.c0));
             return .{ .c0 = c0, .c1 = c1, .c2 = c2 };
         }
+        /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+        /// new code that requires invertibility must call `invChecked`.
+        ///
+        /// The closed form divides by the norm, which is zero exactly for the
+        /// zero element. Before this was total the guard was a
+        /// `std.debug.assert`, compiled out in `ReleaseFast`, so a zero input
+        /// produced a garbage element instead of an error.
         pub fn inv(a: Self) Self {
-            std.debug.assert(!a.isZero());
+            if (a.isZero()) return zero();
             const t0 = a.c0.mul(a.c0).sub(non_residue.mul(a.c1.mul(a.c2)));
             const t1 = non_residue.mul(a.c2.mul(a.c2)).sub(a.c0.mul(a.c1));
             const t2 = a.c1.mul(a.c1).sub(a.c0.mul(a.c2));
@@ -135,8 +142,23 @@ pub fn Fp6(comptime BaseFp2: type, comptime non_residue: BaseFp2) type {
                 .c2 = t2.mul(denom_inv),
             };
         }
+
+        /// # Errors
+        /// `error.InverseOfZero` when `a` is the zero element.
+        pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+            if (a.isZero()) return error.InverseOfZero;
+            return inv(a);
+        }
+
+        /// Legacy total division: `a / 0 == zero()`.
         pub fn div(a: Self, b: Self) Self {
             return a.mul(b.inv());
+        }
+
+        /// # Errors
+        /// `error.InverseOfZero` when `b` is the zero element.
+        pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+            return a.mul(try b.invChecked());
         }
 
         pub fn eql(a: Self, b: Self) bool {
@@ -297,13 +319,23 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+    /// new code that requires invertibility must call `invChecked`.
     pub fn inv(a: Self) Self {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return zero();
+        return pow(a, modulus - 2);
+    }
+    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+        if (a.isZero()) return error.InverseOfZero;
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
+    /// Legacy total division: `x / 0 == zero()`.
     pub fn div(a: Self, b: Self) Self {
         return mul(a, inv(b));
+    }
+    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+        return mul(a, try b.invChecked());
     }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
@@ -325,7 +357,7 @@ const F7 = struct {
     pub fn random() Self {
         return fromInt(1);
     }
-    pub fn format(self: Self, comptime _: []const u8, _: std.fmt.FormatOptions, w: anytype) !void {
+    pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
         try w.print("{}", .{self.value});
     }
 };
@@ -415,4 +447,43 @@ pub fn main() !void {
 test {
     // Force analysis of imported modules so their inline tests are collected.
     std.testing.refAllDecls(@This());
+}
+
+test "miller loop reports a point at infinity instead of asserting" {
+    const legacy = bn254_legacy;
+    const inf_g1 = legacy.G1Point.zero();
+    const inf_g2 = legacy.G2Point.zero();
+
+    // The old `std.debug.assert(!q.infinity)` was compiled out in ReleaseFast,
+    // where an infinity input produced a garbage Fp12 instead of an error.
+    try std.testing.expectError(
+        error.PointAtInfinity,
+        legacy.millerLoopChecked(zc.bn254.G1_generator, inf_g2),
+    );
+    try std.testing.expectError(
+        error.PointAtInfinity,
+        bn254_direct.millerLoopPairChecked(inf_g1, zc.bn254.G2_generator),
+    );
+    try std.testing.expectError(
+        error.PointAtInfinity,
+        bn254_tower_pairing.millerLoopPairChecked(inf_g1, zc.bn254.G2_generator),
+    );
+
+    // The unchecked entry points stay total and fall back to the identity.
+    try std.testing.expect(legacy.millerLoop(zc.bn254.G1_generator, inf_g2).eql(legacy.Fp12.one()));
+
+    // A G1 point at infinity is legal: e(O, Q) == 1.
+    const f = try legacy.millerLoopChecked(inf_g1, zc.bn254.G2_generator);
+    try std.testing.expect(f.eql(legacy.Fp12.one()));
+}
+
+test "Fp12 extension inverse is total and checked" {
+    // The in-file toy field follows the same total/checked contract as the
+    // pairing towers (see the `inv` docs in `tower.zig`).
+    try std.testing.expect(F7.inv(F7.zero()).isZero());
+    try std.testing.expect(F7.div(F7.one(), F7.zero()).isZero());
+    try std.testing.expectError(error.InverseOfZero, F7.invChecked(F7.zero()));
+    try std.testing.expectError(error.InverseOfZero, F7.divChecked(F7.one(), F7.zero()));
+    const a = F7.fromInt(3);
+    try std.testing.expect((try a.invChecked()).mul(a).eql(F7.one()));
 }

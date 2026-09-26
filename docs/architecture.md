@@ -372,24 +372,24 @@ cd libs/field && zig build test
 # All libraries
 zig build test
 
-# With specific optimization (same 354 tests, seconds instead of ~1-2 min)
+# With specific optimization (same 382 tests, seconds instead of ~1-2 min)
 zig build test -Doptimize=ReleaseFast
 ```
 
-Counts verified on Zig 0.16.0: the root `zig build test` step runs **354 tests**
-in both Debug and ReleaseFast; per-library steps sum to 470 because `field`
-(85) and `curve` (96) additionally compile their separate `tests/` roots.
-`algebra-traits` is compile-time only (0 tests).
+Counts verified on Zig 0.16.0: the root `zig build test` step runs **382 tests**
+in both Debug and ReleaseFast; per-library steps sum to 498 because `field`
+(85) and `curve` (98) additionally compile their separate `tests/` roots.
+`algebra-traits` had no tests before 0.5.0 and now has 4.
 
 ## Versioning
 
-The root `build.zig.zon` carries the **workspace version `0.4.0`**. Each
+The root `build.zig.zon` carries the **workspace version `0.5.0`**. Each
 library ships its own `build.zig.zon` with an independent semver — currently
-`0.1.0` (`transcript`) through `0.4.0` (`curve`). Library count grew 14
-(v0.1.0) → 16 (v0.2.0: `fri`, `transcript`) → 17 (v0.2.2: `kzg`). The 0.4.0
-release bumped `field` and `binary-field` to `0.3.0`, `curve` to `0.4.0`,
-`rng` to `0.3.0`, `serialization` to `0.2.0` and `merkle` to `0.1.2`; the other
-manifests are unchanged. Bump the library version for API changes and the
+`0.1.0` (`transcript`) through `0.5.0` (`curve`). Library count grew 14
+(v0.1.0) → 16 (v0.2.0: `fri`, `transcript`) → 17 (v0.2.2: `kzg`). The 0.5.0
+release bumped `algebra-traits`, `bigint`, `curve`, `field`, `fri`, `hash`,
+`kzg`, `linalg`, `ntt`, `pairing`, `poly` and `rng`; the other five manifests
+are unchanged. Bump the library version for API changes and the
 workspace version for ecosystem-level releases; record both in `CHANGELOG.md`.
 
 ## Known Gaps

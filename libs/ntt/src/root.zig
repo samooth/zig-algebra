@@ -27,9 +27,20 @@ fn randomField(comptime F: type, prng: *SimplePrng) F {
     return F.fromInt(prng.next());
 }
 
-pub fn bitReverse(comptime F: type, data: []F) void {
+/// `2^log_n` with a real bounds check. The old code called
+/// `std.math.pow(usize, 2, log_n)` directly, which overflows (and traps) for
+/// `log_n >= @bitSizeOf(usize)`.
+fn sizeFromLog(log_n: usize) error{LogTooLarge}!usize {
+    if (log_n >= @bitSizeOf(usize)) return error.LogTooLarge;
+    return @as(usize, 1) << @intCast(log_n);
+}
+
+pub fn bitReverse(comptime F: type, data: []F) error{InvalidLength}!void {
     const n = data.len;
-    std.debug.assert(n > 0 and (n & (n - 1)) == 0);
+    // The old `std.debug.assert` is compiled out in `ReleaseFast`, where
+    // `@ctz(0)` on an empty slice is undefined and a non-power-of-two length
+    // walks off the end of the permutation.
+    if (n == 0 or (n & (n - 1)) != 0) return error.InvalidLength;
     const log_n = @ctz(n);
     var i: usize = 0;
     while (i < n) : (i += 1) {
@@ -46,12 +57,17 @@ pub fn bitReverse(comptime F: type, data: []F) void {
     }
 }
 
-pub fn ntt(comptime F: type, data: []F, log_n: usize, root: F) void {
+/// # Errors
+/// `error.LogTooLarge` when `log_n` is too large for `usize` to hold
+/// `2^log_n`, and `error.LengthMismatch` when `data.len != 2^log_n`. The
+/// old `std.debug.assert` is compiled out in `ReleaseFast`, where the
+/// butterfly loop then wrote outside `data`.
+pub fn ntt(comptime F: type, data: []F, log_n: usize, root: F) error{ LogTooLarge, LengthMismatch, InvalidLength }!void {
     traits.assertField(F);
-    const n = std.math.pow(usize, 2, log_n);
-    std.debug.assert(data.len == n);
+    const n = try sizeFromLog(log_n);
+    if (data.len != n) return error.LengthMismatch;
 
-    bitReverse(F, data);
+    try bitReverse(F, data);
 
     var s: usize = 1;
     while (s <= log_n) : (s += 1) {
@@ -73,13 +89,16 @@ pub fn ntt(comptime F: type, data: []F, log_n: usize, root: F) void {
     }
 }
 
-pub fn intt(comptime F: type, data: []F, log_n: usize, root: F) void {
+/// # Errors
+/// `error.LogTooLarge`, `error.LengthMismatch`, `error.InvalidLength`, as in
+/// `ntt`.
+pub fn intt(comptime F: type, data: []F, log_n: usize, root: F) error{ LogTooLarge, LengthMismatch, InvalidLength }!void {
     traits.assertField(F);
-    const n = std.math.pow(usize, 2, log_n);
-    std.debug.assert(data.len == n);
+    const n = try sizeFromLog(log_n);
+    if (data.len != n) return error.LengthMismatch;
 
     const root_inv = root.inv();
-    ntt(F, data, log_n, root_inv);
+    try ntt(F, data, log_n, root_inv);
 
     const n_inv = F.fromInt(n).inv();
     for (data) |*x| {
@@ -87,8 +106,12 @@ pub fn intt(comptime F: type, data: []F, log_n: usize, root: F) void {
     }
 }
 
-pub fn precomputeTwiddles(comptime F: type, log_n: usize, root: F, allocator: std.mem.Allocator) ![]const []const F {
+/// # Errors
+/// `error.LogTooLarge` when `2^log_n` overflows `usize`, plus
+/// `error.OutOfMemory`.
+pub fn precomputeTwiddles(comptime F: type, log_n: usize, root: F, allocator: std.mem.Allocator) error{ LogTooLarge, OutOfMemory }![]const []const F {
     traits.assertField(F);
+    _ = try sizeFromLog(log_n);
     const twiddles = try allocator.alloc([]F, log_n);
     errdefer allocator.free(twiddles);
 
@@ -117,20 +140,25 @@ pub fn freeTwiddles(comptime F: type, twiddles: []const []const F, allocator: st
     allocator.free(twiddles);
 }
 
-pub fn nttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []const []const F) void {
+/// # Errors
+/// `error.LogTooLarge`, `error.LengthMismatch` (for `data`),
+/// `error.InvalidTwiddles` (for `twiddles` or a stage slice), and
+/// `error.InvalidLength`. The old `std.debug.assert`s vanish in `ReleaseFast`,
+/// where the twiddle indexing then reads out of bounds.
+pub fn nttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []const []const F) error{ LogTooLarge, LengthMismatch, InvalidTwiddles, InvalidLength }!void {
     traits.assertField(F);
-    const n = std.math.pow(usize, 2, log_n);
-    std.debug.assert(data.len == n);
-    std.debug.assert(twiddles.len == log_n);
+    const n = try sizeFromLog(log_n);
+    if (data.len != n) return error.LengthMismatch;
+    if (twiddles.len != log_n) return error.InvalidTwiddles;
 
-    bitReverse(F, data);
+    try bitReverse(F, data);
 
     var s: usize = 1;
     while (s <= log_n) : (s += 1) {
         const m = std.math.pow(usize, 2, s);
         const half_m = m >> 1;
         const stage_twiddles = twiddles[s - 1];
-        std.debug.assert(stage_twiddles.len == half_m);
+        if (stage_twiddles.len != half_m) return error.InvalidTwiddles;
 
         var k: usize = 0;
         while (k < n) : (k += m) {
@@ -146,20 +174,23 @@ pub fn nttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []co
     }
 }
 
-pub fn inttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []const []const F) void {
+/// # Errors
+/// `error.LogTooLarge`, `error.LengthMismatch`, `error.InvalidTwiddles`,
+/// `error.InvalidLength`, as in `nttWithTwiddles`.
+pub fn inttWithTwiddles(comptime F: type, data: []F, log_n: usize, twiddles: []const []const F) error{ LogTooLarge, LengthMismatch, InvalidTwiddles, InvalidLength }!void {
     traits.assertField(F);
-    const n = std.math.pow(usize, 2, log_n);
-    std.debug.assert(data.len == n);
-    std.debug.assert(twiddles.len == log_n);
+    const n = try sizeFromLog(log_n);
+    if (data.len != n) return error.LengthMismatch;
+    if (twiddles.len != log_n) return error.InvalidTwiddles;
 
-    bitReverse(F, data);
+    try bitReverse(F, data);
 
     var s: usize = 1;
     while (s <= log_n) : (s += 1) {
         const m = std.math.pow(usize, 2, s);
         const half_m = m >> 1;
         const stage_twiddles = twiddles[s - 1];
-        std.debug.assert(stage_twiddles.len == half_m);
+        if (stage_twiddles.len != half_m) return error.InvalidTwiddles;
 
         var k: usize = 0;
         while (k < n) : (k += m) {
@@ -219,13 +250,23 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+    /// new code that requires invertibility must call `invChecked`.
     pub fn inv(a: Self) Self {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return zero();
+        return pow(a, modulus - 2);
+    }
+    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+        if (a.isZero()) return error.InverseOfZero;
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
+    /// Legacy total division: `x / 0 == zero()`.
     pub fn div(a: Self, b: Self) Self {
         return mul(a, inv(b));
+    }
+    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+        return mul(a, try b.invChecked());
     }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
@@ -248,8 +289,8 @@ const F7 = struct {
 
 test "bitReverse permutation is involutive" {
     var data = [_]F7{ F7.fromInt(0), F7.fromInt(1), F7.fromInt(2), F7.fromInt(3), F7.fromInt(4), F7.fromInt(5), F7.fromInt(6), F7.fromInt(0) };
-    bitReverse(F7, &data);
-    bitReverse(F7, &data);
+    try bitReverse(F7, &data);
+    try bitReverse(F7, &data);
     try std.testing.expectEqualSlices(F7, &data, &[_]F7{ F7.fromInt(0), F7.fromInt(1), F7.fromInt(2), F7.fromInt(3), F7.fromInt(4), F7.fromInt(5), F7.fromInt(6), F7.fromInt(0) });
 }
 
@@ -257,7 +298,7 @@ test "bitReverse produces correct permutation for n=4" {
     // For n=4, bit-reversal: 00->00 (0), 01->10 (2), 10->01 (1), 11->11 (3)
     // Expected order: 0, 2, 1, 3
     var data = [_]F7{ F7.fromInt(0), F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) };
-    bitReverse(F7, &data);
+    try bitReverse(F7, &data);
     try std.testing.expect(data[0].eql(F7.fromInt(0)));
     try std.testing.expect(data[1].eql(F7.fromInt(2)));
     try std.testing.expect(data[2].eql(F7.fromInt(1)));
@@ -286,9 +327,9 @@ test "ntt/intt round-trip for M31" {
         defer std.testing.allocator.free(original);
         for (0..n) |i| original[i] = data[i];
 
-        const root = M31.primitiveRootOfUnity(log_n);
-        ntt(M31, data, log_n, root);
-        intt(M31, data, log_n, root);
+        const root = try M31.primitiveRootOfUnity(log_n);
+        try ntt(M31, data, log_n, root);
+        try intt(M31, data, log_n, root);
 
         // Verify round-trip
         for (0..n) |i| {
@@ -316,9 +357,9 @@ test "ntt/intt round-trip for BabyBear" {
             original[i] = data[i];
         }
 
-        const root = BabyBear.primitiveRootOfUnity(log_n);
-        ntt(BabyBear, data, log_n, root);
-        intt(BabyBear, data, log_n, root);
+        const root = try BabyBear.primitiveRootOfUnity(log_n);
+        try ntt(BabyBear, data, log_n, root);
+        try intt(BabyBear, data, log_n, root);
 
         for (0..n) |i| {
             try std.testing.expect(data[i].eql(original[i]));
@@ -345,9 +386,9 @@ test "ntt/intt round-trip for Goldilocks" {
             original[i] = data[i];
         }
 
-        const root = Goldilocks.primitiveRootOfUnity(log_n);
-        ntt(Goldilocks, data, log_n, root);
-        intt(Goldilocks, data, log_n, root);
+        const root = try Goldilocks.primitiveRootOfUnity(log_n);
+        try ntt(Goldilocks, data, log_n, root);
+        try intt(Goldilocks, data, log_n, root);
 
         for (0..n) |i| {
             try std.testing.expect(data[i].eql(original[i]));
@@ -374,9 +415,9 @@ test "ntt/intt round-trip for BN254_Fp" {
             original[i] = data[i];
         }
 
-        const root = BN254_Fp.primitiveRootOfUnity(log_n);
-        ntt(BN254_Fp, data, log_n, root);
-        intt(BN254_Fp, data, log_n, root);
+        const root = try BN254_Fp.primitiveRootOfUnity(log_n);
+        try ntt(BN254_Fp, data, log_n, root);
+        try intt(BN254_Fp, data, log_n, root);
 
         for (0..n) |i| {
             try std.testing.expect(data[i].eql(original[i]));
@@ -403,9 +444,9 @@ test "ntt/intt round-trip for BLS12_381_Fp" {
             original[i] = data[i];
         }
 
-        const root = BLS12_381_Fp.primitiveRootOfUnity(log_n);
-        ntt(BLS12_381_Fp, data, log_n, root);
-        intt(BLS12_381_Fp, data, log_n, root);
+        const root = try BLS12_381_Fp.primitiveRootOfUnity(log_n);
+        try ntt(BLS12_381_Fp, data, log_n, root);
+        try intt(BLS12_381_Fp, data, log_n, root);
 
         for (0..n) |i| {
             try std.testing.expect(data[i].eql(original[i]));
@@ -418,7 +459,7 @@ test "intt with precomputed twiddles round-trips" {
     const Goldilocks = zf.Goldilocks;
     const log_n: usize = 4;
     const n: usize = @as(usize, 1) << log_n;
-    const root = Goldilocks.primitiveRootOfUnity(log_n);
+    const root = try Goldilocks.primitiveRootOfUnity(log_n);
     const allocator = std.testing.allocator;
 
     const twiddles = try precomputeTwiddles(Goldilocks, log_n, root, allocator);
@@ -434,8 +475,8 @@ test "intt with precomputed twiddles round-trips" {
         original[i] = data[i];
     }
 
-    nttWithTwiddles(Goldilocks, data, log_n, twiddles);
-    inttWithTwiddles(Goldilocks, data, log_n, twiddles);
+    try nttWithTwiddles(Goldilocks, data, log_n, twiddles);
+    try inttWithTwiddles(Goldilocks, data, log_n, twiddles);
     try std.testing.expectEqualSlices(Goldilocks, original, data);
 }
 
@@ -487,9 +528,9 @@ test "ntt convolution property (Goldilocks)" {
         f_ntt[i] = f[i];
         g_ntt[i] = g[i];
     }
-    const root = Goldilocks.primitiveRootOfUnity(log_n);
-    ntt(Goldilocks, f_ntt, log_n, root);
-    ntt(Goldilocks, g_ntt, log_n, root);
+    const root = try Goldilocks.primitiveRootOfUnity(log_n);
+    try ntt(Goldilocks, f_ntt, log_n, root);
+    try ntt(Goldilocks, g_ntt, log_n, root);
 
     // Pointwise multiplication in NTT domain
     for (0..n) |i| {
@@ -497,7 +538,7 @@ test "ntt convolution property (Goldilocks)" {
     }
 
     // Inverse NTT
-    intt(Goldilocks, fg_ntt, log_n, root);
+    try intt(Goldilocks, fg_ntt, log_n, root);
 
     // Verify
     for (0..n) |i| {
@@ -512,7 +553,7 @@ test "twiddle precomputation and free" {
     for (0..@as(usize, @min(Goldilocks.two_adicity + 1, 5))) |log_n| {
         if (log_n == 0) continue; // log_n=0 has no twiddles
         _ = @as(usize, 1) << @intCast(log_n);
-        const root = Goldilocks.primitiveRootOfUnity(log_n);
+        const root = try Goldilocks.primitiveRootOfUnity(log_n);
 
         var gpa = std.heap.DebugAllocator(.{}){};
         defer _ = gpa.deinit();
@@ -547,7 +588,7 @@ test "ntt with precomputed twiddles matches ntt without (Goldilocks)" {
     for (0..@as(usize, @min(Goldilocks.two_adicity + 1, 5))) |log_n| {
         if (log_n == 0) continue;
         const n: usize = @as(usize, 1) << @intCast(log_n);
-        const root = Goldilocks.primitiveRootOfUnity(log_n);
+        const root = try Goldilocks.primitiveRootOfUnity(log_n);
 
         var gpa = std.heap.DebugAllocator(.{}){};
         defer _ = gpa.deinit();
@@ -566,11 +607,76 @@ test "ntt with precomputed twiddles matches ntt without (Goldilocks)" {
             data2[i] = data1[i];
         }
 
-        ntt(Goldilocks, data1, log_n, root);
-        nttWithTwiddles(Goldilocks, data2, log_n, twiddles);
+        try ntt(Goldilocks, data1, log_n, root);
+        try nttWithTwiddles(Goldilocks, data2, log_n, twiddles);
 
         for (0..n) |i| {
             try std.testing.expect(data1[i].eql(data2[i]));
         }
+    }
+}
+
+test "ntt rejects a length mismatch instead of writing out of bounds" {
+    const F = F7;
+    const log_n = 2; // n = 4
+    const root = F.fromInt(3); // not a real root for F7, but lengths are checked first
+    var short: [3]F = undefined;
+    for (&short) |*x| x.* = F.fromInt(1);
+    try std.testing.expectError(error.LengthMismatch, ntt(F, &short, log_n, root));
+    try std.testing.expectError(error.LengthMismatch, intt(F, &short, log_n, root));
+
+    // A matching length still works.
+    var ok: [4]F = undefined;
+    for (&ok) |*x| x.* = F.fromInt(1);
+    try ntt(F, &ok, log_n, root);
+    try intt(F, &ok, log_n, root);
+}
+
+test "bitReverse rejects an empty or non-power-of-two length" {
+    var empty: [0]F7 = undefined;
+    try std.testing.expectError(error.InvalidLength, bitReverse(F7, &empty));
+    var three: [3]F7 = undefined;
+    for (&three) |*x| x.* = F7.fromInt(1);
+    try std.testing.expectError(error.InvalidLength, bitReverse(F7, &three));
+    var four: [4]F7 = undefined;
+    for (&four) |*x| x.* = F7.fromInt(1);
+    try bitReverse(F7, &four);
+}
+
+test "transforms reject a log_n that overflows usize" {
+    var two: [2]F7 = undefined;
+    for (&two) |*x| x.* = F7.fromInt(1);
+    try std.testing.expectError(error.LogTooLarge, ntt(F7, &two, 64, F7.one()));
+    try std.testing.expectError(error.LogTooLarge, intt(F7, &two, 200, F7.one()));
+    try std.testing.expectError(
+        error.LogTooLarge,
+        precomputeTwiddles(F7, 64, F7.one(), std.testing.allocator),
+    );
+}
+
+test "twiddle variants validate the twiddle table shape" {
+    const zf = @import("zig-field");
+    const F = zf.Goldilocks;
+    const log_n = 3;
+    const root = try F.primitiveRootOfUnity(log_n);
+    const twiddles = try precomputeTwiddles(F, log_n, root, std.testing.allocator);
+    defer freeTwiddles(F, twiddles, std.testing.allocator);
+
+    var data: [8]F = undefined;
+    for (&data) |*x| x.* = F.fromInt(1);
+
+    try std.testing.expectError(error.InvalidTwiddles, nttWithTwiddles(F, &data, log_n, twiddles[0 .. log_n - 1]));
+    try std.testing.expectError(error.InvalidTwiddles, inttWithTwiddles(F, &data, log_n, twiddles[0 .. log_n - 1]));
+
+    // A stage of the wrong length is rejected instead of indexed out of bounds.
+    const bad_stage = [_][]const F{twiddles[0][0..1]};
+    try std.testing.expectError(error.InvalidTwiddles, nttWithTwiddles(F, &data, log_n, &bad_stage));
+
+    // The correct table round-trips.
+    var copy = data;
+    try nttWithTwiddles(F, &copy, log_n, twiddles);
+    try inttWithTwiddles(F, &copy, log_n, twiddles);
+    for (data, copy) |orig, back| {
+        try std.testing.expect(orig.eql(back));
     }
 }

@@ -156,7 +156,7 @@ test "Vec8 M31 NTT length guard and round trip" {
     const M31 = zf.M31;
     const log_n: usize = 1; // M31 has two-adicity 1
     const n = @as(usize, 1) << log_n;
-    const root = M31.primitiveRootOfUnity(@intCast(log_n));
+    const root = try M31.primitiveRootOfUnity(@intCast(log_n));
 
     // Wrong length (and an absurd log_n) are reported, never read/written OOB.
     var short: [8 * n - 1]M31 = @splat(M31.fromInt(7));

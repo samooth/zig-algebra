@@ -93,7 +93,7 @@ pub fn main() !void {
     // --- Shake256 ---
     std.debug.print("\n--- Shake256Rng ---\n", .{});
     var shake = rng.Shake256Rng.init();
-    shake.absorbSeed("my protocol seed");
+    try shake.absorbSeed("my protocol seed");
 
     var gpa = std.heap.DebugAllocator(.{}){};
     defer _ = gpa.deinit();

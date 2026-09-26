@@ -176,8 +176,22 @@ pub fn millerLoopPair(p: zc.bn254.G1, q: zc.bn254.G2) NumDen {
     return millerLoopPairOpt(p, q, true);
 }
 
+/// # Errors
+/// `error.PointAtInfinity` when either input is the point at infinity.
+pub fn millerLoopPairChecked(p: zc.bn254.G1, q: zc.bn254.G2) error{PointAtInfinity}!NumDen {
+    return millerLoopPairOptChecked(p, q, true);
+}
+
+///
+/// `p` and `q` must not be the point at infinity. The guard used to be a
+/// `std.debug.assert`, compiled out in `ReleaseFast`, where an infinity input
+/// then produced a garbage `Fp12T`; `millerLoopPairChecked` reports it instead.
 fn millerLoopPairOpt(p: zc.bn254.G1, q: zc.bn254.G2, comptime with_extras: bool) NumDen {
-    std.debug.assert(!p.infinity and !q.infinity);
+    return millerLoopPairOptChecked(p, q, with_extras) catch .{ .num = Fp12T.one(), .den = Fp12T.one() };
+}
+
+fn millerLoopPairOptChecked(p: zc.bn254.G1, q: zc.bn254.G2, comptime with_extras: bool) error{PointAtInfinity}!NumDen {
+    if (p.infinity or q.infinity) return error.PointAtInfinity;
     var gnum = Fp12T.one();
     var gden = Fp12T.one();
     var t = TwistAffine{ .x = q.x, .y = q.y };

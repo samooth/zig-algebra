@@ -14,8 +14,8 @@ lives in the root `build.zig.zon`.
 - **Pasta cycle** — Pallas, Vesta (used by Halo2, recursive SNARKs)
 - **Hash-to-curve** — RFC 9380 Shallue-van de Woestijne mapping, `expandMessageXmd`, `hashToField`, `hashToCurve`, `hashToCurveWithCofactor`
 - **Nothing-up-my-sleeve generator derivation** — `hashToPoint` / `generatorVector`, returning `error.DomainTooLong` / `error.NoValidPoint` instead of aborting
-- **Multi-scalar multiplication** — `msm.msm(Aff, Proj, Scalar, allocator, points, scalars)` via Pippenger bucket decomposition with an adaptive window (`msm.windowSize`), returning a projective point
-- **Byte-array scalar arithmetic** — `byte_scalar.ByteScalar(ScalarType, N)` (add, sub, mul, inv, neg, reduce) over big-endian `[N]u8` scalars. `ScalarType` must expose the **stdlib** ECC scalar shape (`fromBytes(bytes, .big)`, `toBytes(.big)`, `invert()`), e.g. `std.crypto.ecc.Secp256k1.scalar.Scalar` — it does **not** accept `zig-field` types, whose `toBytes`/`fromBytes` take no endianness argument
+- **Multi-scalar multiplication** — `msm.msm(Aff, Proj, Scalar, allocator, points, scalars)` via Pippenger bucket decomposition with an adaptive window (`msm.windowSize`), returning a projective point. Returns `error.LengthMismatch` when `points.len != scalars.len`
+- **Byte-array scalar arithmetic** — `byte_scalar.ByteScalar(ScalarType, N)` (add, sub, mul, inv, neg, reduce) over big-endian `[N]u8` scalars. Every parsing operation (`add`, `sub`, `mul`, `inv`, `neg`, `fromBytes`) returns `error.NotCanonical` when an input is `>= n`; they used to `catch unreachable` the stdlib rejection. `reduce` is the total entry point for untrusted bytes. `ScalarType` must expose the **stdlib** ECC scalar shape (`fromBytes(bytes, .big)`, `toBytes(.big)`, `invert()`), e.g. `std.crypto.ecc.Secp256k1.scalar.Scalar` — it does **not** accept `zig-field` types, whose `toBytes`/`fromBytes` take no endianness argument
 - **Group trait helpers** — `group_ops.GroupOps(Point)` and free functions `identity`, `eql`, `scalarMul`
 - **Point operations** — `add`, `dbl`, `scalarMul`, `neg`, `eql`, SEC1 `toBytes` / `fromBytes`
 
@@ -117,7 +117,7 @@ defer allocator.free(gens);
 | `pasta` | `PallasFp`, `VestaFp`, `Pallas`, `Vesta`, `PallasProjective`, `VestaProjective`, `PallasScalar`, `VestaScalar`, `Pallas_generator`, `Vesta_generator`, `Pallas_a`, `Pallas_b`, `Vesta_a`, `Vesta_b` |
 | `hash_to_curve` | `hashToCurve`, `hashToCurveWithCofactor`, `mapToCurveSvdW`, `hashToField`, `expandMessageXmd`, `CurvePoint` |
 | `hash_to_curve_derive` | `DeriveError` (`DomainTooLong`, `NoValidPoint`), `max_attempts`, `max_domain_len`, `max_generator_vector_domain_len`, `hashToPoint`, `generatorVector` |
-| `msm` | `msm(Aff, Proj, Scalar, allocator, points, scalars)`, `windowSize` |
+| `msm` | `msm(Aff, Proj, Scalar, allocator, points, scalars) error{LengthMismatch, OutOfMemory}!Proj`, `windowSize` |
 | `group_ops` | `GroupOps(Point)`, `identity`, `eql`, `scalarMul` |
 | `group_poly` | `evalGroupPoly`, `evalGroupPolyVerify` |
 | `byte_scalar` | `ByteScalar(ScalarType, N)` — stdlib-style ECC scalar fields only |
@@ -134,7 +134,7 @@ cd libs/curve && zig build test
 
 `cd libs/curve && zig build test` runs five binaries: `zig-curve-tests`
 (52 inline tests), `bn254-tests` (7), `bls12-381-tests` (7), `pasta-tests`
-(14) and `hash-to-curve-tests` (16) — 96 tests in total. The root
+(14) and `hash-to-curve-tests` (16) — 98 tests in total. The root
 `zig build test` compiles only the inline `src/` tests, so it counts 52 for
 this library.
 
@@ -151,6 +151,8 @@ this library.
 - Pasta scalar fields are cross-wired with the base fields: `PallasScalar = VestaFp`, `VestaScalar = PallasFp`
 - This library contains **no signature scheme**. The BLS12-381 Schnorr demo lives in `examples/schnorr_signature.zig` and runs via `zig build example`
 - Point arithmetic, scalar multiplication and pairing-adjacent operations are **not constant-time**; do not use them on secret scalars without your own audit
+- `msm` rejects a `points`/`scalars` length mismatch with `error.LengthMismatch`; it used to debug-assert it, which vanishes in ReleaseFast and let the scalar snapshot loop read out of bounds
+- `group_ops.scalarMul` and `group_poly.evalGroupPoly` / `evalGroupPolyVerify` return `error.NonCanonicalScalar` for a stdlib pcurve point and a non-canonical byte scalar; they used to `catch unreachable` it
 
 ## License
 

@@ -114,7 +114,7 @@ pub fn main() !void {
         combined_coeffs[i] = trace.a[i];
     }
 
-    const domain = fri.Domain(Goldilocks).init(Goldilocks, 7);
+    const domain = try fri.Domain(Goldilocks).init(Goldilocks, 7);
     const evaluations = try gpa.alloc(Goldilocks, 1 << 7);
     defer gpa.free(evaluations);
     for (0..evaluations.len) |i| {

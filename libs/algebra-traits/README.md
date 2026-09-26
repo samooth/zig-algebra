@@ -235,10 +235,11 @@ const eg = zat.egcd(ring, ring.one(), ring.one());
 cd libs/algebra-traits && zig build test
 ```
 
-`src/traits.zig` currently contains no `test` blocks, so this step only
-type-checks the module (the root `zig build test` reports 0 tests for
-`zig-algebra-traits`). `zig build` installs `src/main.zig` as the
-`traits-example` executable, which is the runnable version of the Quick Start.
+4 tests run: the negative cases for the entry points that take slices
+(`dotProduct`, `lagrangeInterpolate`, `lagrangeCoefficient`) plus the
+partition-of-unity property of `lagrangeCoefficient`. `zig build` installs
+`src/main.zig` as the `traits-example` executable, which is the runnable
+version of the Quick Start.
 
 ## License
 

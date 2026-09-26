@@ -6,8 +6,8 @@
 //! # Quick Start
 //! ```zig
 //! const Poly = Polynomial(F7, 64);
-//! var p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
-//! const q = p.mul(Poly.x());
+//! var p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
+//! const q = try p.mul(Poly.x());
 //! const y = q.eval(F7.fromInt(3));
 //! ```
 
@@ -68,13 +68,24 @@ const F7 = struct {
     pub fn mul(a: Self, b: Self) Self {
         return fromInt(a.value * b.value);
     }
+    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse; new
+    /// code that requires invertibility must call `invChecked`.
     pub fn inv(a: Self) Self {
-        std.debug.assert(!a.isZero());
+        if (a.isZero()) return zero();
+        return pow(a, modulus - 2);
+    }
+    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+        if (a.isZero()) return error.InverseOfZero;
         return pow(a, modulus - 2);
     }
     pub const inverse = inv;
+    /// Legacy total division: `x / 0 == zero()`. Zero is not a quotient; new
+    /// code that requires an invertible divisor must call `divChecked`.
     pub fn div(a: Self, b: Self) Self {
         return mul(a, inv(b));
+    }
+    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+        return mul(a, try b.invChecked());
     }
     pub fn pow(base: Self, exp: u64) Self {
         var result = one();
@@ -98,7 +109,7 @@ const F7 = struct {
 test "Polynomial construction and degree" {
     const Poly = Polynomial(F7, 8);
 
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
+    const p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
     try std.testing.expectEqual(@as(i32, 2), p.degree);
 
     const zero = Poly.zero();
@@ -122,39 +133,39 @@ test "Polynomial and vector handle zero-length cases" {
 test "Polynomial addition" {
     const Poly = Polynomial(F7, 8);
 
-    const a = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
-    const b = Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(4) });
+    const a = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
+    const b = try Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(4) });
     const s = a.add(b);
 
-    try std.testing.expect(s.eql(Poly.fromCoeffs(&.{ F7.fromInt(4), F7.fromInt(6) })));
+    try std.testing.expect(s.eql(try Poly.fromCoeffs(&.{ F7.fromInt(4), F7.fromInt(6) })));
 }
 
 test "Polynomial subtraction" {
     const Poly = Polynomial(F7, 8);
 
-    const a = Poly.fromCoeffs(&.{ F7.fromInt(5), F7.fromInt(3) });
-    const b = Poly.fromCoeffs(&.{ F7.fromInt(2), F7.fromInt(1) });
+    const a = try Poly.fromCoeffs(&.{ F7.fromInt(5), F7.fromInt(3) });
+    const b = try Poly.fromCoeffs(&.{ F7.fromInt(2), F7.fromInt(1) });
     const d = a.sub(b);
 
-    try std.testing.expect(d.eql(Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(2) })));
+    try std.testing.expect(d.eql(try Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(2) })));
 }
 
 test "Polynomial multiplication" {
     const Poly = Polynomial(F7, 8);
 
     // (1 + 2x) * (3 + 4x) = 3 + 10x + 8x^2 = 3 + 3x + x^2 (mod 7)
-    const a = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
-    const b = Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(4) });
-    const p = a.mul(b);
+    const a = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
+    const b = try Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(4) });
+    const p = try a.mul(b);
 
-    try std.testing.expect(p.eql(Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(3), F7.fromInt(1) })));
+    try std.testing.expect(p.eql(try Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(3), F7.fromInt(1) })));
 }
 
 test "Polynomial evaluation" {
     const Poly = Polynomial(F7, 8);
 
     // p(x) = 1 + 2x + 3x^2
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
+    const p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
     const y = p.eval(F7.fromInt(2));
 
     // 1 + 4 + 12 = 17 mod 7 = 3
@@ -165,11 +176,11 @@ test "Polynomial division" {
     const Poly = Polynomial(F7, 8);
 
     // (x^2 - 1) / (x - 1) = x + 1
-    const dividend = Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(0), F7.fromInt(1) }); // -1 + x^2
-    const divisor = Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(1) }); // -1 + x
-    const qr = dividend.divRem(divisor);
+    const dividend = try Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(0), F7.fromInt(1) }); // -1 + x^2
+    const divisor = try Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(1) }); // -1 + x
+    const qr = try dividend.divRem(divisor);
 
-    try std.testing.expect(qr.q.eql(Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) })));
+    try std.testing.expect(qr.q.eql(try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) })));
     try std.testing.expect(qr.r.isZero());
 }
 
@@ -177,10 +188,10 @@ test "Polynomial derivative" {
     const Poly = Polynomial(F7, 8);
 
     // d/dx (1 + 2x + 3x^2 + 4x^3) = 2 + 6x + 12x^2 = 2 + 6x + 5x^2 (mod 7)
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3), F7.fromInt(4) });
+    const p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3), F7.fromInt(4) });
     const d = p.derivative();
 
-    try std.testing.expect(d.eql(Poly.fromCoeffs(&.{ F7.fromInt(2), F7.fromInt(6), F7.fromInt(5) })));
+    try std.testing.expect(d.eql(try Poly.fromCoeffs(&.{ F7.fromInt(2), F7.fromInt(6), F7.fromInt(5) })));
 }
 
 test "Polynomial composition" {
@@ -188,21 +199,21 @@ test "Polynomial composition" {
 
     // p(x) = 1 + 2x, q(x) = x + 1
     // p(q(x)) = 1 + 2(x+1) = 3 + 2x
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
-    const q = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) });
-    const r = p.compose(q);
+    const p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) });
+    const q = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) });
+    const r = try p.compose(q);
 
-    try std.testing.expect(r.eql(Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(2) })));
+    try std.testing.expect(r.eql(try Poly.fromCoeffs(&.{ F7.fromInt(3), F7.fromInt(2) })));
 }
 
 test "Polynomial power" {
     const Poly = Polynomial(F7, 8);
 
     // (1 + x)^3 = 1 + 3x + 3x^2 + x^3 = 1 + 3x + 3x^2 + x^3 (mod 7)
-    const p = Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) });
-    const p3 = p.pow(3);
+    const p = try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(1) });
+    const p3 = try p.pow(3);
 
-    try std.testing.expect(p3.eql(Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(3), F7.fromInt(3), F7.fromInt(1) })));
+    try std.testing.expect(p3.eql(try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(3), F7.fromInt(3), F7.fromInt(1) })));
 }
 
 test "Lagrange interpolation" {
@@ -210,10 +221,10 @@ test "Lagrange interpolation" {
 
     const xs = &[_]F7{ F7.fromInt(0), F7.fromInt(1), F7.fromInt(2) };
     const ys = &[_]F7{ F7.fromInt(1), F7.fromInt(3), F7.fromInt(5) };
-    const p = lagrangeInterpolate(F7, 8, xs, ys);
+    const p = try lagrangeInterpolate(F7, 8, xs, ys);
 
     // p(x) = 1 + 2x
-    try std.testing.expect(p.eql(Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) })));
+    try std.testing.expect(p.eql(try Poly.fromCoeffs(&.{ F7.fromInt(1), F7.fromInt(2) })));
 
     // Verify all points
     for (xs, ys) |x, y| {
@@ -223,7 +234,7 @@ test "Lagrange interpolation" {
 
 test "Vanishing polynomial" {
     const xs = &[_]F7{ F7.fromInt(1), F7.fromInt(2) };
-    const v = vanishingPolynomial(F7, 8, xs);
+    const v = try vanishingPolynomial(F7, 8, xs);
 
     // V(x) = (x-1)(x-2) = x^2 - 3x + 2 = x^2 + 4x + 2 (mod 7)
     try std.testing.expect(v.eval(F7.fromInt(1)).isZero());
@@ -267,13 +278,24 @@ test "Polynomial formatting" {
         pub fn mul(a: Self, b: Self) Self {
             return fromInt(a.value * b.value);
         }
+        /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
+        /// new code that requires invertibility must call `invChecked`.
         pub fn inv(a: Self) Self {
-            std.debug.assert(!a.isZero());
+            if (a.isZero()) return zero();
+            return pow(a, modulus - 2);
+        }
+        pub fn invChecked(a: Self) error{InverseOfZero}!Self {
+            if (a.isZero()) return error.InverseOfZero;
             return pow(a, modulus - 2);
         }
         pub const inverse = inv;
+        /// Legacy total division: `x / 0 == zero()`. Zero is not a quotient;
+        /// new code that requires an invertible divisor must call `divChecked`.
         pub fn div(a: Self, b: Self) Self {
             return mul(a, inv(b));
+        }
+        pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
+            return mul(a, try b.invChecked());
         }
         pub fn pow(base: Self, exp: u64) Self {
             var result = one();
@@ -293,21 +315,14 @@ test "Polynomial formatting" {
             return fromInt(1);
         }
 
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             try writer.print("{}", .{self.value});
         }
     };
 
     const Poly = Polynomial(FmtF7, 8);
 
-    const p = Poly.fromCoeffs(&.{ FmtF7.fromInt(1), FmtF7.fromInt(2), FmtF7.fromInt(3) });
+    const p = try Poly.fromCoeffs(&.{ FmtF7.fromInt(1), FmtF7.fromInt(2), FmtF7.fromInt(3) });
     var buf: [256]u8 = undefined;
     // Manual formatting since format method doesn't work on comptime-generated structs
     var first = true;

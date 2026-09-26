@@ -9,7 +9,7 @@
 //! const F = ...; // your field type
 //! const Poly = Polynomial(F, 64);
 //!
-//! var p = Poly.fromCoeffs(&.{ F.fromInt(1), F.fromInt(2), F.fromInt(1) });
+//! const p = try Poly.fromCoeffs(&.{ F.fromInt(1), F.fromInt(2), F.fromInt(1) });
 //! // p(x) = 1 + 2x + x^2
 //! const y = p.eval(F.fromInt(3)); // y = 1 + 6 + 9 = 16
 //! ```
@@ -69,10 +69,12 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
 
         /// Build from a slice of coefficients `[c0, c1, c2, ...]`.
         ///
-        /// # Panics
-        /// Debug-asserts that `src.len <= max_degree + 1`.
-        pub fn fromCoeffs(src: []const F) Self {
-            std.debug.assert(src.len <= max_degree + 1);
+        /// # Errors
+        /// `error.DegreeTooLarge` when `src.len > max_degree + 1`. The old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where the copy
+        /// loop then wrote past the end of the fixed `coeffs` array.
+        pub fn fromCoeffs(src: []const F) error{DegreeTooLarge}!Self {
+            if (src.len > max_degree + 1) return error.DegreeTooLarge;
             var p = Self{};
             for (0..src.len) |i| {
                 p.coeffs[i] = src[i];
@@ -82,8 +84,12 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         }
 
         /// Build from an array literal.
+        ///
+        /// The length is a comptime constant here, so an oversized literal is a
+        /// compile error rather than a runtime error.
         pub fn fromArray(comptime src: []const F) Self {
-            return fromCoeffs(src);
+            if (src.len > max_degree + 1) @compileError("Polynomial.fromArray: literal has " ++ std.fmt.comptimePrint("{d}", .{src.len}) ++ " coefficients, capacity is " ++ std.fmt.comptimePrint("{d}", .{max_degree + 1}));
+            return fromCoeffs(src) catch unreachable;
         }
 
         // ------------------------------------------------------------------
@@ -182,12 +188,16 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
 
         /// Polynomial multiplication (naive O(n*m)).
         ///
-        /// # Panics
-        /// Debug-asserts that the result degree does not exceed `max_degree`.
-        pub fn mul(self: Self, other: Self) Self {
+        /// # Errors
+        /// `error.DegreeTooLarge` when the product degree exceeds `max_degree`.
+        /// The old `std.debug.assert` is compiled out in `ReleaseFast`, where
+        /// `r.coeffs[i + j]` then wrote past the end of the fixed array. Every
+        /// operation that can exceed the capacity (including `compose`, `pow`,
+        /// `lagrangeInterpolate` and `vanishingPolynomial`) propagates this.
+        pub fn mul(self: Self, other: Self) error{DegreeTooLarge}!Self {
             if (self.isZero() or other.isZero()) return Self.zero();
             const d = self.degree + other.degree;
-            std.debug.assert(d <= max_degree);
+            if (d > max_degree) return error.DegreeTooLarge;
 
             var r = Self{};
             for (0..@intCast(self.degree + 1)) |i| {
@@ -219,9 +229,13 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
 
         /// Polynomial long division: returns `(quotient, remainder)`.
         ///
-        /// `divisor` must not be zero.
-        pub fn divRem(self: Self, divisor: Self) struct { q: Self, r: Self } {
-            std.debug.assert(!divisor.isZero());
+        /// # Errors
+        /// `error.DivisionByZero` when `divisor` is the zero polynomial. The old
+        /// `std.debug.assert` is compiled out in `ReleaseFast`, where the
+        /// `while (remainder.degree >= divisor.degree)` loop then never made
+        /// progress and `F.inv(0)` was used as a divisor.
+        pub fn divRem(self: Self, divisor: Self) error{DivisionByZero}!struct { q: Self, r: Self } {
+            if (divisor.isZero()) return error.DivisionByZero;
             if (self.isZero()) return .{ .q = Self.zero(), .r = Self.zero() };
             if (self.degree < divisor.degree) return .{ .q = Self.zero(), .r = self };
 
@@ -248,13 +262,13 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         }
 
         /// Quotient only.
-        pub fn div(self: Self, divisor: Self) Self {
-            return self.divRem(divisor).q;
+        pub fn div(self: Self, divisor: Self) error{DivisionByZero}!Self {
+            return (try self.divRem(divisor)).q;
         }
 
         /// Remainder only.
-        pub fn rem(self: Self, divisor: Self) Self {
-            return self.divRem(divisor).r;
+        pub fn rem(self: Self, divisor: Self) error{DivisionByZero}!Self {
+            return (try self.divRem(divisor)).r;
         }
 
         // ------------------------------------------------------------------
@@ -266,7 +280,7 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
             if (self.degree <= 0) return Self.zero();
             var r = Self{};
             for (1..@intCast(self.degree + 1)) |i| {
-                const coeff = F.fromInt(@intCast(i));
+                const coeff = F.fromInt(i);
                 r.coeffs[i - 1] = F.mul(self.coeffs[i], coeff);
             }
             r.degree = self.degree - 1;
@@ -275,7 +289,12 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         }
 
         /// Polynomial composition: `self(other(x))`.
-        pub fn compose(self: Self, other: Self) Self {
+        ///
+        /// # Errors
+        /// `error.DegreeTooLarge` when `deg(self) * deg(other)` exceeds
+        /// `max_degree`, which is the normal case for general polynomials
+        /// rather than an exceptional one.
+        pub fn compose(self: Self, other: Self) error{DegreeTooLarge}!Self {
             if (self.isZero()) return Self.zero();
             var result = Self.constant(self.coeffs[0]);
             var power = other;
@@ -285,7 +304,7 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
                     result = result.add(term);
                 }
                 if (i < @as(usize, @intCast(self.degree))) {
-                    power = power.mul(other);
+                    power = try power.mul(other);
                 }
             }
             return result;
@@ -296,16 +315,19 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         // ------------------------------------------------------------------
 
         /// Raise to a non-negative integer power.
-        pub fn pow(self: Self, exp: u32) Self {
+        ///
+        /// # Errors
+        /// `error.DegreeTooLarge` when `deg(self) * exp` exceeds `max_degree`.
+        pub fn pow(self: Self, exp: u32) error{DegreeTooLarge}!Self {
             if (exp == 0) return Self.constant(F.one());
             if (self.isZero()) return Self.zero();
             var result = Self.constant(F.one());
             var base = self;
             var e = exp;
             while (e > 0) {
-                if (e & 1 == 1) result = result.mul(base);
+                if (e & 1 == 1) result = try result.mul(base);
                 e >>= 1;
-                if (e > 0) base = base.mul(base);
+                if (e > 0) base = try base.mul(base);
             }
             return result;
         }
@@ -314,14 +336,7 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         // Formatting
         // ------------------------------------------------------------------
 
-        pub fn format(
-            self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
-        ) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
             if (self.isZero()) {
                 try writer.writeAll("0");
                 return;
@@ -343,8 +358,13 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
         }
 
         /// Convert polynomial to string representation.
+        ///
+        /// Returns the number of bytes written into `buf`. Uses `{f}` so the
+        /// custom `format` method above is used instead of the default struct
+        /// dump (Zig 0.16 only consults a `format` method for `{f}`).
         pub fn toString(self: Self, buf: []u8) !usize {
-            return std.fmt.bufPrint(buf, "{}", .{self});
+            const out = try std.fmt.bufPrint(buf, "{f}", .{self});
+            return out.len;
         }
     };
 }
@@ -352,22 +372,28 @@ pub fn Polynomial(comptime F: type, comptime max_degree: usize) type {
 /// Lagrange interpolation: given distinct points `(xs[i], ys[i])`, return the
 /// unique polynomial of degree `< n` that passes through them.
 ///
-/// # Constraints
-/// - `xs.len == ys.len`
-/// - All `xs[i]` must be distinct.
-/// - `xs.len - 1 <= max_degree`
+/// # Errors
+/// - `error.LengthMismatch`: `xs.len != ys.len`. The old `std.debug.assert` is
+///   compiled out in `ReleaseFast`, where the loop then read `ys[i]` out of
+///   bounds.
+/// - `error.EmptyInput`: `xs.len == 0` (the old `xs.len > 0` assert; the
+///   `xs.len - 1` bound computation underflows on an empty slice).
+/// - `error.DegreeTooLarge`: `xs.len - 1 > max_degree`.
+/// - `error.DivisionByZero`: duplicate `xs[i]`, which makes the Lagrange
+///   denominator zero. `F.inv` is the total legacy wrapper and would silently
+///   return zero there.
 ///
 /// # Example
 /// ```zig
 /// const xs = &.{ F.fromInt(0), F.fromInt(1), F.fromInt(2) };
 /// const ys = &.{ F.fromInt(1), F.fromInt(3), F.fromInt(5) };
-/// const p = lagrangeInterpolate(F, 64, xs, ys); // p(x) = 1 + 2x
+/// const p = try lagrangeInterpolate(F, 64, xs, ys); // p(x) = 1 + 2x
 /// ```
-pub fn lagrangeInterpolate(comptime F: type, comptime max_degree: usize, xs: []const F, ys: []const F) Polynomial(F, max_degree) {
+pub fn lagrangeInterpolate(comptime F: type, comptime max_degree: usize, xs: []const F, ys: []const F) error{ LengthMismatch, EmptyInput, DegreeTooLarge, DivisionByZero }!Polynomial(F, max_degree) {
     traits.assertField(F);
-    std.debug.assert(xs.len == ys.len);
-    std.debug.assert(xs.len > 0);
-    std.debug.assert(xs.len - 1 <= max_degree);
+    if (xs.len != ys.len) return error.LengthMismatch;
+    if (xs.len == 0) return error.EmptyInput;
+    if (xs.len - 1 > max_degree) return error.DegreeTooLarge;
 
     const n = xs.len;
     const Poly = Polynomial(F, max_degree);
@@ -385,11 +411,12 @@ pub fn lagrangeInterpolate(comptime F: type, comptime max_degree: usize, xs: []c
             factor.coeffs[0] = F.neg(xs[j]);
             factor.coeffs[1] = F.one();
             factor.degree = 1;
-            li = li.mul(factor);
+            li = try li.mul(factor);
 
             denom = F.mul(denom, F.sub(xs[i], xs[j]));
         }
 
+        if (denom.isZero()) return error.DivisionByZero;
         const scale = F.mul(ys[i], F.inv(denom));
         result = result.add(li.scale(scale));
     }
@@ -400,9 +427,14 @@ pub fn lagrangeInterpolate(comptime F: type, comptime max_degree: usize, xs: []c
 /// Vanishing polynomial for a set of points: V(x) = prod_i (x - xs[i]).
 ///
 /// Returns the monic polynomial that is zero at every `xs[i]`.
-pub fn vanishingPolynomial(comptime F: type, comptime max_degree: usize, xs: []const F) Polynomial(F, max_degree) {
+///
+/// # Errors
+/// `error.DegreeTooLarge` when `xs.len > max_degree`. The old
+/// `std.debug.assert` is compiled out in `ReleaseFast`, where the product loop
+/// then wrote past the end of the fixed `coeffs` array.
+pub fn vanishingPolynomial(comptime F: type, comptime max_degree: usize, xs: []const F) error{DegreeTooLarge}!Polynomial(F, max_degree) {
     traits.assertField(F);
-    std.debug.assert(xs.len <= max_degree);
+    if (xs.len > max_degree) return error.DegreeTooLarge;
 
     const Poly = Polynomial(F, max_degree);
     var result = Poly.constant(F.one());
@@ -412,8 +444,140 @@ pub fn vanishingPolynomial(comptime F: type, comptime max_degree: usize, xs: []c
         factor.coeffs[0] = F.neg(xi);
         factor.coeffs[1] = F.one();
         factor.degree = 1;
-        result = result.mul(factor);
+        result = try result.mul(factor);
     }
 
     return result;
+}
+
+// ============================================================================
+// Tests: typed validation
+// ============================================================================
+
+const testing = std.testing;
+
+const TestF7 = struct {
+    value: u64,
+    pub const MODULUS: u64 = 7;
+
+    pub fn zero() @This() {
+        return .{ .value = 0 };
+    }
+    pub fn one() @This() {
+        return .{ .value = 1 };
+    }
+    pub fn fromInt(x: anytype) @This() {
+        return .{ .value = @intCast(@as(u64, @intCast(x)) % MODULUS) };
+    }
+    pub fn add(a: @This(), b: @This()) @This() {
+        return fromInt(a.value + b.value);
+    }
+    pub fn sub(a: @This(), b: @This()) @This() {
+        return fromInt(a.value + (MODULUS - b.value % MODULUS));
+    }
+    pub fn neg(a: @This()) @This() {
+        return if (a.value == 0) zero() else fromInt(MODULUS - a.value);
+    }
+    pub fn mul(a: @This(), b: @This()) @This() {
+        return fromInt(a.value * b.value);
+    }
+    pub fn inv(a: @This()) @This() {
+        if (a.isZero()) return zero();
+        return fromInt(powInt(a.value, MODULUS - 2));
+    }
+    pub fn invChecked(a: @This()) error{InverseOfZero}!@This() {
+        if (a.isZero()) return error.InverseOfZero;
+        return inv(a);
+    }
+    pub fn inverse(a: @This()) @This() {
+        return inv(a);
+    }
+    pub fn isZero(a: @This()) bool {
+        return a.value == 0;
+    }
+    pub fn eql(a: @This(), b: @This()) bool {
+        return a.value == b.value;
+    }
+    pub fn div(a: @This(), b: @This()) @This() {
+        return mul(a, inv(b));
+    }
+    pub fn pow(base: @This(), exp: u64) @This() {
+        return fromInt(powInt(base.value, exp));
+    }
+    pub fn random() @This() {
+        return fromInt(1);
+    }
+    fn powInt(base: u64, exp: u64) u64 {
+        var result: u64 = 1;
+        var b = base % MODULUS;
+        var e = exp;
+        while (e > 0) : (e >>= 1) {
+            if (e & 1 == 1) result = result * b;
+            b = b * b;
+        }
+        return result % MODULUS;
+    }
+};
+
+test "fromCoeffs rejects more coefficients than the fixed capacity" {
+    const Poly = Polynomial(TestF7, 2);
+    // Capacity is max_degree + 1 == 3 coefficients.
+    const fits = [_]TestF7{ TestF7.one(), TestF7.one(), TestF7.one() };
+    try testing.expect((try Poly.fromCoeffs(&fits)).eql(try Poly.fromCoeffs(&fits)));
+    const too_long = [_]TestF7{ TestF7.one(), TestF7.one(), TestF7.one(), TestF7.one() };
+    try testing.expectError(error.DegreeTooLarge, Poly.fromCoeffs(&too_long));
+}
+
+test "mul rejects a product degree beyond the fixed capacity" {
+    const Poly = Polynomial(TestF7, 3);
+    const x = Poly.x();
+    const x2 = try x.mul(x);
+    const x3 = try x2.mul(x);
+    try testing.expectError(error.DegreeTooLarge, x3.mul(x));
+    // Inside the capacity the product is exact.
+    try testing.expect((try x2.mul(x)).eql(x3));
+}
+
+test "divRem rejects a zero divisor" {
+    const Poly = Polynomial(TestF7, 4);
+    const p = try Poly.fromCoeffs(&.{ TestF7.fromInt(1), TestF7.one() });
+    try testing.expectError(error.DivisionByZero, p.divRem(Poly.zero()));
+    try testing.expectError(error.DivisionByZero, p.div(Poly.zero()));
+    try testing.expectError(error.DivisionByZero, p.rem(Poly.zero()));
+}
+
+test "lagrangeInterpolate validates lengths, emptiness, capacity and duplicates" {
+    const xs0 = [_]TestF7{ TestF7.zero(), TestF7.one() };
+    const xs1 = [_]TestF7{TestF7.zero()};
+    try testing.expectError(error.LengthMismatch, lagrangeInterpolate(TestF7, 8, &xs0, &xs1));
+    try testing.expectError(error.EmptyInput, lagrangeInterpolate(TestF7, 8, &[_]TestF7{}, &[_]TestF7{}));
+    const xs3 = [_]TestF7{ TestF7.zero(), TestF7.one(), TestF7.fromInt(2) };
+    try testing.expectError(error.DegreeTooLarge, lagrangeInterpolate(TestF7, 1, &xs3, &xs3));
+    const dup = [_]TestF7{ TestF7.one(), TestF7.one() };
+    try testing.expectError(error.DivisionByZero, lagrangeInterpolate(TestF7, 8, &dup, &dup));
+}
+
+test "vanishingPolynomial rejects more points than the capacity" {
+    const xs = [_]TestF7{ TestF7.one(), TestF7.fromInt(2), TestF7.fromInt(3) };
+    try testing.expectError(error.DegreeTooLarge, vanishingPolynomial(TestF7, 2, &xs));
+    // Within capacity the polynomial vanishes on every point.
+    const v = try vanishingPolynomial(TestF7, 3, &xs);
+    for (xs) |x| try testing.expect(v.eval(x).isZero());
+}
+
+test "derivative and toString compile and behave" {
+    const Poly = Polynomial(TestF7, 8);
+    const p = try Poly.fromCoeffs(&.{ TestF7.fromInt(1), TestF7.fromInt(2), TestF7.fromInt(3) });
+    // d/dx (1 + 2x + 3x^2) = 2 + 6x
+    const d = p.derivative();
+    try testing.expect(d.degree == 1);
+    try testing.expect(d.coeffs[0].eql(TestF7.fromInt(2)));
+    try testing.expect(d.coeffs[1].eql(TestF7.fromInt(6)));
+    // A constant has zero derivative.
+    try testing.expect(Poly.constant(TestF7.fromInt(5)).derivative().isZero());
+
+    var buf: [1024]u8 = undefined;
+    const n = try p.toString(&buf);
+    try testing.expect(n > 0);
+    try testing.expect(std.mem.indexOf(u8, buf[0..n], "x^2") != null);
 }
