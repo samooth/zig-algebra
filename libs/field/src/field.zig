@@ -345,7 +345,7 @@ fn SmallField(comptime modulus: comptime_int) type {
             return .{ .value = if (self.value == 0) 0 else MODULUS - self.value };
         }
 
-        /// Inverse via binary extended Euclidean algorithm (fast, constant-time friendly).
+        /// Inverse via binary extended Euclidean algorithm (fast, not constant-time).
         pub fn inv(self: Self) Self {
             std.debug.assert(!self.isZero());
             // Binary extended GCD algorithm using u128 for intermediate to avoid overflow
@@ -978,7 +978,7 @@ fn BigField(comptime modulus: comptime_int) type {
             return .{ .limbs = Mont.neg(self.limbs) };
         }
 
-        /// Inverse via binary extended GCD (constant-time friendly, ~2·BITS
+        /// Inverse via binary extended GCD (not constant-time; ~2·BITS
         /// iterations of limb add/sub/shift vs BITS Montgomery multiplications
         /// for Fermat's little theorem).
         pub fn inv(self: Self) Self {

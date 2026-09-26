@@ -9,10 +9,11 @@ Elliptic curve implementations for Zig. Re-exports stdlib curves and provides cu
 - **BN254** — G1, G2 (pairing-friendly, used by Ethereum zkSNARKs)
 - **BLS12-381** — G1, G2 (pairing-friendly, used by BLS signatures, Ethereum 2.0)
 - **Pasta cycle** — Pallas, Vesta (used by Halo2, recursive SNARKs)
-- **Hash-to-curve** — RFC 9380 Shallue-van de Woestijne mapping, `expand_message_xmd`, `hash_to_field`
-- **Schnorr signature type** — `(R: Point, z: Scalar)` with serialization
-- **Scalar field arithmetic** — secp256k1 scalar operations (add, mul, inv, random)
-- **Point operations** — add, double, scalar multiply, SEC1 serialization
+- **Hash-to-curve** — RFC 9380 Shallue-van de Woestijne mapping, `expandMessageXmd`, `hashToField`, `hashToCurve`, `hashToCurveWithCofactor`
+- **Multi-scalar multiplication** — `msm.msm(Aff, Proj, Scalar, allocator, points, scalars)` via Pippenger bucket decomposition with an adaptive window (`msm.windowSize`), returning a projective point
+- **Byte-array scalar arithmetic** — `byte_scalar.ByteScalar(ScalarType, N)` (add, sub, mul, inv, neg, reduce) over big-endian `[N]u8` scalars. `ScalarType` must expose the **stdlib** ECC scalar shape (`fromBytes(bytes, .big)`, `toBytes(.big)`, `invert()`), e.g. `std.crypto.ecc.Secp256k1.scalar.Scalar` — it does **not** accept `zig-field` types, whose `toBytes`/`fromBytes` take no endianness argument
+- **Group trait helpers** — `group_ops.GroupOps(Point)` and free functions `identity`, `eql`, `scalarMul`
+- **Point operations** — `add`, `dbl`, `scalarMul`, `neg`, `eql`, SEC1 `toBytes` / `fromBytes`
 
 ## Installation
 
@@ -21,7 +22,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .zig_curve = .{
-        .path = "path/to/zig-algebra-core/zig-curve",
+        .path = "../zig-algebra/libs/curve",
     },
 },
 ```
@@ -36,12 +37,25 @@ exe.root_module.addImport("zig-curve", zc.module("zig-curve"));
 ## Quick Start
 
 ```zig
+const std = @import("std");
 const zc = @import("zig-curve");
 
-// BN254 curve operations
+// BN254 curve operations.
+// The method is `dbl`, not `double`.
 const G1 = zc.bn254.G1_generator;
-const G2 = G1.double().add(G1); // 3*G1
-const P = G1.scalarMul(scalar);
+const three_G1 = G1.dbl().add(G1);
+std.debug.assert(three_G1.eql(G1.scalarMul(3)));
+
+// Jacobian/projective coordinates: `ProjectivePoint` has no `eql` that
+// accepts an affine point, so convert with `toAffine`.
+const P1 = zc.bn254.G1Projective.generator(G1.x, G1.y);
+std.debug.assert(P1.dbl().toAffine().eql(G1.dbl()));
+
+// SEC1-style serialization (2 * F.NUM_BYTES, x || y).
+// `toBytes` is a method; `fromBytes` is a static constructor.
+const sec1 = G1.toBytes();
+const round_tripped = try zc.bn254.G1.fromBytes(sec1);
+std.debug.assert(round_tripped.eql(G1));
 
 // BLS12-381
 const bls_G1 = zc.bls12_381.G1_generator;
@@ -51,8 +65,19 @@ const bls_G2 = zc.bls12_381.G2_generator;
 const pallas = zc.pasta.Pallas_generator;
 const vesta = zc.pasta.Vesta_generator;
 
-// Hash-to-curve (RFC 9380)
-const point = zc.hash_to_curve.hashToCurve(F, a, b, "hello", "DST");
+// Hash-to-curve (RFC 9380). `hashToCurve` returns a plain
+// `hash_to_curve.CurvePoint(F)` struct of field elements, not an
+// `AffinePoint`, so lift it explicitly if you need curve operations.
+const h2c = zc.hash_to_curve;
+const pt = try h2c.hashToCurve(
+    zc.bn254.Fp,
+    zc.bn254.G1_a,
+    zc.bn254.G1_b,
+    "hello",
+    "BN254_G1_XMD:SHA-256_SSWU_RO_",
+);
+const mapped = zc.bn254.G1{ .x = pt.x, .y = pt.y, .infinity = false };
+std.debug.assert(mapped.isOnCurve());
 
 // Stdlib curves
 const secp = zc.secp256k1; // std.crypto.ecc.Secp256k1
@@ -75,26 +100,41 @@ const secp = zc.secp256k1; // std.crypto.ecc.Secp256k1
 | Module | Key types/functions |
 |--------|-------------------|
 | `weierstrass` | `AffinePoint(F, a, b)`, `ProjectivePoint(F, a, b)` |
-| `bn254` | `G1`, `G2`, `G1_generator`, `G2_generator`, `Fr` |
-| `bls12_381` | `G1`, `G2`, `G1_generator`, `G2_generator`, `Fr` |
-| `pasta` | `Pallas`, `Vesta`, `Pallas_generator`, `Vesta_generator` |
-| `hash_to_curve` | `hashToCurve`, `mapToCurveSvdW`, `hashToField`, `expandMessageXmd` |
+| `bn254` | `Fp`, `Fp2`, `Fr`, `G1`, `G2`, `G1Projective`, `G2Projective`, `G1_generator`, `G2_generator`, `G1_a`, `G1_b`, `G2_a`, `G2_b` |
+| `bls12_381` | `Fp`, `Fp2`, `Fr`, `G1`, `G2`, `G1Projective`, `G2Projective`, `G1_generator`, `G2_generator`, `G1_a`, `G1_b`, `G2_a`, `G2_b` |
+| `pasta` | `PallasFp`, `VestaFp`, `Pallas`, `Vesta`, `PallasProjective`, `VestaProjective`, `PallasScalar`, `VestaScalar`, `Pallas_generator`, `Vesta_generator`, `Pallas_a`, `Pallas_b`, `Vesta_a`, `Vesta_b` |
+| `hash_to_curve` | `hashToCurve`, `hashToCurveWithCofactor`, `mapToCurveSvdW`, `hashToField`, `expandMessageXmd`, `CurvePoint` |
+| `msm` | `msm(Aff, Proj, Scalar, allocator, points, scalars)`, `windowSize` |
+| `group_ops` | `GroupOps(Point)`, `identity`, `eql`, `scalarMul` |
+| `group_poly` | `evalGroupPoly`, `evalGroupPolyVerify` |
+| `byte_scalar` | `ByteScalar(ScalarType, N)` — stdlib-style ECC scalar fields only |
 
 ## Running Tests
 
 ```bash
+# From the monorepo root (runs the inline src/ tests only)
 zig build test
+
+# Just this library: inline src/ tests plus the per-curve tests/ roots
+cd libs/curve && zig build test
 ```
+
+`cd libs/curve && zig build test` runs five binaries: `zig-curve-tests`
+(48 inline tests), `bn254-tests` (7), `bls12-381-tests` (7), `pasta-tests`
+(14) and `hash-to-curve-tests` (16) — 92 tests in total.
 
 ## Design Notes
 
-- Weierstrass curves use Jacobian projective coordinates for efficient addition/doubling
-- Hash-to-curve uses Shallue-van de Woestijne mapping (RFC 9380 §6.6.1), which works for any curve including a=0
-- BLS12-381: curve equation y² = x³ + 4 (G1) and y² = x³ + 4(1+u) (G2 over Fp2)
-- BLS12-381 G1/G2 generators are the canonical spec values, verified on-curve and of order r
-- BN254: curve equation y² = x³ + 3 (G1) and y² = x³ + 3/(9+u) (G2 over Fp2), canonical EIP-197 generators
-- All generators are computed and verified at comptime
-- SVDW hash-to-curve searches for a valid parameter Z satisfying both RFC 9380 criteria at runtime (Z non-square and −g(Z)(3Z²+4a) square)
+- `AffinePoint` uses affine coordinates with `add` / `dbl` / `scalarMul`; `ProjectivePoint` uses Jacobian coordinates for the same operations and converts back with `toAffine`
+- Point equality is `eql` (a method). There is no `double`; the doubling entry point is `dbl`
+- Hash-to-curve uses Shallue-van de Woestijne mapping (RFC 9380 §6.6.1), which works for any curve including `a = 0`
+- BLS12-381: curve equation `y² = x³ + 4` (G1) and `y² = x³ + 4(1+u)` (G2 over Fp2)
+- BLS12-381 G1/G2 generators are the canonical spec values
+- BN254: curve equation `y² = x³ + 3` (G1) and `y² = x³ + 3/(9+u)` (G2 over Fp2), canonical EIP-197 generators. `G2_b` is derived at comptime as `(27/82) - (3/82)·u`
+- `mapToCurveSvdW` searches upward from 1 for a `Z` satisfying both RFC 9380 criteria (`Z` non-square and `−g(Z)·(3Z² + 4a)` square). `a` and `b` are comptime parameters, so the compiler often folds the search
+- Pasta scalar fields are cross-wired with the base fields: `PallasScalar = VestaFp`, `VestaScalar = PallasFp`
+- This library contains **no signature scheme**. The BLS12-381 Schnorr demo lives in `examples/schnorr_signature.zig` and runs via `zig build example`
+- Point arithmetic, scalar multiplication and pairing-adjacent operations are **not constant-time**; do not use them on secret scalars without your own audit
 
 ## License
 

@@ -8,9 +8,17 @@ Merkle tree implementations for data commitments. Three tree structures for diff
 - **MMR (Merkle Mountain Range)** — append-only log structure for blockchains
 - **SparseMerkleTree** — perfect binary tree for sparse key-value sets
 - **Inclusion/exclusion proofs** — prove membership or non-membership
-- **Proof serialization** — compact binary proof format
-- **Incremental building** — add leaves one at a time
-- **One-shot and streaming verification**
+- **Proof serialization** — compact binary proof format (`MerkleProof.serialize` / `MerkleProof.deserialize`)
+- **Pre-hashed leaves** — `initFromHashes` skips the leaf hashing step
+- **Standalone verification** — verify an opening without the tree, via `zm.verify` / `Tree.verifyPath`
+
+Every tree is generic over the hash function `H`, which must expose a one-shot
+`hashBytes([]const u8) [32]u8` returning a 32-byte digest. Among the
+`zig-hash` types only `zh.Blake3` provides `hashBytes` — `zh.Keccak256`,
+`zh.Sha3_256`, `zh.Blake2b256` and `zh.Blake2s256` only have
+`init`/`update`/`finalize`, so they cannot be passed as `H` without a thin
+adapter. There is no built-in default: `H` is a required comptime parameter.
+`zig-field` separately ships a SHA-256 `MerkleTree(F)` over field elements.
 
 ## Installation
 
@@ -19,7 +27,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .zig_merkle = .{
-        .path = "path/to/zig-algebra-core/zig-merkle",
+        .path = "../zig-algebra/libs/merkle",
     },
 },
 ```
@@ -36,67 +44,124 @@ exe.root_module.addImport("zig-merkle", zm.module("zig-merkle"));
 ### Merkle Tree
 
 ```zig
+const std = @import("std");
 const zm = @import("zig-merkle");
+const zh = @import("zig-hash");
+
+const Tree = zm.MerkleTree(zh.Blake3);
 
 // Build tree from leaves
 const leaves = [_][]const u8{ "a", "b", "c", "d" };
-var tree = try zm.MerkleTree.init(allocator, &leaves);
+var tree = try Tree.init(allocator, &leaves);
 defer tree.deinit();
 
 // Get root and proof
-const root = tree.rootHash();
-const proof = try tree.proof(allocator, 2); // proof for leaf at index 2
+const root = tree.root();
+const proof = try tree.prove(2, allocator); // proof for leaf at index 2
+defer proof.deinit(allocator);
 
-// Verify
-try zm.MerkleTree.verify(root, 2, proof, "c");
+// Verify (returns bool, not an error union)
+std.debug.assert(Tree.verify(root, 2, leaves[2], proof));
+std.debug.assert(!Tree.verify(root, 2, "wrong", proof));
+
+// Serialize / deserialize the proof
+const serialized = try proof.serialize(allocator);
+defer allocator.free(serialized);
+const deserialized = try zm.MerkleProof.deserialize(serialized, allocator);
+defer deserialized.deinit(allocator);
+
+// Skip leaf hashing when you already have digests
+var hashes: [4][32]u8 = undefined;
+for (&hashes) |*h| h.* = zh.hashBlake3("leaf");
+var hashed = try Tree.initFromHashes(allocator, &hashes);
+defer hashed.deinit();
+const hp = try hashed.prove(1, allocator);
+defer hp.deinit(allocator);
+std.debug.assert(Tree.verifyHashed(hashed.root(), 1, hashes[1], hp));
+
+// Standalone path verification (works on a pre-hashed leaf + raw path)
+std.debug.assert(zm.verify(
+    zh.Blake3,
+    root,
+    2,
+    zh.hashBlake3("c"),
+    proof.siblings,
+));
 ```
 
 ### Sparse Merkle Tree
 
+Indexed by `u256` key, fixed `DEPTH` (max 256).
+
 ```zig
-var smt = try zm.SparseMerkleTree.init(allocator);
+const SMT = zm.SparseMerkleTree(zh.Blake3, 8);
+var smt = try SMT.init(allocator);
 defer smt.deinit();
 
 // Insert key-value pairs
-try smt.insert(key1, value1);
-try smt.insert(key2, value2);
+try smt.update(5, "value_at_5");
+try smt.update(10, "value_at_10");
+const root = smt.root();
 
 // Prove membership
-const proof = try smt.prove(allocator, key1);
-try zm.SparseMerkleTree.verify(smt.root(), key1, value1, proof);
+const proof = try smt.prove(5, allocator);
+defer proof.deinit(allocator);
+std.debug.assert(SMT.verify(root, 5, "value_at_5", proof));
 
 // Prove non-membership
-const non_proof = try smt.proveNonMembership(allocator, key3);
+const non_proof = try smt.prove(7, allocator);
+defer non_proof.deinit(allocator);
+std.debug.assert(SMT.verifyNonMembership(root, 7, non_proof));
 ```
 
 ### Merkle Mountain Range
 
 ```zig
-var mmr = try zm.MMR.init(allocator);
+const M = zm.MMR(zh.Blake3);
+var mmr = try M.init(allocator);
 defer mmr.deinit();
 
 // Append leaves
-try mmr.append(leaf1);
-try mmr.append(leaf2);
+try mmr.append("leaf1");
+try mmr.append("leaf2");
+try mmr.append("leaf3");
+try mmr.append("leaf4");
 
-// Get root and proof
-const root = mmr.root();
-const proof = try mmr.prove(allocator, 0);
+// Get root (fallible) and proof
+const root = try mmr.root();
+const proof = try mmr.prove(0, allocator);
+defer proof.deinit(allocator);
+
+// `verify` is a method here, unlike the other two trees
+std.debug.assert(mmr.verify(root, 0, "leaf1", proof));
 ```
 
 ## Running Tests
 
 ```bash
+# From the monorepo root
 zig build test
+
+# Just this library (14 tests, all inline in src/root.zig)
+cd libs/merkle && zig build test
 ```
 
 ## Design Notes
 
-- MerkleTree uses SHA-256 as the default hash function (configurable)
-- SparseMerkleTree uses empty-node hashing for default values
-- MMR is append-only (no deletions) — ideal for blockchain transaction logs
-- All trees support incremental building and proof generation without storing the full tree
-- Proof format is compact and serializable
+- `MerkleTree(H)` pads to the next power of two and pads the remaining leaves
+  with `H.hashBytes(&.{})`
+- All three trees hash internal nodes as `H.hashBytes(left || right)` over
+  64-byte concatenations
+- `SparseMerkleTree(H, DEPTH)` precomputes a chain of `DEPTH + 1` default
+  hashes (`hash("")` at the leaf level, folded upwards) and falls back to them
+  for any untouched subtree. Membership and non-membership share one proof
+  shape: `verifyNonMembership` is `verify` against the empty value
+- MMR is append-only (no deletions) — ideal for blockchain transaction logs.
+  `MMR.root()` is an error union because it must collapse the peak list
+- Proofs are `MerkleProof` structs carrying `siblings` plus
+  `is_left_sibling` flags, so a verifier never needs the tree
+- Proof format is compact and serializable:
+  `[u32 num_siblings][32*n sibling hashes][n direction flags]`
 
 ## License
 

@@ -18,17 +18,20 @@ SmallField and BigField use the binary extended GCD algorithm for inversion
 instead of Fermat's little theorem (`x^(p-2)` via square-and-multiply).
 
 Rationale:
-- GCD binario: O(2·bits) iterations, each a shift + subtract → ~2× faster than
-  381-bit modular exponentiation.
+- Binary GCD: ~2·BITS iterations, each a shift + subtract, versus ~BITS
+  Montgomery multiplications plus their squares for a 381-bit exponentiation.
 - No need for a WideExp type sized to hold p−2 (saves stack).
 - Trade-off: iteration count is input-dependent (leaks timing). Acceptable for
   STARKs/zkSNARKs where field elements are public. NOT suitable for secret-key ops.
+  (`BigField.inv` routes through `Montgomery.invMontgomery`, whose limbs use the
+  constant-time `ct*` helpers, but the loop bound still depends on the input.)
 
 ### Mersenne fast-path
 
-SmallField detects Mersenne primes (p = 2^k − 1) at comptime and replaces
-Montgomery reduction with the classic split-reduce: `(lo & M) + (hi >> k)`.
-This is what makes M31 (~2^31) competitive with hand-written implementations.
+`SmallField` keeps residues in canonical form (no Montgomery round-trip) and
+detects Mersenne primes (p = 2^k − 1) at comptime, reducing with the classic
+split-reduce `(lo & M) + (hi >> k)` in `add`, `sub` and `mul`. This is what
+makes M31 (~2^31) competitive with hand-written implementations.
 
 ### Dual backend
 
@@ -40,22 +43,33 @@ Both expose identical APIs. The caller never sees which backend is active.
 
 ## Allocation Policy
 
-Zero heap allocations in all hot paths. Every type uses fixed-size arrays:
+Fixed-size algebraic types are stack-only:
 
-- `BigInt(max_limbs)`: `[max_limbs]u64`
+- `BigField`/`BigInt(max_limbs)`: `[N]u64` limbs
 - `Polynomial(F, max_degree)`: `[max_degree + 1]F`
 - `Matrix(F, rows, cols)`: `[rows][cols]F`
+- `Vector(F, n)`, `Fq` towers, points: nested fixed arrays
 
-The only allocations occur in string conversion (`toString`, `fromString`)
-and in the Merkle tree (node storage). These are cold paths.
+There is **no global "zero allocation" guarantee**: anything of variable size
+takes a caller-supplied `std.mem.Allocator` and returns a `deinit`-able owner.
+That includes the proof stack (`fri.prove`/`fri.verify`, `kzg.commit`/`prove`,
+`Ipa.prove`), the Merkle trees, the binary-field PCS/sum-check, twiddle-factor
+caching in `zig-ntt`, and string conversion. Allocation failures are propagated
+as `error.OutOfMemory` — the proof stack never uses `catch unreachable`.
 
 ## NTT Design
 
-Cooley-Tukey iterative radix-2 with bit-reversal permutation.
-Chosen over recursive (Stockham) because:
+`zig-ntt` is Cooley-Tukey iterative radix-2 with bit-reversal permutation,
+power-of-two sizes only, plus an inverse NTT and an optional twiddle-factor
+cache (`precomputeTwiddles`/`nttWithTwiddles`, which is the one allocating
+entry point in the library). Chosen over recursive (Stockham) because:
 - In-place, no scratch buffer needed
 - Cache-friendly for power-of-two sizes ≤ L2 cache
 - Twiddle factors can be precomputed once and reused across calls
+
+`zig-field` additionally ships a M31-only `@Vector(8, u64)` NTT
+(`nttVec8M31`/`inttVec8M31`); `zig-ntt` itself has no SIMD, mixed-radix, 2-D or
+batch specialisations.
 
 ## Curve Arithmetic
 
@@ -78,10 +92,17 @@ The tower parameter ξ must satisfy TWO conditions simultaneously:
 1. Not a cube in Fp2 (so Fp6 is degree 3)
 2. w⁶ = ξ = b′/b (so the untwist map Ψ works)
 
-For BLS12-381 (M-twist): b′ = 4ξ with ξ = 1+u ✓ both conditions met.
-For BN254 (D-twist): b′ = 3/(9+u), so b/b′ = 9+u. But 1/(9+u) IS a cube in Fp2,
-making it unsuitable. Resolution requires twist-scaling constants or a direct
-degree-12 extension.
+For BLS12-381 (M-twist): ξ = 1 + u, b′ = 4ξ, so both conditions hold.
+
+For BN254 (D-twist) both conditions are met by **γ = 9 + u** (verified in tests
+as neither a cube nor a square in Fp2, with w⁶ = γ and the untwist landing on
+E(Fp12)). An earlier session's claim that `1/(9+u)` being a cube blocks BN254
+was a faulty numeric check; the implemented resolution was to pick γ = 9 + u
+and prove the tower properties directly rather than deriving them from b/b′.
+`zig-pairing` therefore ships three BN254 entry points: the production
+`bn254_tower.pairing` (sparse Miller loop + split final exponentiation), the
+`pairingDense` cross-check reference, and `bn254_direct`, an independent
+degree-12 extension Fp12 = Fp2[w]/(w¹² − ξ) used as a second opinion.
 
 ## Testing Philosophy
 
@@ -91,56 +112,86 @@ Every mathematical operation is tested against a reference:
 - Pairings: bilinearity e(aP,bQ) = e(P,Q)^{ab}, r-torsion, non-degeneracy
 - Serialization: golden wire-layout tests to catch accidental format changes
 
+Counts (Zig 0.16.0): the root `zig build test` step executes 316 tests in both
+Debug and ReleaseFast; per-library steps sum to 419 because `field` and
+`curve` also compile their `tests/` roots there. See `README.md`.
+
 ## Security Notes
 
 Constant-time guarantees apply ONLY where explicitly documented:
 - BigField Montgomery mul/add/sub: constant-time ✓
 - SmallField add/sub: constant-time ✓
-- SmallField division (`%`): NOT constant-time ✗ (acceptable for public data)
+- SmallField multiplication/reduction (`%`): NOT constant-time ✗
+  (acceptable for public data)
 - BigInt comparison: NOT constant-time ✗
 - GCD inversion: NOT constant-time ✗ (input-dependent iteration count)
+- Curve scalarMul and both pairing implementations: NOT constant-time ✗
+  (documented on the API; pairing inputs are treated as public data)
 
 For STARK/SNARK proving (public data): all of the above are safe.
 For signature schemes or key exchange: audit before use.
 
+Non-cryptographic caveats that documentation must keep visible:
+- **No independent audit exists** for any library in this workspace.
+- `kzg.Setup.generate` is a synthetic trusted setup (tests/dev only).
+- `Ipa.verify` in `zig-field` is a stub (`error.Unsupported`); only
+  `verifyWithCommitment` verifies, and its challenges are a local SHA-256 of
+  `(L, R, round)` rather than a `zig-transcript` Fiat-Shamir session.
+- `zig build bench` numbers are indicative and machine-specific; CI records
+  them as an artifact without regression thresholds.
+
 ## WASM Compilation
 
-Zig compiles to wasm32-freestanding natively:
+Both WASM targets are implemented as build steps (no manual flags needed):
 
 ```bash
-zig build-exe examples/wasm_fp.zig \
-  -target wasm32-freestanding -O ReleaseFast \
-  --dep zig-field -Mroot=examples/wasm_fp.zig \
-  -Mzig-field=libs/field/src/lib.zig ...
+zig build wasm          # examples/wasm_fp.zig      -> wasm32-freestanding
+zig build wasm-pairing  # examples/wasm_pairing.zig -> wasm32-freestanding
 ```
 
-See `examples/wasm_fp.zig` for exported functions (`fp_mul`, `fp_add`, `fp_inv`).
-The build.zig target is pending Zig 0.16 WASM linker flags.
+`zig build wasm` exports `fp_add`, `fp_mul` and `fp_inv` for
+`examples/wasm_fp.zig` (128-bit BN254-Fp arguments in/out); the root
+`build.zig` resolves the `wasm32-freestanding` target, disables the entry
+point and lists the exported symbols explicitly. `zig build wasm-pairing`
+additionally exports `pairing_api_version`, `g1_validate`, `g2_validate`,
+`pairing_compute`, `pairing_bilinear_check` and `scratch_ptr` for JS/TS
+interop. CI builds both and drives them from Node
+(`scripts/wasm_field_smoke.js`, `scripts/wasm_pairing_smoke.js`).
 
 ## Dependency Graph Rationale
+
+Edges as wired in the root `build.zig` (and mirrored in each library's
+`build.zig.zon`).
 
 | Edge | Why |
 |------|-----|
 | bigint → algebra-traits | Validates BigInt against Ring/Field contracts at comptime |
-| hash → (none) | Self-contained; Blake3/Keccak/Poseidon have no deps beyond stdlib |
-| rng → hash | SHAKE256 XOF extends Keccak; CSPRNG seeds from Blake3 |
-| field → bigint | BigField uses `[N]u64` limbs from bigint for Montgomery arithmetic |
-| binary-field → hash | GF(2^n) uses hash for challenge generation in Binius PCS |
-| curve → field, hash | Points over Fp/Fp2 from field lib; hash-to-curve needs hash functions |
-| pairing → field, curve | Tower Fp12 built on field extensions; Miller loop evaluates on curve points |
-| ntt → algebra-traits | Validates Field trait for NTT-compatible types |
-| poly → algebra-traits | Validates coefficient type is a proper Ring/Field |
-| merkle → hash | Tree nodes hashed with Blake3/SHA3/Poseidon |
-| linalg → field | Matrix/vector elements are field elements |
+| hash → algebra-traits | Traits are compile-time only; Blake3/Keccak/Poseidon need no runtime deps beyond stdlib |
+| rng → algebra-traits, hash | Field sampling is trait-checked; SHAKE256 XOF extends Keccak and CSPRNG seeding hashes |
+| merkle → algebra-traits, hash | Tree nodes hashed with Blake3/SHA3/Poseidon |
+| field → bigint | BigField uses `[N]u64` limb helpers from bigint for Montgomery arithmetic |
+| binary-field → algebra-traits, hash, merkle | GF(2^n) challenges come from hash; the MLE PCS commits to Merkle roots |
+| curve → field, hash | Points over Fp/Fp2 from the field library; hash-to-curve needs hash functions |
+| ntt → algebra-traits, field | Trait-checks the coefficient type and is exercised against the concrete field types |
+| poly → algebra-traits | Validates the coefficient type is a proper Ring/Field |
+| linalg → algebra-traits, field | Matrix/vector elements are field elements |
+| pairing → algebra-traits, field, curve | Tower Fp12 built on field extensions; Miller loop evaluates on curve points |
+| transcript → (none) | stdlib Blake3 only; base of the proof-stack dependency chain |
+| fri → transcript, merkle, field | Folding challenges from Fiat-Shamir; layer commitments via the shared zig-merkle tree; degrees over a concrete field |
+| kzg → field, curve, pairing | Commitments are BN254 G1 points and verification runs the pairing |
 | parallel → (none) | Thread pool is self-contained |
 | serialization → (none) | Comptime reflection only |
-| transcript → (none) | stdlib Blake3 only; base of the proof-stack dependency chain |
-| fri → transcript, merkle | Folding challenges from Fiat-Shamir; layer commitments via shared zig-merkle tree |
 
 ## Semantic Versioning
 
-- v0.1.0: Initial release — all 17 libs with verified tests
-- Future: bump MAJOR on breaking API changes, MINOR on new features
+- v0.1.0: Initial release — 14 libraries (algebra-traits, bigint, hash, rng,
+  field, binary-field, curve, pairing, merkle, ntt, poly, linalg, parallel,
+  serialization).
+- v0.2.0: added `transcript` and `fri` (16 libraries).
+- v0.2.2: added `kzg` as the 17th library.
+- Current: workspace `0.3.2`; each library carries its own independent semver
+  (currently `0.1.0`–`0.3.0`).
+- Future: bump MAJOR on breaking API changes, MINOR on new features.
 
 ## BN254 optimal ate pairing (tower) — algorithm notes
 
@@ -165,10 +216,18 @@ The build.zig target is pending Zig 0.16 WASM linker flags.
   part runs 4-bit-windowed SA&M with cyclotomic compressed squaring
   (valid since frob^6 == w-conjugation on this subgroup).
 
-Performance arc for e(G1,G2): 170 ms -> 44 ms (split) -> 29 ms
-(cyclotomic+window) -> ~32 ms steady-state (sparse loop) -> ~17 ms
-(sparse promoted to production path after fixing missing Miller
-squarings; dense reference kept at ~30 ms for cross-checking).
+Performance arc for e(G1,G2) on the development machine: 170 ms -> 44 ms
+(split) -> 29 ms (cyclotomic+window) -> ~32 ms steady-state (sparse loop)
+-> ~17 ms (sparse promoted to production path after fixing missing Miller
+squarings; dense reference kept at ~30 ms for cross-checking). Treat these
+as *relative* improvements only: absolute timings are machine-specific (a
+Ryzen 7 5800H currently measures ~21 ms for the tower path and ~37 ms for the
+dense reference — see the benchmark table in `README.md`).
+
+An independent degree-12 formulation (`bn254_direct`, Fp12 = Fp2[w]/(w^12 − ξ))
+is kept as a second opinion: it is bilinear and non-degenerate under test, but
+it is ~5x slower than the tower path, so the tower stays the production entry
+point.
 
 ## BLS12-381 pairing — final exponentiation notes
 
@@ -190,10 +249,12 @@ squarings; dense reference kept at ~30 ms for cross-checking).
 - Setup is SYNTHETIC (fixed tau by caller): tests/dev only; production
   requires a powers-of-tau ceremony with toxic-waste destruction.
 - commit = MSM over [tau^i]G1; prove = commit of witness quotient
-  q(x)=(p(x)-p(z))/(p... /(x-z)) via Horner synthetic division.
+  q(x)=(p(x)-p(z))/(x-z) via Horner synthetic division.
 - verify pairing check: e(C-[y]G1, G2gen) == e(W, [tau]G2 - [z]G2gen).
   NOTE the RHS needs the affine SUBTRACTION in G2 — comparing against
   bare [tau]G2 silently fails even though group identity holds.
+- `commit`/`prove` take a caller-supplied allocator and propagate
+  `error.OutOfMemory` (breaking change in v0.3.0).
 - Scalar-mult by Fr over curve points: delegates to zig-curve's
   windowed ladder (4-bit windows, left-to-right, Jacobian coordinates;
   O(1) inversions). The earlier per-byte LSB-first affine double-and-add

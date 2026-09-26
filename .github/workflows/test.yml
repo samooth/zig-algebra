@@ -14,7 +14,7 @@ jobs:
         uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
-      - run: zig fmt --check .
+      - run: zig fmt --check build.zig libs examples bench scripts
 
   test:
     strategy:
@@ -64,7 +64,7 @@ jobs:
         uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
-      - name: Run STARK prover demo (Fibonacci over M31 via FRI)
+      - name: Run STARK prover demo (Fibonacci over Goldilocks via FRI)
         run: zig build stark
 
   wasm-build:

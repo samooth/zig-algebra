@@ -6,13 +6,65 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Docs
+- Documentation pass so every top-level document matches the current tree.
+  Historical entries are retained, with factual corrections noted here.
+- **Test counts.** The root `zig build test` step runs **316 tests** (verified
+  on Zig 0.16.0 in both Debug and ReleaseFast); per-library `zig build test`
+  steps sum to 419 because `field` (70) and `curve` (92) also compile their
+  separate `tests/` roots. Older documents quoted 222 and 297; the 297 figure
+  in `SECURITY.md` was accurate for the suite as it stood when advisory
+  ZA-2026-001 was fixed and is kept there as history.
+- **Library counts.** The workspace has 17 libraries. `kzg` is the 17th
+  (added in v0.2.2); v0.1.0 shipped 14 libraries and v0.2.0 brought the total
+  to 16 with `fri` and `transcript`.
+- **IPA is a `zig-field` module, not a library.** The v0.3.2 "ipa" bullets
+  refer to `libs/field/src/ipa.zig`. `Ipa.verify` is still a stub
+  (`error.Unsupported`); the working path is `Ipa.verifyWithCommitment`, whose
+  commitment is the inner-product commitment `C = <a,G> + <b,H> + c·U` (not a
+  Merkle commitment), and its challenges are a local SHA-256 of `(L, R, round)`
+  rather than a `zig-transcript` Fiat-Shamir session. The module is now listed
+  under Known Limitations in `README.md` and Scope in `SECURITY.md`.
+- **Feature lists corrected** to the code that exists: `zig-ntt` is radix-2
+  power-of-two only (no mixed-radix, 2-D, batch or SIMD; the M31 `Vec8` NTT is
+  in `zig-field`), `zig-poly` has schoolbook multiplication with no
+  Karatsuba/FFT/GCD, and `zig-merkle` has binary/MMR/sparse trees with
+  inclusion and non-membership proofs and proof serialization, but no Verkle
+  tree or batch updates.
+- **Dependency graphs** in `README.md`, `DESIGN.md` and `docs/architecture.md`
+  now match the imports wired in the root `build.zig` and in each
+  `libs/*/build.zig.zon` (notably `binary-field → merkle`, `fri → field`,
+  `merkle → algebra-traits`, `kzg → field, curve, pairing`).
+- **Memory claims softened.** There is no global "zero allocation" guarantee:
+  fixed-size types stay on the stack, while the proof stack (`fri`, `kzg`,
+  `Ipa`) and the Merkle/PCS/twiddle paths take a caller-supplied allocator and
+  propagate `error.OutOfMemory`.
+- **`zig build wasm` is implemented** (as is `zig build wasm-pairing`); the
+  claim in `DESIGN.md` that the build target was pending is removed.
+- **Benchmarks are labelled indicative** with the machine they were measured
+  on; CI stores them as an artifact without regression thresholds.
+- **No independent audit** is now stated in `README.md`, `SECURITY.md`,
+  `DESIGN.md`, `docs/architecture.md` and `AGENTS.md`; the "production
+  candidate" label means test-covered, not audited.
+- **STARK demo field corrected** to Goldilocks (`examples/stark_prover.zig`) in
+  `AGENTS.md` and in the `.github/workflows/test.yml` step name; the demo has
+  used Goldilocks since it was introduced.
+
+### Versioning
+
+- Root `build.zig.zon` carries the workspace version (`0.3.2`); every library
+  keeps its own independent semver in `libs/<name>/build.zig.zon`, currently
+  between `0.1.0` (`transcript`) and `0.3.0` (`curve`, `pairing`). Library
+  versions bump for API changes, the workspace version for ecosystem-level
+  releases.
+
 ## [v0.3.2] — 2026-09-25
 
 ### Added
 - **field/hash**: RFC 9380 `expand_message_xmd`, `hashToField` and
   cofactor-aware `hashToCurve` APIs, with seed-length validation.
-- **ipa**: algebraic verification of Merkle commitments through
-  `verifyWithCommitment`.
+- **ipa**: algebraic verification of the inner-product commitment through
+  `verifyWithCommitment` (not a Merkle commitment).
 - **rng**: SHAKE256 sampling, Windows `BCryptGenRandom` entropy and serialized
   CSPRNG test hooks.
 - **testing**: canonical BLS12-381 generators plus known-answer coverage for
@@ -60,7 +112,7 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 ## [v0.2.2] — 2026-08-26
 
 ### Added
-- **kzg** (18th library): KZG polynomial commitments over BN254 — synthetic
+- **kzg** (17th library): KZG polynomial commitments over BN254 — synthetic
   setup, commit/prove/verify against the verified optimal ate pairing and
   Pippenger MSM.
 - **curve**: generic multi-scalar multiplication (naive + Pippenger with
@@ -91,5 +143,5 @@ STARK example stack (transcript → FRI) hardening.
 ## [v0.1.0] — initial release
 
 14 libraries: algebra-traits, bigint, hash, rng, field, binary-field, curve,
-pairing, merkle, ntt, poly, linalg, parallel, serialization — plus transcript
-and fri building blocks, examples and benchmarks.
+pairing, merkle, ntt, poly, linalg, parallel, serialization — plus examples and
+benchmarks.

@@ -4,22 +4,26 @@
 
 `zig-algebra` is a monorepo containing 17 independent algebraic libraries that form the mathematical foundation for cryptographic protocols. The libraries are organized in layers, where each layer depends only on lower layers.
 
+Layering below is the strict ordering implied by the real module imports
+(root `build.zig` and each `libs/*/build.zig.zon`); a few libraries only need a
+level because their dependencies do.
+
 ## Layer Architecture
 
 ```
 Layer 0: algebra-traits          (compile-time trait contracts)
     │
-Layer 1: bigint, hash, rng, transcript
-    │                             (primitives and Fiat-Shamir)
-Layer 2: field, binary-field     (concrete field implementations)
+Layer 1: bigint, hash, transcript
+    │                             (primitives + Fiat-Shamir; transcript has no deps)
+Layer 2: field, merkle, rng      (field on bigint; merkle/rng on hash)
     │
-Layer 3: curve, merkle           (curves & data structures)
+Layer 3: curve, binary-field     (curve on field; binary-field on merkle)
     │
-Layer 4: ntt, poly, linalg       (algorithms over fields)
+Layer 4: ntt, poly, linalg, pairing
+    │                             (ntt/linalg on field, pairing on curve)
+Proof stack: fri, kzg            (fri on transcript+merkle+field, kzg on pairing)
     │
-Proof stack: fri, kzg            (proximity and polynomial commitments)
-    │
-Utils:  parallel, serialization  (infrastructure)
+Utils:  parallel, serialization  (no internal dependencies)
 ```
 
 ## Core Design Principles
@@ -30,12 +34,12 @@ All generic algorithms are parameterized by comptime types that implement trait 
 
 ```zig
 // Generic NTT works over any Field trait implementation
-pub fn ntt(comptime F: type, data: []F, root: F, log_n: usize) void {
-    FieldTrait(F).assert();
+pub fn ntt(comptime F: type, data: []F, log_n: usize, root: F) void {
+    traits.assertField(F); // compile-time contract check
     // ... implementation
 }
 
-// Instantiation: ntt(M31, data, primitive_root, log_n)
+// Instantiation: ntt(M31, data, log_n, M31.TWO_ADIC_ROOT)
 // Compiler generates specialized M31-specific NTT code
 ```
 
@@ -46,25 +50,30 @@ All algebraic structures are defined as compile-time verified contracts:
 ```zig
 pub fn FieldTrait(comptime T: type) type {
     return struct {
-        pub const has_add = @hasDecl(T, "add");
-        pub const has_mul = @hasDecl(T, "mul");
+        pub const has_ring = RingTrait(T);
         pub const has_inv = @hasDecl(T, "inv");
-        // ...
-        
+        pub const has_div = @hasDecl(T, "div");
+        pub const has_pow = @hasDecl(T, "pow");
+        pub const has_isZero = @hasDecl(T, "isZero");
+
         pub fn assert() void {
-            if (!has_add) @compileError("FieldTrait: missing 'add' on " ++ @typeName(T));
+            has_ring.assert();
+            if (!has_inv) @compileError("Field trait: missing 'inv' on " ++ @typeName(T));
             // ...
         }
     };
 }
 ```
 
-### 3. Allocation-Free Design
+### 3. Explicit Memory Ownership
 
-- Stack allocation preferred over heap
-- Arena allocators for temporary buffers
-- Pre-allocated buffers passed by caller
-- No hidden allocations in hot paths
+- Fixed-size algebraic types live on the stack (fields, points, vectors,
+  matrices, polynomials, towers)
+- Variable-size structures (Merkle trees, FRI/KZG proofs, IPA, binary-field
+  PCS, NTT twiddle caches) take a caller-supplied allocator and expose
+  `deinit(allocator)`
+- `error.OutOfMemory` is propagated; the proof stack has no `catch unreachable`
+- No hidden allocations inside scalar operations
 
 ### 4. Zig 0.16 Compatibility
 
@@ -78,32 +87,38 @@ All libraries target Zig 0.16.0 with:
 
 ### algebra-traits (Layer 0)
 
-The foundation. Defines all algebraic trait contracts:
+The foundation. Defines all algebraic trait contracts as compile-time checked
+contracts (`traits.zig`):
 
 - `SetTrait` - basic equality/zero/one
-- `GroupTrait` - additive/multiplicative groups
-- `RingTrait` - rings with addition/multiplication
-- `FieldTrait` - fields with inversion
+- `GroupTrait`, `AdditiveGroupTrait`, `MultiplicativeGroupTrait` - groups
+- `RingTrait`, `FieldTrait`, `PrimeFieldTrait`, `FieldExtensionTrait`
 - `VectorSpaceTrait` - vector spaces over fields
 - `PolynomialRingTrait` - polynomial operations
-- `EllipticCurveTrait` - curve point operations
-- `PairingFriendlyTrait` - bilinear pairings
+- `EllipticCurveTrait`, `PairingFriendlyTrait` - curves and pairings
+- `CommitmentSchemeTrait`, `MerkleTreeTrait`, `TranscriptTrait`
 - `NttTrait` - NTT requirements
-- `HashToField/Curve` - hash-to-curve
-- `MerkleTreeTrait` - Merkle trees
-- `TranscriptTrait` - Fiat-Shamir
+- `HashToFieldTrait`, `HashToCurveTrait` - RFC 9380 style hashing
 - `FieldRngTrait` - field random elements
+
+Plus `assert*` helpers (`assertField`, `assertRing`, `assertGroup`,
+`assertEllipticCurve`, `assertPairingFriendly`) and generic algorithms (`pow`,
+`sum`, `product`, `egcd`). It is compile-time only: it ships 0 runtime tests by
+design.
 
 ### bigint (Layer 1)
 
 Arbitrary-precision integers with limb-based representation:
 
-- `BigInt(max_limbs)` - configurable precision
+- `BigInt(max_limbs)` - configurable precision over `[max_limbs]u64`
 - Addition, subtraction, multiplication
-- Division with remainder (Knuth Algorithm D)
-- GCD, extended GCD, modular inverse
-- Modular exponentiation (binary & u64 fast path)
-- Primality testing (trial division + Miller-Rabin)
+- Division with remainder: `divRemU64` fast path for single-limb divisors,
+  simplified shift-and-subtract for multi-limb (Knuth Algorithm D is *not*
+  implemented)
+- GCD / extended GCD / modular inverse (`ExtendedGcd`)
+- Modular exponentiation: square-and-multiply for `BigInt` exponents plus a
+  `u64`-exponent fast path
+- Primality testing: trial division by small primes, then Miller-Rabin
 
 ### hash (Layer 1)
 
@@ -116,40 +131,82 @@ Cryptographic hash functions:
 - **MiMC** - minimal constraints for SNARKs
 - **Hash interface** - unified `hashBytes`/`hash2` for Merkle
 
-### rng (Layer 1)
+### transcript (Layer 1)
+
+Fiat-Shamir transcript for non-interactive proofs:
+
+- Blake3-based (stdlib only, no internal library dependencies)
+- Field-aware challenges (`challengeField`) and byte appends
+- Re-keying after each challenge
+- Label-parameterised initialisation so a transcript is domain-separated by
+  the caller
+
+### rng (Layer 2)
 
 Random number generators:
 
 - **ChaCha20Rng** - stream cipher CSPRNG
 - **Shake256Rng** - XOF-based PRNG
-- **Fisher-Yates** - unbiased shuffling
-- **Rejection sampling** - uniform field elements
-- **Process-wide CSPRNG** - thread-safe with OS entropy
+- **Process-wide CSPRNG** - thread-safe ChaCha20 seeded from OS entropy
+  (`getrandom` on Linux, `BCryptGenRandom` on Windows, `/dev/urandom` elsewhere,
+  host-injected entropy for freestanding/wasm) with a test-only
+  deterministic injection hook
+- **Fisher-Yates** - unbiased shuffling, plus `randomPermutation`
+- **Rejection sampling** - uniform field elements, bounded by
+  `MAX_REJECTION_ATTEMPTS` and returning typed range errors
 
 ### field (Layer 2)
 
 Prime field implementations:
 
-- **M31** - 2^31 - 1 (STARK-friendly)
+- **M31** - 2^31 - 1 (STARK-friendly, Mersenne fast path + Vec8 SIMD)
 - **BabyBear** - 2^31 - 2^27 + 1
 - **KoalaBear** - 2^31 - 2^24 + 1
-- **Goldilocks** - 2^64 - 2^32 + 1
+- **M61** - 2^61 - 1
+- **Goldilocks** - 2^64 - 2^32 + 1 (used by the STARK/FRI demo)
+- **StarkNet_Fp** - STARK field
 - **BN254_Fp** - BN254 base field
 - **BLS12_381_Fp** - BLS12-381 base field
-- **Extensions**: CM31, QM31, BN254_Fp2
-- Montgomery arithmetic for fast multiplication
-- SIMD NTT (Vec8) for M31/BabyBear
+- **Extensions**: CM31, QM31, BN254_Fp2 (the `BLS12_381_Fp2` re-export in `zig-field` is currently broken; use `zig-curve`'s BLS12-381 `Fp2`)
+- `Field(modulus)` picks `SmallField` (< 2^64, native u64, Mersenne
+  split-reduce) or `BigField` (Montgomery CIOS over `[N]u64` limbs)
+- Binary GCD inversion (non-constant-time: input-dependent iteration count)
+- `Vec8NttM31` - `@Vector(8, u64)` Cooley-Tukey NTT, **M31 only**
+- RFC 9380 `expand_message_xmd`, `hashToField`, cofactor-aware `hashToCurve`
+- Two extra modules that are not separate libraries: `MerkleTree(F)` (SHA-256
+  over serialized field elements) and `Ipa(F)`, the Bulletproofs-style inner
+  product argument — `Ipa.verify` is a stub (`error.Unsupported`); only
+  `verifyWithCommitment` verifies, and its challenges are a local SHA-256 over
+  `(L, R, round)` rather than a `zig-transcript` session
 
-### binary-field (Layer 2)
+### merkle (Layer 2)
+
+Merkle tree variants, all generic over a comptime hash type `H` that must
+expose a one-shot `hash([]const u8) [32]u8` (e.g. `zh.Blake3`,
+`zh.Keccak256`, `zh.Sha3_256`, `zh.Blake2b256`, `zh.Blake2s256`) — there is no
+built-in default:
+
+- `MerkleTree(H)` - binary Merkle tree (power-of-two leaves), build from leaves
+  (`init`) or from pre-hashed leaves (`initFromHashes`), array-heap storage
+- `MMR(H)` - append-only log (`append`/`appendHash`)
+- `SparseMerkleTree(H, DEPTH)` - 256-bit key/value set with inclusion **and**
+  non-membership proofs (`verifyNonMembership`)
+- `MerkleProof` - path + sibling hashes + side flags, with
+  `serialize`/`deserialize`
+- Verification helpers: `MerkleTree.verify`, `verifyHashed`, `verifyPath`
+
+### binary-field (Layer 3)
 
 Characteristic-2 fields:
 
 - Generic `BinaryField(bits, reduction_constant)`
-- Tower: GF(2) → GF(4) → GF(16) → GF(256) → ...
-- CLMUL hardware acceleration (PCLMULQDQ)
-- Packed MLE evaluation (Binius packing)
-- Sum-check protocol
-- FRI-PCS for binary fields
+- Tower: GF(2) → GF(4) → GF(16) → GF(256) → … → GF(2^128) (`TowerField`)
+- CLMUL hardware acceleration (x86 PCLMULQDQ, ARM PMULL)
+- Multilinear polynomial evaluation: packed MLE (`PackedMle`, `novelEval`)
+- Sum-check protocol over binary fields
+- Multilinear evaluation / commitment protocols: `MlePcs` (verifier holds the
+  table) and `CommittedMlePcs` (Merkle-committed), i.e. Binius-style
+  polynomial commitments — not a full Binius implementation
 
 ### curve (Layer 3)
 
@@ -164,41 +221,81 @@ Elliptic curve implementations:
 - Byte-scalar arithmetic
 - Group-element polynomial evaluation (VSS/KZG)
 
-### merkle (Layer 3)
-
-Merkle tree variants:
-
-- Binary Merkle tree (power-of-two leaves)
-- MMR (Merkle Mountain Range) - append-only
-- Sparse Merkle Tree (256-bit keys)
-- Verkle tree (vector commitments)
-- Inclusion/exclusion proofs
-- Batch updates
-- Serialization
-
 ### ntt (Layer 4)
 
-Number-Theoretic Transforms:
+Number-Theoretic Transforms (radix-2, power-of-two sizes):
 
-- Cooley-Tukey iterative (in-place)
-- Circle FFT for Mersenne fields (M31, BabyBear)
-- Mixed-radix NTT (non-power-of-2 sizes)
-- NTT 2D (for matrices)
-- Batch NTT (multiple vectors)
-- Twiddle factor caching
-- SIMD (AVX-512, NEON) acceleration
+- `ntt` - iterative in-place Cooley-Tukey with bit-reversal permutation
+- `intt` - inverse NTT
+- `bitReverse` - standalone permutation
+- `precomputeTwiddles`/`freeTwiddles` + `nttWithTwiddles`/`inttWithTwiddles` -
+  cached roots of unity (the only allocating entry point)
+- Generic over any field satisfying the trait; no mixed-radix, 2-D, batch or
+  SIMD paths here (the M31 Vec8 NTT lives in `zig-field`)
 
 ### poly (Layer 4)
 
-Polynomial operations over rings:
+Polynomial operations over fields:
 
-- Dense coefficient representation
-- Evaluation (Horner, multipoint)
-- Interpolation (Lagrange, Newton, FFT-based)
-- Multiplication (schoolbook, Karatsuba, FFT)
-- Division with remainder
-- GCD, derivative, composition
-- Lagrange basis conversion
+- `Polynomial(F, max_degree)` - dense, stack-allocated coefficients
+- Arithmetic: add, sub, neg, scale, mul, pow
+- Division: `divRem`/`div`/`rem`
+- Evaluation: `eval` (Horner)
+- `derivative`, `compose`, `lagrangeInterpolate`, `vanishingPolynomial`
+- Vector helpers (`inner`, `powers`, `vecAdd`, `vecSub`, `vecScale`, `hadamard`,
+  `vecSum`, `vecEql`)
+- Multiplication is schoolbook; there is no Karatsuba/FFT path and no GCD
+
+### linalg (Layer 4)
+
+Linear algebra over finite fields, allocation-free with comptime dimensions:
+
+- `Vector(F, n)` - add, sub, neg, scale, dot, norm²
+- `Matrix(F, rows, cols)` - add, sub, scale, matrix×matrix, matrix×vector,
+  transpose, trace
+- Determinant (closed form for 1×1/2×2, Gaussian elimination above)
+- `LU(F, n)` - partial pivoting, returns L, U, P with P·A = L·U
+- Solving A·x = b through LU, `null` for singular systems
+
+### fri (proof stack)
+
+FRI v2 over a 2-adic multiplicative subgroup:
+
+- Natural-order subgroup `H_k` with antipodal pairs and positional folds
+- Logarithmic configuration (`log_initial_degree`, `log_final`,
+  `log_residual_degree`) validated for consistency
+- Fiat-Shamir folding challenges via `zig-transcript`
+- Layer commitments in the shared `zig-merkle` tree (path depth must match the
+  layer shape)
+- `prove`/`verify` take a caller allocator; the regression suite covers
+  random-data rejection, over-degree rejection, tampering, truncated paths,
+  transcript desync and non-power-of-two proofs
+- See `SECURITY.md` advisory ZA-2026-001 for the history of the verifier
+
+### kzg (proof stack)
+
+KZG polynomial commitments over BN254:
+
+- `Setup.generate` - **synthetic** trusted setup (tests/dev only)
+- `commit` - Pippenger MSM over `[tau^i]G1`
+- `prove` - witness quotient `q(x) = (p(x) - p(z))/(x - z)` via Horner
+- `verify` - pairing check `e(C - [y]G1, [tau]G2 - [z]G2) == e(W, G2)`
+- Scalar multiplication delegated to the windowed Jacobian ladder in
+  `zig-curve`; non-constant-time
+- `commit`/`prove` take a caller allocator (breaking change in v0.3.0)
+
+### pairing (Layer 4)
+
+Bilinear pairings:
+
+- Generic `Fp2`/`Fp6`/`Fp12` tower types
+- BLS12-381 optimal ate with split final exponentiation
+- BN254 tower pairing: production `pairing()` = sparse twist-side Miller loop +
+  split final exp, cross-checked against `pairingDense`
+- BN254 direct degree-12 extension (`Fp12 = Fp2[w]/(w^12 - xi)`) as a second
+  opinion
+- Both BN254 paths are covered by bilinearity, non-degeneracy and EIP-197
+  known-answer tests; neither is constant-time
 
 ### parallel (Utility)
 
@@ -224,19 +321,41 @@ Canonical wire encoding via comptime reflection:
 ## Testing
 
 ```bash
-# Individual library
+# Individual library (field and curve also compile their tests/ roots)
 cd libs/field && zig build test
 
 # All libraries
 zig build test
 
-# With specific optimization
+# With specific optimization (same 316 tests, seconds instead of ~1-2 min)
 zig build test -Doptimize=ReleaseFast
 ```
 
+Counts verified on Zig 0.16.0: the root `zig build test` step runs **316 tests**
+in both Debug and ReleaseFast; per-library steps sum to 419 because `field`
+(70) and `curve` (92) additionally compile their separate `tests/` roots.
+`algebra-traits` is compile-time only (0 tests).
+
 ## Versioning
 
-All libraries versioned together at workspace level (v0.1.0). Individual libraries use semantic versioning internally.
+The root `build.zig.zon` carries the **workspace version `0.3.2`**. Each
+library ships its own `build.zig.zon` with an independent semver — currently
+`0.1.0` (`transcript`) through `0.3.0` (`curve`, `pairing`). Library count
+grew 14 (v0.1.0) → 16 (v0.2.0: `fri`, `transcript`) → 17 (v0.2.2: `kzg`).
+Bump the library version for API changes and the workspace version for
+ecosystem-level releases; record both in `CHANGELOG.md`.
+
+## Known Gaps
+
+Documented because the architecture above is easy to over-read:
+
+- No independent cryptographic audit exists for any library here.
+- Pairing, curve `scalarMul` and field inversion are not constant-time.
+- `Ipa.verify` (inside `zig-field`) is a stub; `verifyWithCommitment` is the
+  working path and is not bound to a `zig-transcript` session.
+- `kzg.Setup.generate` is a synthetic trusted setup.
+- `libs/pairing/README.md` still carries the pre-v0.2.x status table; this
+  document, `DESIGN.md` and the root `README.md` are authoritative.
 
 ## Contributing
 

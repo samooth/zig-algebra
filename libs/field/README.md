@@ -8,19 +8,20 @@ A generic prime-field arithmetic library for Zig, supporting fields up to 512 bi
 - **Dual backend**:
   - **Small fields** (< 2^64): native `u64` with fast reduction; Mersenne primes (`2^k - 1`) use the classic split reduction
   - **Large fields** (≥ 2^64): Montgomery arithmetic over `[N]u64` limbs using CIOS multiplication
-- **SIMD Vec8 backend for M31** — 8-lane `@Vector(8, u64)` arithmetic with per-lane Mersenne reduction (`addVec8`, `subVec8`, `mulVec8`, `reduceVec8`, `fromVec8U32`, etc.)
+- **SIMD Vec8 backend for M31** — 8-lane `@Vector(8, u64)` arithmetic with per-lane Mersenne reduction (`addVec8`, `subVec8`, `mulVec8`, `reduceVec8`, `fromVec8U32`, `toVec8U32`)
 - **Tower extensions**: `QuadraticExtension` and `CubicExtension` with Karatsuba multiplication and norm-based inversion
 - **Extension metadata**: `NON_RESIDUE` (base-field non-residue) and `EXT_NON_RESIDUE` (`v` where `v^2 = n` or `v^3 = n`) exposed on both extension types
 - **Power-of-two roots of unity** — computed via quadratic non-residue search (no factorization required)
 - **Tonelli-Shanks square roots** and Legendre symbols
-- **Predefined fields**: M31, BabyBear, KoalaBear, Goldilocks, M61, BN254, BLS12-381, StarkNet, Pallas, Vesta
-- **Extension towers**: CM31, QM31, BN254_Fp2, BN254_Fp6/Fp12, BLS12_381_Fp2/Fp6/Fp12 (matching zig-stark semantics)
-- **Native NTT/INTT** — Cooley-Tukey iterative in-place transforms with precomputed twiddles, 8-lane SIMD for M31
+- **Predefined fields**: M31, BabyBear, KoalaBear, Goldilocks, M61, StarkNet, Pallas, Vesta, BN254, BLS12-381
+- **Extension towers**: CM31, QM31, BN254_Fp2 (matching zig-stark semantics)
+- **8-lane SIMD NTT/INTT for M31** — `nttVec8M31` / `inttVec8M31` (the generic Cooley-Tukey transform with precomputed twiddles lives in `zig-ntt`)
 - **Multi-scalar exponentiation** — `multiExp` with windowed Pippenger algorithm
 - **Inner Product Argument (IPA)** — Bulletproofs-style proof of `<a, b> = c` without revealing vectors
 - **Merkle trees** — SHA-256 based trees over field elements with inclusion proofs
-- **Constant-time serialization**: `fromBytesCT` / `fromIntCT` with validity flag for secret data
-- **No allocations**, no external dependencies — only Zig standard library
+- **Constant-time serialization on large-field backends**: `fromBytesCT` / `fromIntCT` with a validity flag; small-field reduction may still use `%`
+- **Allocation-free core** — field arithmetic, roots, and extensions never allocate. `Ipa` and `MerkleTree` take a caller-supplied `std.mem.Allocator`
+- **One internal dependency** — `zig-bigint` (plus the Zig standard library)
 
 ## Installation
 
@@ -29,8 +30,7 @@ Add to your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .zig_field = .{
-        .url = "https://github.com/samooth/zig-field/archive/refs/tags/v0.1.0.tar.gz",
-        .hash = "...",
+        .path = "../zig-algebra/libs/field",
     },
 },
 ```
@@ -49,7 +49,7 @@ const std = @import("std");
 const zf = @import("zig-field");
 
 // Create a prime field
-const F = zf.Field(2147483647); // M31
+const F = zf.Field(2147483647); // 2^31 - 1, same modulus as zf.M31
 
 // Basic arithmetic
 const a = F.fromInt(12345);
@@ -58,51 +58,70 @@ const sum = a.add(b);
 const prod = a.mul(b);
 const inv = a.inv();
 
-// Power-of-two roots of unity (for NTT)
-const root = F.primitiveRootOfUnity(4); // 16th root of unity
-try std.testing.expect(root.pow(16).isOne());
+// Power-of-two roots of unity (for NTT).
+// M31 has two_adicity == 1, so it only exposes 2^1-roots — use a field with
+// a large 2-adic part (BabyBear has two_adicity == 27) for NTT-sized domains.
+const BB = zf.BabyBear;
+const root = BB.primitiveRootOfUnity(4); // 16th root of unity
+std.debug.assert(root.pow(16).isOne());
 
 // Square roots and Legendre symbols
-const legendre = a.legendre();
-const sqrt_a = a.sqrt() orelse return error.NoSquareRoot;
+const legendre = a.legendre(); // -1, 0 or 1
+const sqrt_a = F.fromInt(4).sqrt() orelse return error.NoSquareRoot;
 
-// Serialization
+// Serialization (little-endian, exactly NUM_BYTES)
 const bytes = a.toBytes();
-const a2 = F.fromBytes(&bytes);
-try std.testing.expect(a.eq(a2));
+const a2 = try F.fromBytes(&bytes); // error.InvalidLength / error.ValueOutOfRange
+std.debug.assert(a.eql(a2));
 
-// Constant-time serialization (for secret data)
+// Branch-free serialization for public or secret data.
+// Returns .value plus .valid = (input < MODULUS).
 const ct_result = F.fromBytesCT(bytes);
-const a3 = ct_result.value;
-try std.testing.expect(ct_result.valid);
+std.debug.assert(ct_result.valid);
+std.debug.assert(ct_result.value.eql(a));
 
 // Random elements
 var prng = std.Random.DefaultPrng.init(42);
 const rand = F.random(prng.random());
 ```
 
+> **Constant-time caveat**: `fromBytesCT` / `fromIntCT` never branch on the input.
+> For large fields (≥ 2^64) the comparison and selection are limb-wise bitwise, so
+> they are timing-constant. For small fields the reduction uses `v % MODULUS`,
+> whose latency varies on x86-64 — use them on public data there, and keep
+> secret-scalar code on the `inv`/`mul` paths with your own audit.
+
 ## Tower Extensions
 
 ```zig
+const zf = @import("zig-field");
 const M31 = zf.M31;
 
-// Quadratic extension: CM31 = M31[i]/(i^2 + 1)
-const CM31 = zf.QuadraticExtension(M31, M31.fromInt(M31.MODULUS - 1)); // i^2 = -1
+// Quadratic extension: CM31 = M31[v]/(v^2 + 1)  (identical to zf.CM31)
+const CM31 = zf.QuadraticExtension(M31, M31.fromInt(M31.MODULUS - 1)); // v^2 = -1
 
-// Quadratic extension: QM31 = CM31[j]/(j^2 + i)
-const QM31 = zf.QuadraticExtension(CM31, CM31.new(M31.zero(), M31.fromInt(M31.MODULUS - 1))); // j^2 = -i
+// Quadratic extension: QM31 = CM31[j]/(j^2 + i)  (identical to zf.QM31)
+const QM31 = zf.QuadraticExtension(CM31, CM31.new(M31.zero(), M31.fromInt(M31.MODULUS - 1)));
 
 const i = CM31.new(M31.zero(), M31.one());
-try std.testing.expect(i.mul(i).eq(CM31.fromBase(M31.one().neg())));
+std.debug.assert(i.mul(i).eq(CM31.fromBase(M31.one().neg())));
 
 const j = QM31.new(CM31.zero(), CM31.one());
 const minus_i = QM31.new(CM31.imaginaryUnit().neg(), CM31.zero());
-try std.testing.expect(j.mul(j).eq(minus_i));
+std.debug.assert(j.mul(j).eq(minus_i));
+
+// Cubic extension: same factory shape, three coefficients.
+// The non-residue must be a *cubic* non-residue (comptime-asserted): 3 is a
+// cube mod M31, 5 is not.
+const C3 = zf.CubicExtension(M31, M31.fromInt(5)); // v^3 = 5
+const w = C3.new(M31.zero(), M31.one(), M31.zero()); // the generator v
+std.debug.assert(w.mul(w).mul(w).eq(C3.fromBase(M31.fromInt(5))));
 ```
 
 ## SIMD Vec8 (M31)
 
 ```zig
+const zf = @import("zig-field");
 const M31 = zf.M31;
 
 // 8-lane vector arithmetic
@@ -112,10 +131,10 @@ const b: M31.Vec8 = .{ 8, 7, 6, 5, 4, 3, 2, 1 };
 // Add with Mersenne reduction
 const sum = M31.addVec8(a, b);
 
-// Multiply with lo+hi fold (may be >= 2*MOD)
+// Multiply with lo+hi fold (result may be >= 2*MODULUS)
 const prod = M31.mulVec8(a, b);
 
-// Normalize to [0, MOD)
+// Normalize to [0, MODULUS)
 const norm = M31.reduceVec8(prod);
 
 // Convert from zig-stark's @Vector(8, u32) layout
@@ -127,6 +146,8 @@ const back = M31.toVec8U32(vec8);
 ## Predefined Fields
 
 ```zig
+const zf = @import("zig-field");
+
 // Base fields
 const M31 = zf.M31;                    // 2^31 - 1
 const BabyBear = zf.BabyBear;          // 2^31 - 2^27 + 1
@@ -143,22 +164,30 @@ const BLS12_381_Fp = zf.BLS12_381_Fp;  // BLS12-381 base field
 const CM31 = zf.CM31;                  // M31 quadratic extension, v^2 = -1
 const QM31 = zf.QM31;                  // CM31 quadratic extension, v^2 = -i
 const BN254_Fp2 = zf.BN254_Fp2;        // BN254 quadratic extension, v^2 = -1
-const BN254_Fp6 = zf.BN254_Fp6;        // BN254 tower extension
-const BN254_Fp12 = zf.BN254_Fp12;      // BN254 full extension for pairings
-const BLS12_381_Fp2 = zf.BLS12_381_Fp2;  // BLS12-381 quadratic extension
-const BLS12_381_Fp6 = zf.BLS12_381_Fp6;  // BLS12-381 tower extension
-const BLS12_381_Fp12 = zf.BLS12_381_Fp12; // BLS12-381 full extension for pairings
 
-// Extension metadata (for zig-stark adapter)
-const CM31_n = CM31.NON_RESIDUE;       // -1 in M31
-const CM31_v = CM31.EXT_NON_RESIDUE;   // i = 0 + 1·i
-const QM31_n = QM31.NON_RESIDUE;       // -i in CM31
-const QM31_v = QM31.EXT_NON_RESIDUE;   // j = 0 + 1·j
+// Extension metadata (for zig-stark adapters)
+const CM31_n = CM31.NON_RESIDUE;       // -1 in M31 (an M31 element)
+const CM31_v = CM31.EXT_NON_RESIDUE;   // 0 + 1*v, a CM31 element
+const QM31_n = QM31.NON_RESIDUE;       // -i, a CM31 element
+const QM31_v = QM31.EXT_NON_RESIDUE;   // 0 + 1*j, a QM31 element
+```
+
+`Fp6` / `Fp12` sextic towers are **not** part of this library, and
+`zf.BLS12_381_Fp2` is a broken re-export (it points at a symbol that does not
+exist in `predef/bls12_381.zig`, so referencing it fails to compile). Use
+`zig-pairing` (`bn254_tower.Fp6` / `Fp12`, `bls12_381.Fp6` / `Fp12`) for the
+sextic towers, or `zc.bls12_381.Fp2` from `zig-curve` for the BLS12-381
+quadratic extension:
+
+```zig
+const zc = @import("zig-curve");
+const B2 = zc.bls12_381.Fp2; // Fp2 = Fp[u]/(u^2 + 1)
 ```
 
 ## Multi-Scalar Exponentiation
 
 ```zig
+const zf = @import("zig-field");
 const F = zf.M31;
 
 // Windowed Pippenger algorithm: product(bases[i]^exponents[i])
@@ -170,62 +199,110 @@ const result = F.multiExp(&bases, &exponents, 4); // 4-bit window
 ## Inner Product Argument (IPA)
 
 ```zig
-var ipa = try zf.Ipa(F).init(allocator, 64, seed);
+const zf = @import("zig-field");
+const F = zf.M31;
+const Ipa = zf.Ipa(F);
+
+const seed: [32]u8 = [_]u8{7} ** 32;
+var ipa = try Ipa.init(allocator, 8, seed); // n must be a power of two
 defer ipa.deinit();
 
-const c = zf.Ipa(F).innerProduct(&a, &b);
-const proof = try ipa.prove(allocator, &a, &b, c);
+var a: [8]F = undefined;
+var b: [8]F = undefined;
+for (0..8) |k| {
+    a[k] = F.fromInt(k + 1);
+    b[k] = F.fromInt(9 - k);
+}
+
+const c = Ipa.innerProduct(&a, &b);          // <a, b>
+const commitment = ipa.commit(&a, &b, c);   // public commitment to the vectors
+
+const proof = try ipa.prove(allocator, &a, &b);
 defer proof.deinit(allocator);
 
+// Verification requires the commitment that was published at commit time.
 try ipa.verifyWithCommitment(commitment, &proof);
+
+// `verify` is an unimplemented stub: it always fails with error.Unsupported.
+try std.testing.expectError(error.Unsupported, ipa.verify(&proof, c));
 ```
 
 ## Merkle Trees
 
+`MerkleTree(F)` is a SHA-256 tree over field elements, independent of
+`zig-merkle` (which is generic over the hash function).
+
 ```zig
-var tree = try zf.MerkleTree(F).init(allocator, &leaves);
+const zf = @import("zig-field");
+const F = zf.M31;
+const Tree = zf.MerkleTree(F);
+
+const leaves = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3), F.fromInt(4) };
+var tree = try Tree.init(allocator, &leaves);
 defer tree.deinit();
 
-const root = tree.rootHash();
-const proof = try tree.proof(allocator, index);
-try zf.MerkleTree(F).verify(root, index, proof, leaf);
+const root = tree.rootHash();                    // [32]u8
+const proof = try tree.proof(allocator, 2);      // []const [32]u8
+defer allocator.free(proof);
+
+std.debug.assert(Tree.verify(root, 2, proof, leaves[2]));
 ```
 
-## Native NTT/INTT
+## NTT / INTT
+
+The generic transform (Cooley-Tukey, in-place, optional precomputed twiddles)
+lives in `zig-ntt`. `zig-field` keeps only the M31 8-lane SIMD entry points.
 
 ```zig
+const zf = @import("zig-field");
+const zntt = @import("zig-ntt");
+
+// --- zig-ntt: scalar Cooley-Tukey with optional twiddle table ---
 const F = zf.BabyBear;
 var data = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3), F.fromInt(4) };
 const log_n = 2;
 const root = F.primitiveRootOfUnity(log_n);
 
-zf.ntt(F, &data, log_n, root);  // Forward NTT
-zf.intt(F, &data, log_n, root); // Inverse NTT (round-trips)
+zntt.ntt(F, &data, log_n, root);  // Forward NTT
+zntt.intt(F, &data, log_n, root); // Inverse NTT (round-trips)
 
-// With precomputed twiddles
-const twiddles = try zf.precomputeTwiddles(F, log_n, root, allocator);
-defer zf.freeTwiddles(F, twiddles, allocator);
-zf.nttWithTwiddles(F, &data, log_n, twiddles);
+const twiddles = try zntt.precomputeTwiddles(F, log_n, root, allocator);
+defer zntt.freeTwiddles(F, twiddles, allocator);
+zntt.nttWithTwiddles(F, &data, log_n, twiddles);
+zntt.inttWithTwiddles(F, &data, log_n, twiddles);
+
+// --- zig-field: M31 8-lane SIMD, data.len must be 8 * 2^log_n ---
+const M31 = zf.M31;
+var lanes: [16]M31 = undefined;
+for (&lanes, 0..) |*slot, k| slot.* = M31.fromInt(k + 1);
+const m31_root = M31.primitiveRootOfUnity(1); // 2^1-roots only on M31
+zf.nttVec8M31(&lanes, 1, m31_root);
+zf.inttVec8M31(&lanes, 1, m31_root);
 ```
 
 ## Running Tests
 
 ```bash
-# Debug mode (slow for large fields)
+# From the monorepo root (runs the inline src/ tests only)
 zig build test
 
-# ReleaseFast for performance tests
-zig build bench -Doptimize=ReleaseFast
+# Just this library: inline src/ tests plus the per-topic tests/ roots
+cd libs/field && zig build test
 ```
+
+`cd libs/field && zig build test` runs seven binaries — `zig-field-tests` (11
+inline), `field-tests` (37), `extension-tests` (9), `merkle-tests` (4),
+`ipa-tests` (2), `simd-tests` (5) and `ext_quick-tests` (2) — 70 tests total.
 
 ## Design Notes
 
 - **Montgomery constants** (`R^2`, `-p^{-1} mod 2^64`) are derived at comptime from the modulus using arbitrary-precision comptime integers
-- **Roots of unity** use the quadratic non-residue method: find `z` with `(z/p) = -1`, then `z^((p-1)/2^t)` has exact order `2^t` — no factorization of `p-1` needed
+- **Roots of unity** use the quadratic non-residue method: find `z` with `(z/p) = -1`, then `z^((p-1)/2^t)` has exact order `2^t` — no factorization of `p-1` needed. `primitiveRootOfUnity(t)` debug-asserts `t <= two_adicity`, which is why M31 (`two_adicity == 1`) cannot host an NTT domain
 - **Square roots** use Tonelli-Shanks with `p ≡ 3 mod 4` shortcut when two-adicity is 1
 - **Extension field inverses** use the norm-based formula: `(a + bv)^{-1} = (a - bv) / (a^2 - n b^2)` for `v^2 = n`
 - **Cubic extension inverse** uses the closed form with `v^3 = n`
 - **zig-stark integration**: Vec8 SIMD backend matches zig-stark's `@Vector(8, u32)` lane layout; `NON_RESIDUE` / `EXT_NON_RESIDUE` on extension types enable generic tower reconstruction without hardcoding non-residues
+- **Mersenne Vec8 multiply** returns a `lo+hi` folded value that may exceed `2 * MODULUS`; call `reduceVec8` before comparing or serializing
 
 ## License
 

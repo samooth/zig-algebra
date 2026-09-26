@@ -1,14 +1,19 @@
 # zig-transcript
 
-Fiat-Shamir transcript for non-interactive zero-knowledge proofs. Provides a deterministic challenge derivation API over Blake3.
+Fiat–Shamir transcript for non-interactive zero-knowledge proofs. A single-field
+Blake3 sponge: absorb prover messages, squeeze verifier challenges, re-key after
+every squeeze.
 
 ## Features
 
-- **Fiat-Shamir heuristic** — convert interactive protocols to non-interactive
-- **Blake3-based** — fast, parallelizable hash function
-- **Field-aware challenges** — `challengeField(F)` returns uniform field elements
-- **Re-keying** — squeeze re-keying after each challenge prevents state extension attacks
-- **Deterministic** — same transcript label → same challenge stream
+- **Fiat–Shamir** — turn an interactive protocol into a non-interactive one
+- **Blake3 from the standard library** — no internal dependencies at all
+- **Field-aware challenges** — `challengeField(F)` returns a uniform element via
+  rejection sampling, not a reduction
+- **Re-keying** — after each squeeze the hasher is reset and re-seeded with the
+  challenge bytes, so a challenge depends on every previous challenge
+- **Length-prefixed absorb** — prevents concatenation ambiguity
+- **Allocation-free** — all state is one Blake3 hasher on the stack
 
 ## Installation
 
@@ -29,68 +34,127 @@ const zt = b.dependency("zig_transcript", .{});
 exe.root_module.addImport("zig-transcript", zt.module("zig-transcript"));
 ```
 
+`zig-transcript` declares **no** dependencies, so nothing else needs wiring. The
+other libraries in the workspace do not depend on it through a package
+dependency: `zig-fri` and the STARK example build the module from
+`libs/transcript/src/root.zig` directly.
+
 ## Quick Start
 
 ```zig
+const std = @import("std");
 const zt = @import("zig-transcript");
 const F = @import("zig-field").BN254_Fp;
 
-// Initialize transcript with domain separator
-var transcript = zt.Transcript.init("my-zk-protocol");
+pub fn main() !void {
+    // Initialize the transcript with a domain separator.
+    var transcript = zt.Transcript.init("my-zk-protocol");
 
-// Absorb public data
-transcript.absorbBytes("public input");
-transcript.absorbField(F, some_value);
+    // Absorb public data. `absorbField` uses the element's own toBytes().
+    transcript.absorbBytes("public input");
+    transcript.absorbField(F, F.fromInt(7));
+    transcript.absorbU64(99);
+    // Optionals encode presence/absence explicitly.
+    transcript.absorbOptionalField(F, F.fromInt(7));
+    transcript.absorbOptionalField(F, null);
 
-// Squeeze challenges
-const challenge = transcript.challengeField(F);
-const u64_challenge = transcript.challengeU64();
+    // Squeeze challenges. Re-keying happens automatically after each squeeze,
+    // so the next challenge depends on this one.
+    const challenge = transcript.challengeField(F);   // uniform in [0, p)
+    const u64_challenge = transcript.challengeU64();
 
-// Re-keying happens automatically after each squeeze
-// This prevents length-extension style attacks
+    var out: [64]u8 = undefined;
+    transcript.challengeBytes(&out);                  // fills a caller buffer
+
+    const three = transcript.challengeFields(F, 3);   // [3]F
+    const combined = transcript.challengeFrom(F, &[_]F{ F.fromInt(1), F.fromInt(2) });
+    // challengeFrom absorbs every element, then squeezes one challenge.
+
+    std.debug.print("challenge={} u64={} bytes={} n={} combined={}\n", .{
+        challenge.toInt(), u64_challenge, out[0], three.len, combined.toInt() });
+}
 ```
 
 ## API
 
-| Method | Description |
-|--------|-------------|
-| `Transcript.init(label)` | Create transcript with domain separator |
-| `absorbBytes(bytes)` | Absorb arbitrary bytes |
-| `absorbField(F, value)` | Absorb field element (via toBytes) |
-| `absorbFieldBytes(F, bytes)` | Absorb field element bytes directly |
-| `challengeField(F)` | Squeeze uniform field element |
-| `challengeU64()` | Squeeze uniform u64 |
-| `challengeBytes(len)` | Squeeze arbitrary bytes |
+### Absorb
 
-## Transcript Structure
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `absorbBytes` | `(self: *Transcript, data: []const u8) void` | 8-byte little-endian length prefix, then the bytes |
+| `absorbU64` | `(self: *Transcript, val: u64) void` | fixed 8-byte encoding via `absorbBytes` |
+| `absorbField` | `(self: *Transcript, comptime F: type, elem: F) void` | requires `F.toBytes() [N]u8` |
+| `absorbOptionalField` | `(self: *Transcript, comptime F: type, elem: ?F) void` | `absorbU64(1/0)` then the payload |
 
+### Squeeze
+
+| Method | Signature | Notes |
+|--------|-----------|-------|
+| `challengeBytes` | `(self: *Transcript, out: []u8) void` | **fills a caller-owned slice**; does not return bytes |
+| `challengeU64` | `(self: *Transcript) u64` | little-endian read of 8 squeezed bytes |
+| `challengeField` | `(self: *Transcript, comptime F: type) F` | requires `F.NUM_BYTES` and `F.fromBytes([]const u8) !F`; loops until `fromBytes` succeeds |
+| `challengeFields` | `(self: *Transcript, comptime F: type, comptime n: usize) [n]F` | `n` challenges in order |
+| `challengeFrom` | `(self: *Transcript, comptime F: type, elems: []const F) F` | absorb all, squeeze one |
+
+`challengeBytes` finalises the sponge, copies the 32-byte digest into `out`,
+extends by re-hashing if `out.len > 32`, then **re-keys**: the hasher is reset to
+a fresh `Blake3` and updated with the digest, so the next challenge cannot be
+computed without this one. The re-key happens on every call, including the
+retries inside `challengeField`.
+
+## Transcript structure
+
+`Transcript` has exactly **one** field:
+
+```zig
+pub const Transcript = struct {
+    hasher: std.crypto.hash.Blake3,   // the entire state
+};
 ```
-Transcript {
-    hasher: Blake3,        // Internal Blake3 state
-    label: []const u8,     // Domain separator
-    counter: u64,          // Challenge counter (for re-keying)
-}
-```
 
-## Security Notes
+There is no stored `label` and no `counter`. The domain separator is absorbed
+into the hasher at `init` time (length-prefixed, like any other absorb), and
+sequencing comes from the re-keying step rather than an explicit counter. Use
+`@typeInfo(Transcript).@"struct".fields.len == 1` if you need to assert this.
 
-- **Domain separation**: Always use unique labels for different protocols
-- **Re-keying**: After each `challenge*()` call, the hasher is re-keyed with the challenge output
-- **Determinism**: Same label + same absorbed data = same challenge stream
-- **Not for signatures**: This is for ZK proof transcripts, not digital signatures
+## Security notes
+
+- **Domain separation** — `init` absorbs the label length and the label, so two
+  protocols using identical messages still derive different challenges.
+- **Length prefixing** — every `absorbBytes` prefixes the length, so
+  `absorb("ab") + absorb("c")` differs from `absorb("abc")`.
+- **Re-keying** — after each `challenge*` call the hasher is reset and re-seeded
+  with the challenge output, which blocks state extension. `challengeField`'s
+  rejection-sampling retries therefore also advance the transcript.
+- **Uniformity** — `challengeField` uses `fromBytes` rejection, so the result is
+  exactly uniform on `[0, p)` rather than `hash mod p`.
+- **Determinism** — same label + same absorb sequence = same challenge stream.
+  This is what makes `zig-fri` reproducible.
+- **Not for signatures** — this is a ZK proof transcript, not a message
+  authentication or signature scheme.
+- Not constant-time: the hasher is a fixed-cost function, but
+  `challengeField`'s retry count leaks the number of rejected draws.
 
 ## Running Tests
 
 ```bash
-zig build test
+cd libs/transcript && zig build test
 ```
+
+10 tests: determinism, domain separation, absorb sensitivity, challenge
+sequencing, length-prefix disambiguation, `absorbField`, 100 consecutive
+`challengeField` draws, `challengeFields`, `absorbOptionalField` presence
+encoding, and `challengeFrom` order sensitivity.
 
 ## Design Notes
 
-- Uses stdlib Blake3 (not zig-hash's Blake3) — no internal dependencies
-- Minimal implementation (~20 LOC core logic)
-- Extracted from zig-stark's transcript module
-- Compatible with zig-fri, zig-kzg, and other ZK protocols
+- Uses `std.crypto.hash.Blake3` (capital `B`), not `zig-hash`'s wrapper, so the
+  module has zero internal dependencies.
+- All absorb/squeeze methods take `*Transcript`; the struct is a value, so copy
+  it to fork a transcript (there is no `clone` method).
+- `challengeField` requires `F.NUM_BYTES`; a field without it will not compile.
+  Extension types in `zig-field` expose `NUM_BYTES` and `fromBytes`, so tower
+  elements work as challenges.
 
 ## License
 

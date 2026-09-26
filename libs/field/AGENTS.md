@@ -101,9 +101,11 @@ When in doubt, consult:
 - `arkworks-rs/algebra` (Rust) — field traits and extensions
 
 ## Versioning
-- Semantic versioning (MAJOR.MINOR.PATCH)
-- Breaking API changes require MAJOR version bump.
-- Update `build.zig.zon` fingerprint on each release: `zig build --fingerprint`.
+- Semantic versioning (MAJOR.MINOR.PATCH).
+- In this `0.x` workspace, breaking API changes bump MINOR, as documented in
+  the root `CHANGELOG.md`.
+- Update `build.zig.zon` version on each release; keep the package fingerprint
+  unless the package identity itself changes.
 
 ## License
 MIT OR Apache-2.0 — keep headers on all files.

@@ -1,19 +1,30 @@
 # zig-algebra — Agent Guide
 
 ## Overview
-Modular algebra library ecosystem for Zig 0.16.0. 15 libraries covering fields, curves, pairings, and STARK building blocks.
+Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
+version 0.3.2) covering fields, curves, pairings, and STARK building blocks.
+No independent cryptographic audit exists; see SECURITY.md before making
+security claims.
 
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (222+ tests, ~35s Debug)
-zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing)
+zig build test        # Run all library tests (316 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 316 tests, seconds
+zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
-zig build stark       # STARK prover demo (Fibonacci over M31 via FRI)
-zig build -Doptimize=ReleaseFast test  # Fast tests
+zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
+zig build wasm        # examples/wasm_fp.zig -> wasm32-freestanding
+zig build wasm-pairing  # examples/wasm_pairing.zig -> wasm32-freestanding
+zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 ```
 
-Per-library: `cd libs/<name> && zig build test`
+`zig build` with no step runs the full test suite when
+`-Doptimize=ReleaseFast` is set; in Debug it builds nothing.
+
+Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
+separate `tests/` roots; the root `zig build test` step compiles inline `src/`
+tests only (316 total vs. 419 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -59,6 +70,9 @@ Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
 ### Memory
 - Prefer stack allocation for fixed-size algebraic types (fields, points).
 - Use caller-provided allocator for variable-size structures (trees, proofs).
+  The proof stack does this: `fri.prove`/`fri.verify`, `kzg.commit`/`prove`,
+  `Ipa.prove` and the binary-field PCS/sum-check all take an allocator and
+  propagate `OutOfMemory` (no `catch unreachable`).
 - All heap allocations must have matching `deinit(allocator)` methods.
 
 ### Comptime
@@ -74,6 +88,9 @@ Optional but common: `inv()`, `sqr()`, `pow()`, `conjugate()`, `frobenius()`.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
+- Counts (Zig 0.16.0, verified): root `zig build test` = 316; per-library
+  `zig build test` totals sum to 419 (field 70, curve 92 include the `tests/`
+  roots the root step skips).
 
 ### Property-Based Testing Pattern
 For ring/field axioms, generate random elements and verify:
@@ -96,6 +113,23 @@ test "property: associativity" {
 2. Wire into root `build.zig` using the `lib()` helper with imports list.
 3. Update README.md architecture table.
 4. Update DESIGN.md dependency graph if new edges exist.
+
+## Versioning
+
+Root `build.zig.zon` carries the workspace version (`0.3.2`); each library has
+its own independent semver in `libs/<name>/build.zig.zon` (currently
+`0.1.0`–`0.3.0`). Bump the library version for API changes, the workspace
+version for ecosystem-level releases, and record both in `CHANGELOG.md`.
+
+## Known Gaps (do not paper over these in docs)
+
+- `Ipa.verify` in `libs/field/src/ipa.zig` is a stub (`error.Unsupported`);
+  only `Ipa.verifyWithCommitment` works, and IPA challenges are a local
+  SHA-256 of `(L, R, round)` — not a `zig-transcript` Fiat-Shamir session.
+- `kzg.Setup.generate` is a synthetic setup (tests/dev only).
+- Pairing, curve scalarMul and field inversion are not constant-time.
+- `zig build bench` numbers are machine-specific; label them as indicative.
+- No independent cryptographic audit exists for any library.
 
 ## Common Gotchas (Zig 0.16)
 
