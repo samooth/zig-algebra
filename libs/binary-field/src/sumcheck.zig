@@ -135,11 +135,20 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
         /// `a.add(t.mul(a.add(b)))`. That expression *is* the characteristic-2
         /// identity -- in char 2, `1 - t == 1 + t`, so it agrees with
         /// `L_t(x)` -- and this package is entirely characteristic 2, so no
-        /// test here could tell the two apart. Outside char 2 the inline form
-        /// is a different kernel: it disagrees with the kernel the verifier
-        /// uses, and every honest proof over an odd-characteristic field is
-        /// rejected. `verify` returns `false` on a correct proof, which reads
-        /// as "forged" and is indistinguishable from it.
+        /// test here could tell the two apart. Outside char 2 it is a different
+        /// kernel, and the prover and the verifier then disagreed: the verifier
+        /// closed on the correct linear kernel, so it rejected honest proofs
+        /// over any odd-characteristic field.
+        ///
+        /// Worth being precise about what that was, because the two failure
+        /// modes are not the same claim. It was a **false negative**: the
+        /// verifier was right and the prover was wrong, so no forged proof was
+        /// accepted and soundness was intact -- the prover simply could not
+        /// produce a proof that verified, which is just as unusable. The
+        /// soundness break would have been the *other* arrangement, the fold
+        /// also being wrong in the verifier's closing equality, so that a
+        /// char-2 kernel would have been accepting claims about primes. That is
+        /// the reason it was worth chasing, not what happened.
         ///
         /// Fixed when the 128-bit prime fixture was wired into `Sumcheck`, the
         /// first witness in this tree with odd characteristic. A single

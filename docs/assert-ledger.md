@@ -130,7 +130,7 @@ Two things this decided that were not obvious beforehand:
    exercises the identical `interpolateCoeffs` / `Multilinear.eval` arithmetic
    that needed generalizing. The 31-bit value is chosen because products leave
    headroom in `u64`, so the oracle is exact rather than modular.
-   **(Superseded in part: `Prime127` now crosses the size gate itself and runs
+   **(Superseded in part: `Prime128` now crosses the size gate itself and runs
    the secure `Sumcheck` entry point. See "The size gate and native-width
    testability looked like a hard conflict" below for why the "impossible"
    conclusion recorded here was wrong. `Prime31` is kept because its `u64`
@@ -206,7 +206,7 @@ against closing it was that a `u256` reduction is "the same technique twice",
 and therefore not an independent oracle.
 
 **That argument does not hold, and the mistake was assuming the two techniques
-would be alike.** `Prime127` (`p = 2^128 - 159`) closes the gate with:
+would be alike.** `Prime128` (`p = 2^128 - 159`) closes the gate with:
 
 | | field arithmetic | oracle |
 |---|---|---|
@@ -226,7 +226,7 @@ composite, which is the trap this fixture exists to avoid.
 
 ## What the 128-bit field found that 31 bits could not
 
-Wiring `Prime127` into `Sumcheck` is the first time a field of odd
+Wiring `Prime128` into `Sumcheck` is the first time a field of odd
 characteristic has gone through the secure entry point in this workspace, and
 it exposed a defect that the entire `binary-field` matrix is structurally
 blind to.
@@ -234,11 +234,21 @@ blind to.
 **The sum-check fold was characteristic 2.** `sumcheck.zig` folded with
 `a + t·(a + b)` in five places, which is `L_t(x) = (1-t)·f(x) + t·f(1-x)`
 *only* under `1 - t == 1 + t`. Outside characteristic 2 it is a different
-kernel from the one the verifier closes on, so `verify` returned `false` on
-**correct** proofs. A verifier that rejects every honest proof is
-indistinguishable from one that accepts every forged one at the call site, and
-`Sumcheck.verify` returns `!bool` -- the one signature shape where that
-confusion is invisible.
+kernel from the one the verifier closes on, so **the verifier rejected honest
+proofs**.
+
+The direction matters, because the two failure modes are different claims and
+only one of them is a security problem. This was a **false negative**: the
+verifier closed on the correct linear kernel and the prover folded with the
+char-2 one, so the verifier was *right* to refuse -- no forged proof was
+accepted, and soundness was never in question. What was broken is
+availability of the protocol: the prover could not produce a proof that
+verified at all. The soundness break would have been the **opposite**
+arrangement, the char-2 fold also sitting in the verifier's closing equality,
+so that a kernel which is wrong over a prime field would have been *accepting*
+claims about primes and the degree bound would have been meaningless. That is
+why the bug was worth chasing past "it only affects a field nothing ships
+with"; it is the reason it mattered, and not a description of what happened.
 
 The fix is a single `foldLinear` helper used by all five sites. It is a
 bit-for-bit no-op under characteristic 2, so all pre-existing proofs are
@@ -268,7 +278,7 @@ instantiates `SumcheckUnsafe` and still asserts that `Sumcheck(Prime31)`
 *rejects* the field; both remain, because the 31-bit fixture is the one whose
 oracle is exact in `u64` and whose `u64` products are checked against native
 arithmetic. The two fixtures are complementary: `Prime31` witnesses that the
-`add`/`sub` distinction is real, `Prime127` witnesses that the secure path runs
+`add`/`sub` distinction is real, `Prime128` witnesses that the secure path runs
 at all.
 ## A correctness fix is not a release gate
 

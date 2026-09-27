@@ -4,12 +4,25 @@
 //!
 //! `Prime31` in this directory is deliberately below `MIN_SAFE_BITS = 128`,
 //! because a field small enough for an exact native-width oracle tops out at 31
-//! bits. That is the whole reason this file exists: with the 31-bit fixture the
+//! bits. That is the reason *this* file exists: with the 31-bit fixture the
 //! generalized Lagrange and folding arithmetic is exercised, but only through
-//! `SumcheckUnsafe`, so **no test in this tree has ever run the secure entry
-//! point with the generalized arithmetic.** See `docs/assert-ledger.md`, "The
-//! size gate and native-width testability are in direct conflict", for why the
-//! two requirements cannot both be met below 128 bits.
+//! `SumcheckUnsafe`.
+//!
+//! It was recorded in `docs/assert-ledger.md` that the gap was structural --
+//! "no test in this tree has ever run the secure entry point with the
+//! generalized arithmetic", and closing it would need an oracle no less
+//! independent than the field's own technique. That reading was wrong, and the
+//! reason is worth keeping: a native `u256 % p` oracle and an algebraic
+//! `2^128 == 159 (mod p)` fold are *different techniques*, so their agreement
+//! is a witness and not a tautology. See that document, "The size gate and
+//! native-width testability looked like a hard conflict".
+//!
+//! Wiring this field in immediately paid for itself: it was the first
+//! odd-characteristic field to reach the secure `Sumcheck`, and `verify` then
+//! rejected **honest** proofs, because the prover's fold was still the
+//! characteristic-2 one. A false negative, not a false positive -- no forged
+//! proof was ever accepted -- but the prover could not produce a proof that
+//! verified at all, which for a sound protocol is just as unusable.
 //!
 //! ## Why BigInt is not needed
 //!
@@ -193,7 +206,7 @@ pub fn certifyPrimality() Certificate {
 }
 
 /// The field under test.
-pub const Prime127 = struct {
+pub const Prime128 = struct {
     const Self = @This();
 
     value: u128,
@@ -377,8 +390,8 @@ test "the reduction agrees with a native u256 modulus, which is a different algo
     for (0..5000) |_| {
         const av = rand.intRangeLessThan(u128, 0, PRIME);
         const bv = rand.intRangeLessThan(u128, 0, PRIME);
-        const a = Prime127{ .value = av };
-        const b = Prime127{ .value = bv };
+        const a = Prime128{ .value = av };
+        const b = Prime128{ .value = bv };
 
         // The field reduces with `2^128 == 159 (mod p)`. The oracle reduces with
         // a native u256 remainder. Two different algorithms, so agreement is
@@ -394,25 +407,25 @@ test "the reduction agrees with a native u256 modulus, which is a different algo
     }
 }
 
-test "sub and add differ in Prime127, which is the whole point" {
-    const a = Prime127.fromInt(5);
-    const b = Prime127.fromInt(3);
-    try testing.expect(a.sub(b).eql(Prime127.fromInt(2)));
+test "sub and add differ in Prime128, which is the whole point" {
+    const a = Prime128.fromInt(5);
+    const b = Prime128.fromInt(3);
+    try testing.expect(a.sub(b).eql(Prime128.fromInt(2)));
     try testing.expect(!a.add(b).eql(a.sub(b)));
     // wrap-around, where char 2 and a prime agree by accident
-    try testing.expect(Prime127.one().sub(Prime127.fromInt(2)).eql(Prime127.fromInt(PRIME - 1)));
+    try testing.expect(Prime128.one().sub(Prime128.fromInt(2)).eql(Prime128.fromInt(PRIME - 1)));
 }
 
-test "Prime127 encoding round-trips and rejects non-canonical" {
+test "Prime128 encoding round-trips and rejects non-canonical" {
     var prng = std.Random.DefaultPrng.init(11);
     const rand = prng.random();
     for (0..500) |_| {
-        const a = Prime127.random(rand);
-        try testing.expectEqual(a.toInt(), Prime127.fromBytes(a.encode()).toInt());
-        try testing.expectEqual(a.toInt(), (try Prime127.fromBytesChecked(a.encode())).toInt());
+        const a = Prime128.random(rand);
+        try testing.expectEqual(a.toInt(), Prime128.fromBytes(a.encode()).toInt());
+        try testing.expectEqual(a.toInt(), (try Prime128.fromBytesChecked(a.encode())).toInt());
     }
-    const p_bytes = (Prime127{ .value = PRIME }).encode();
-    try testing.expectError(error.NotCanonical, Prime127.fromBytesChecked(p_bytes));
+    const p_bytes = (Prime128{ .value = PRIME }).encode();
+    try testing.expectError(error.NotCanonical, Prime128.fromBytesChecked(p_bytes));
 }
 
 // ============================================================================
@@ -423,19 +436,19 @@ const sumcheck = @import("sumcheck.zig");
 const polynomial = @import("polynomial.zig");
 const pcs = @import("pcs.zig");
 
-const ML = polynomial.Multilinear(Prime127);
-const SC = sumcheck.Sumcheck(Prime127);
+const ML = polynomial.Multilinear(Prime128);
+const SC = sumcheck.Sumcheck(Prime128);
 
 test "the secure Sumcheck accepts this field, unlike the 31-bit one" {
     // The whole reason this file exists. `Sumcheck(Prime31)` returns
-    // error.FieldTooSmall; `Sumcheck(Prime127)` must not, so the generalized
+    // error.FieldTooSmall; `Sumcheck(Prime128)` must not, so the generalized
     // arithmetic runs through the sound entry point for the first time.
-    try testing.expect(SC.MIN_SAFE_BITS <= Prime127.BITS);
-    try testing.expect(!Prime127.isBelowSecureThreshold());
+    try testing.expect(SC.MIN_SAFE_BITS <= Prime128.BITS);
+    try testing.expect(!Prime128.isBelowSecureThreshold());
 
     const alloc = testing.allocator;
-    const tables = [_][]const Prime127{
-        &.{ Prime127.fromInt(3), Prime127.fromInt(7) },
+    const tables = [_][]const Prime128{
+        &.{ Prime128.fromInt(3), Prime128.fromInt(7) },
     };
     var proof = try SC.prove(alloc, 1, &tables);
     defer proof.deinit(alloc);
@@ -446,8 +459,8 @@ test "the generalized Lagrange arithmetic round-trips over this field" {
     const alloc = testing.allocator;
     // f(x) = 3 + 5x at the points 1, 2, 3. Over a binary field this would be
     // indistinguishable from 3 - 5x; here the sign is observable.
-    const points = [_]Prime127{ Prime127.fromInt(1), Prime127.fromInt(2), Prime127.fromInt(3) };
-    const values = [_]Prime127{ Prime127.fromInt(8), Prime127.fromInt(13), Prime127.fromInt(18) };
+    const points = [_]Prime128{ Prime128.fromInt(1), Prime128.fromInt(2), Prime128.fromInt(3) };
+    const values = [_]Prime128{ Prime128.fromInt(8), Prime128.fromInt(13), Prime128.fromInt(18) };
     const coeffs = try SC.interpolateCoeffs(alloc, &points, &values);
     defer alloc.free(coeffs);
     try testing.expectEqual(@as(u128, 3), coeffs[0].toInt());
@@ -465,11 +478,11 @@ test "the generalized Lagrange arithmetic round-trips over this field" {
 
 test "the generalized multilinear fold is exercised over this field" {
     const alloc = testing.allocator;
-    const table = [_]Prime127{
-        Prime127.fromInt(1), Prime127.fromInt(2), Prime127.fromInt(4), Prime127.fromInt(8),
+    const table = [_]Prime128{
+        Prime128.fromInt(1), Prime128.fromInt(2), Prime128.fromInt(4), Prime128.fromInt(8),
     };
-    const r = [_]Prime127{ Prime127.fromInt(3), Prime127.fromInt(5) };
-    const got = try polynomial.fromEvals(Prime127, &table).eval(alloc, &r);
+    const r = [_]Prime128{ Prime128.fromInt(3), Prime128.fromInt(5) };
+    const got = try polynomial.fromEvals(Prime128, &table).eval(alloc, &r);
 
     // Two folds, (1 - r_i)*a + r_i*b, in plain u256 arithmetic.
     const step = struct {
@@ -505,11 +518,11 @@ test "the fold this file exists to exercise is not the characteristic-2 fold" {
     // where the two forms are the same expression. This is the assertion that
     // makes the difference observable, so putting the char-2 form back fails
     // here instead of passing silently.
-    const a = Prime127.fromInt(3);
-    const b = Prime127.fromInt(7);
-    const t = Prime127.fromInt(5);
+    const a = Prime128.fromInt(3);
+    const b = Prime128.fromInt(7);
+    const t = Prime128.fromInt(5);
 
-    const linear: u128 = a.mul(Prime127.one().sub(t)).add(b.mul(t)).toInt();
+    const linear: u128 = a.mul(Prime128.one().sub(t)).add(b.mul(t)).toInt();
     const char2: u128 = a.add(t.mul(a.add(b))).toInt();
     try testing.expect(linear != char2);
 
@@ -523,7 +536,7 @@ test "the fold this file exists to exercise is not the characteristic-2 fold" {
 
 test "a tampered claimed sum is rejected as false, not as an error" {
     const alloc = testing.allocator;
-    const tables = [_][]const Prime127{&.{ Prime127.fromInt(3), Prime127.fromInt(7) }};
+    const tables = [_][]const Prime128{&.{ Prime128.fromInt(3), Prime128.fromInt(7) }};
     var proof = try SC.prove(alloc, 1, &tables);
     defer proof.deinit(alloc);
 
@@ -531,23 +544,23 @@ test "a tampered claimed sum is rejected as false, not as an error" {
     // indistinguishable from a verifier that rejects everything.
     try testing.expect(try SC.verify(alloc, 1, &tables, proof));
 
-    proof.claimed_sum = proof.claimed_sum.add(Prime127.one());
+    proof.claimed_sum = proof.claimed_sum.add(Prime128.one());
     const ok = try SC.verify(alloc, 1, &tables, proof);
     try testing.expect(!ok);
 }
 
 test "a tampered round polynomial is rejected as false" {
     const alloc = testing.allocator;
-    const tables = [_][]const Prime127{&.{ Prime127.fromInt(3), Prime127.fromInt(7) }};
+    const tables = [_][]const Prime128{&.{ Prime128.fromInt(3), Prime128.fromInt(7) }};
     var proof = try SC.prove(alloc, 1, &tables);
     defer proof.deinit(alloc);
     try testing.expect(try SC.verify(alloc, 1, &tables, proof));
 
     // rounds[0] is the univariate s_0(t); perturbing one coefficient breaks the
     // round consistency equation the verifier recomputes.
-    var coeffs = try alloc.dupe(Prime127, proof.rounds[0]);
+    var coeffs = try alloc.dupe(Prime128, proof.rounds[0]);
     defer alloc.free(coeffs);
-    coeffs[0] = coeffs[0].add(Prime127.one());
+    coeffs[0] = coeffs[0].add(Prime128.one());
     const tampered = SC.Proof{ .claimed_sum = proof.claimed_sum, .rounds = &.{coeffs} };
     try testing.expect(!try SC.verify(alloc, 1, &tables, tampered));
 }
@@ -556,8 +569,8 @@ test "a wrong table length is a typed domain error, distinct from a false" {
     const alloc = testing.allocator;
     // 3 elements cannot be a 2-variable table, so this is a caller error and
     // must not be reported as a forged proof.
-    const bad = [_][]const Prime127{&.{ Prime127.fromInt(1), Prime127.fromInt(2), Prime127.fromInt(3) }};
-    const good = [_][]const Prime127{&.{ Prime127.fromInt(1), Prime127.fromInt(2) }};
+    const bad = [_][]const Prime128{&.{ Prime128.fromInt(1), Prime128.fromInt(2), Prime128.fromInt(3) }};
+    const good = [_][]const Prime128{&.{ Prime128.fromInt(1), Prime128.fromInt(2) }};
     var proof = try SC.prove(alloc, 1, &good);
     defer proof.deinit(alloc);
     try testing.expectError(error.InvalidTableLength, SC.verify(alloc, 1, &bad, proof));

@@ -28,7 +28,7 @@ pub const prime_fixture = @import("prime_fixture.zig");
 /// A 128-bit prime field used only by tests, so the **secure** Sumcheck entry
 /// point is exercised with the generalized arithmetic. See the file header for
 /// the Pocklington certificate that proves its modulus prime.
-pub const prime127 = @import("prime127.zig");
+pub const prime128 = @import("prime128.zig");
 
 // Re-export common types
 pub const BinaryField = field.BinaryField;

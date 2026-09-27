@@ -29,10 +29,16 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   folded each round with `a + t·(a + b)` in five places. That expression equals
   the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where
   `1 - t == 1 + t`, i.e. in characteristic 2. Outside it, the fold is a
-  different kernel from the one `verify` closes on, so **`verify` returned
-  `false` on correct proofs** over any odd-characteristic field.
-  `verify` returns `!bool`, so a verifier that rejects every honest proof is
-  indistinguishable at the call site from one that accepts every forged one.
+  different kernel from the one `verify` closes on, so **the verifier rejected
+  honest proofs** over any odd-characteristic field.
+  This was a **false negative, not a false positive**: the verifier closed on
+  the correct linear kernel and the prover did not, so no forged proof was
+  accepted and soundness was intact. The prover simply could not produce a
+  proof that verified. The soundness break would have been the opposite
+  arrangement -- the char-2 kernel also sitting in the verifier's closing
+  equality, so that a kernel which is wrong over a prime field would have been
+  accepting claims about primes. That is why it mattered; it is not what
+  happened.
   Fixed by routing all five sites through one `foldLinear` helper, which is a
   bit-for-bit no-op under characteristic 2 — all pre-existing proofs are
   unchanged. This is the third bug in one family (after `interpolateCoeffs`'s
@@ -41,7 +47,7 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Added
 
-- **`binary-field`: a 128-bit prime fixture, `Prime127`** (`p = 2^128 - 159`).
+- **`binary-field`: a 128-bit prime fixture, `Prime128`** (`p = 2^128 - 159`).
   The first field in this workspace that runs the **secure** `Sumcheck(F)`
   entry point rather than `SumcheckUnsafe`, which is what exposed the fold
   above. It carries a Pocklington primality certificate (`F = 42113237 ·

@@ -37,6 +37,17 @@ match, and one that should not, and confirm both directions. A check written
 by interpolating the expected value into the pattern proves nothing, because it
 cannot fail.
 
+**A checker that has only ever been asked about the one thing it exists to
+certify has never been shown to reject anything.** The sharpest instance here
+is an oracle. The first Miller-Rabin in `prime128.zig` reused the field's
+`mulmod128`, which reduces modulo the field's own prime, to compute powers for
+a factor `n` -- so it computed the powers modulo `2^128 - 159` instead of
+modulo `n`, and reported *every small prime as composite*, including 97. It
+looked entirely plausible, it was exercised on every run, and it was wrong.
+`isPrimeSmall` is now pinned by a test that feeds it known primes **and** known
+composites, Carmichael numbers included. Ask of any checker in this tree: what
+input does it reject, and has anyone run that?
+
 So: **an example calls the library, it does not re-implement it.** If example
 code needs a field or a helper, import the tested one. If a `main.zig` grows
 logic that a caller depends on, move it into the library where a test can
