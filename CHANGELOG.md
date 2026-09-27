@@ -57,86 +57,70 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 > the rule working: a wrong premise inside a published tag is paid for with
 > `v0.5.2`, not with a rewrite.
 
-## [Unreleased]
+## [v0.5.2] — 2026-09-27
 
-> **Version not chosen.** `v0.5.1` is tagged locally and does not contain this
-> work, so the honest label is `Unreleased` until the release decision is made.
-> `v0.5.0` is not moved. `v0.5.1` may be re-pointed because it is **unpublished**,
-> which is the whole of the justification -- see the header for why an earlier
-> version of this file gave a different reason.
+> **Not yet published; the tag follows the audit, not the other way round.**
+> `v0.5.1` is published and frozen at `22df684` and is **not** re-pointed, so
+> this fix cannot go into it — the mechanism is in the header. A soundness fix
+> on a patch number is worth naming rather than hiding: the APIs are unchanged
+> and no wire format moved, but the digests do not carry forward. `v0.6.0`
+> would be equally defensible; 0.5.2 keeps the patch distance from the tag that
+> carries the stale paragraph, which is itself evidence.
 
-### Fixed
+### Security: `zig-hash`'s Blake3 was not BLAKE3, in every release
 
-- **The sum-check fold was characteristic 2** (`binary-field`). `sumcheck.zig`
-  folded each round with `a + t·(a + b)` in five places. That expression equals
-  the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where
-  `1 - t == 1 + t`, i.e. in characteristic 2. Outside it, the fold is a
-  different kernel from the one `verify` closes on, so **the verifier rejected
-  honest proofs** over any odd-characteristic field.
-  This was a **false negative, not a false positive**: the verifier closed on
-  the correct linear kernel and the prover did not, so no forged proof was
-  accepted and soundness was intact. The prover simply could not produce a
-  proof that verified. The soundness break would have been the opposite
-  arrangement -- the char-2 kernel also sitting in the verifier's closing
-  equality, so that a kernel which is wrong over a prime field would have been
-  accepting claims about primes. That is why it mattered; it is not what
-  happened.
-  Fixed by routing all five sites through one `foldLinear` helper, which is a
-  bit-for-bit no-op under characteristic 2 — all pre-existing proofs are
-  unchanged. This is the third bug in one family (after `interpolateCoeffs`'s
-  `add`->`sub` and `kernelTables`' `beta_r`); all three are invisible to a
-  characteristic-2 test matrix, and all three were found by a prime field.
+**The sequence, because a state assertion here would expire.** `zig-hash`'s
+`Blake3` did not implement BLAKE3 from the monorepo's first commit `86605a1`
+through `v0.5.1` inclusive. It was fixed on `main` in `a5d197a`, and `v0.5.2`
+is the first release containing the fix. So: if you need BLAKE3 commitments that
+another implementation will verify, use `v0.5.2` or later, or call
+`std.crypto.hash.Blake3` directly.
 
-### Added
+It was a self-consistent compression producing a wrong digest for every input.
+Every commitment made under it is not a BLAKE3 commitment.
 
-- **`fuzz`: the nightly "mass fuzz" actually fuzzes, and can fail.**
-  `timer_seed` was `0xF00D`, a constant named as if a timer had set it, so
-  every night re-checked the same 1.12M field values and 110 pairing pairs and
-  printed "all fuzz checks passed". Two things were wrong. It imported only
-  `zig-field`, `zig-curve` and `zig-pairing`, so it never constructed a
-  `Sumcheck`, a prime fixture or a torus domain -- green through three releases
-  while the characteristic-2 fold sat in `sumcheck.zig`. And it now covers
-  `zig-binary-field` and `zig-fri`: prime-field axioms, `Prime128` against a
-  native `u256 % p` oracle, Sumcheck round trips on both entry points, and FRI
-  round trips over the torus in M31 and M61. The seed comes from the clock, is
-  printed on the first line, and replays with `zig build fuzz -- <seed>`.
-  All three new sections were watched failing: `foldLinear` reverted to
-  `a + t*(a + b)` reports `honest 0/80 verified`, an off-by-one torus
-  generator reports `OrderTooLarge`, and a broken `add` reduction fails the
-  pre-existing runner.
-  Worth recording that the first version of the Sumcheck check was **wrong
-  about the protocol**: it asserted random data must be rejected, and failed
-  80/80, because `Sumcheck` proves the hypercube sum, which any table admits.
-  Low degree is FRI's claim, not its.
-- **`fri`: FRI over the norm-1 torus of `F[p^2]`, so `M31` and `M61` work.**
-  `prove`/`verify` now have `proveOn`/`verifyOn` siblings that take the domain
-  as a parameter (`prove`/`verify` are unchanged wrappers over `Domain(F)`).
-  `torus.zig` builds a domain on the torus `T = {N(x) = 1}`, which is cyclic of
-  order `p + 1` -- and for a Mersenne prime that is the whole point:
-  `2^31 - 1 + 1 = 2^31`, so a field whose base two-adicity is **1** gets a FRI
-  domain of size `2^31`. M61 gets 61. The `root.zig` header said "M31 has
-  two-adicity 1 and cannot be used here"; that was true of the base field and
-  false of the package, and is corrected in the same commit.
-  The generator is derived by Cayley parametrization in raw `u128` arithmetic
-  and then re-checked through the field's own `pow`, because construction and
-  verification being the same computation would prove nothing. Two
-  qualifications the obvious summary would have got wrong: the torus is **not**
-  an improvement in general (for Goldilocks `p + 1` has 2-adicity 1 against the
-  base field's 32, which is why FRI keeps the multiplicative subgroup there),
-  and `F[p^2]`'s own `two_adicity` (32 for M31) is also large enough, so the
-  torus is the domain you want for its structure rather than the only one that
-  runs. 2's invertibility, which the fold's `1/2` depends on, is stated and
-  checked rather than assumed.
-- **`binary-field`: a 128-bit prime fixture, `Prime128`** (`p = 2^128 - 159`).
-  The first field in this workspace that runs the **secure** `Sumcheck(F)`
-  entry point rather than `SumcheckUnsafe`, which is what exposed the fold
-  above. It carries a Pocklington primality certificate (`F = 42113237 ·
-  62826870453001 > √p`, witness `a = 2`) because `2^128 - 1` passes a 128-bit
-  size gate while being composite, and its independent oracle is native
-  `u256 % p` against the field's algebraic `2^128 ≡ 159` fold — different
-  techniques, so agreement is a real witness. `Prime31` is kept: its `u64`
-  oracle is exact, and it still asserts that `Sumcheck(Prime31)` rejects the
-  field.
+**Affected:** everything committing through `zig-hash`'s Blake3 — the
+`MerkleTree` and `MMR` constructors in `merkle/root.zig`, and the query-point
+binding in `binary-field/src/pcs.zig`.
+**Not affected:** the Fiat-Shamir challenge derivation. `zig-fri` and
+`zig-transcript` both use `std.crypto.hash.Blake3`, not this one, so no challenge
+in this repository was ever derived from it. The exposure was commitments and
+Merkle openings, not challenges.
+
+The reported cause was not the cause. `compress` already matched the BLAKE3
+reference byte for byte, including the `state[12..15]` layout, and it was not
+changed. Two defects were in the finalisation:
+
+1. The root output was a **second** compression, over the already-compressed
+   state, an all-zero message block and `block_len = BLOCK_LEN`. In BLAKE3 the
+   ROOT flag belongs in the single final compression, over the pre-compression
+   chaining value and the real last block. The tree was BLAKE3; the
+   finalisation was not.
+2. The block buffer was never zeroed after a full block was compressed, and was
+   declared `undefined` at construction, so a stale tail leaked into the last
+   block. Observable only from 65 bytes of input.
+
+**The existing known-answer test was the worst case, not a mitigation.**
+`cryptographic hash known-answer vectors` asserted a Blake3 digest for
+`"hello world"` that this implementation had produced itself — `bd214b44…`
+where BLAKE3 gives `d74981ef…`. A vector whose provenance is "we ran the code"
+is not a known-answer vector; it pins the bug and passes forever while looking
+rigorous. Corrected. The `blake2b`, `blake2s`, `keccak` and `sha3` vectors in
+that same test were already correct against `hashlib` and are untouched, so
+Blake3 was the only broken primitive in the tree.
+
+The new coverage is 45 canonical vectors from an independent implementation:
+0–8 and 63–65 bytes, and every length in 1018–1030 and 2042–2054 plus
+4095–4097, because BLAKE3's chunk is 1024 bytes and a single-block vector never
+exercises the counter, the cross-chunk chaining, or the parent tree.
+`fuzz_runner.zig` additionally differential-tests against
+`std.crypto.hash.Blake3`; the nightly never hashed anything before, which is the
+third reason the bug survived.
+
+Versions: `hash` 0.3.0 → **0.4.0** (MINOR — its output is what was wrong, so
+stored data does not carry forward), `merkle` 0.1.2 → 0.1.3, `binary-field`
+0.4.0 → 0.4.1 (PATCH — no API or wire-format change, only the values).
+
 
 ### Corrections to this changelog
 
@@ -311,6 +295,58 @@ sign-inversion bug that only a prime field could expose.
   loss of coverage: the duplicated assertions no longer run twice.
 
 
+### Added
+
+- **`fuzz`: the nightly "mass fuzz" actually fuzzes, and can fail.**
+  `timer_seed` was `0xF00D`, a constant named as if a timer had set it, so
+  every night re-checked the same 1.12M field values and 110 pairing pairs and
+  printed "all fuzz checks passed". Two things were wrong. It imported only
+  `zig-field`, `zig-curve` and `zig-pairing`, so it never constructed a
+  `Sumcheck`, a prime fixture or a torus domain -- green through three releases
+  while the characteristic-2 fold sat in `sumcheck.zig`. And it now covers
+  `zig-binary-field` and `zig-fri`: prime-field axioms, `Prime128` against a
+  native `u256 % p` oracle, Sumcheck round trips on both entry points, and FRI
+  round trips over the torus in M31 and M61. The seed comes from the clock, is
+  printed on the first line, and replays with `zig build fuzz -- <seed>`.
+  All three new sections were watched failing: `foldLinear` reverted to
+  `a + t*(a + b)` reports `honest 0/80 verified`, an off-by-one torus
+  generator reports `OrderTooLarge`, and a broken `add` reduction fails the
+  pre-existing runner.
+  Worth recording that the first version of the Sumcheck check was **wrong
+  about the protocol**: it asserted random data must be rejected, and failed
+  80/80, because `Sumcheck` proves the hypercube sum, which any table admits.
+  Low degree is FRI's claim, not its.
+- **`fri`: FRI over the norm-1 torus of `F[p^2]`, so `M31` and `M61` work.**
+  `prove`/`verify` now have `proveOn`/`verifyOn` siblings that take the domain
+  as a parameter (`prove`/`verify` are unchanged wrappers over `Domain(F)`).
+  `torus.zig` builds a domain on the torus `T = {N(x) = 1}`, which is cyclic of
+  order `p + 1` -- and for a Mersenne prime that is the whole point:
+  `2^31 - 1 + 1 = 2^31`, so a field whose base two-adicity is **1** gets a FRI
+  domain of size `2^31`. M61 gets 61. The `root.zig` header said "M31 has
+  two-adicity 1 and cannot be used here"; that was true of the base field and
+  false of the package, and is corrected in the same commit.
+  The generator is derived by Cayley parametrization in raw `u128` arithmetic
+  and then re-checked through the field's own `pow`, because construction and
+  verification being the same computation would prove nothing. Two
+  qualifications the obvious summary would have got wrong: the torus is **not**
+  an improvement in general (for Goldilocks `p + 1` has 2-adicity 1 against the
+  base field's 32, which is why FRI keeps the multiplicative subgroup there),
+  and `F[p^2]`'s own `two_adicity` (32 for M31) is also large enough, so the
+  torus is the domain you want for its structure rather than the only one that
+  runs. 2's invertibility, which the fold's `1/2` depends on, is stated and
+  checked rather than assumed.
+- **`binary-field`: a 128-bit prime fixture, `Prime128`** (`p = 2^128 - 159`).
+  The first field in this workspace that runs the **secure** `Sumcheck(F)`
+  entry point rather than `SumcheckUnsafe`, which is what exposed the fold
+  above. It carries a Pocklington primality certificate (`F = 42113237 ·
+  62826870453001 > √p`, witness `a = 2`) because `2^128 - 1` passes a 128-bit
+  size gate while being composite, and its independent oracle is native
+  `u256 % p` against the field's algebraic `2^128 ≡ 159` fold — different
+  techniques, so agreement is a real witness. `Prime31` is kept: its `u64`
+  oracle is exact, and it still asserts that `Sumcheck(Prime31)` rejects the
+  field.
+
+
 ### Fixed
 
 - **`zig-rng` did not compile on Windows.** `libs/rng/src/csprng.zig` called
@@ -385,6 +421,28 @@ sign-inversion bug that only a prime field could expose.
   asserts that the characteristic-2 form and the general form *disagree* on its
   input before asserting that the implementation returns the latter.
 
+
+### Fixed
+
+- **The sum-check fold was characteristic 2** (`binary-field`). `sumcheck.zig`
+  folded each round with `a + t·(a + b)` in five places. That expression equals
+  the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where
+  `1 - t == 1 + t`, i.e. in characteristic 2. Outside it, the fold is a
+  different kernel from the one `verify` closes on, so **the verifier rejected
+  honest proofs** over any odd-characteristic field.
+  This was a **false negative, not a false positive**: the verifier closed on
+  the correct linear kernel and the prover did not, so no forged proof was
+  accepted and soundness was intact. The prover simply could not produce a
+  proof that verified. The soundness break would have been the opposite
+  arrangement -- the char-2 kernel also sitting in the verifier's closing
+  equality, so that a kernel which is wrong over a prime field would have been
+  accepting claims about primes. That is why it mattered; it is not what
+  happened.
+  Fixed by routing all five sites through one `foldLinear` helper, which is a
+  bit-for-bit no-op under characteristic 2 — all pre-existing proofs are
+  unchanged. This is the third bug in one family (after `interpolateCoeffs`'s
+  `add`->`sub` and `kernelTables`' `beta_r`); all three are invisible to a
+  characteristic-2 test matrix, and all three were found by a prime field.
 
 ### Versioning
 
