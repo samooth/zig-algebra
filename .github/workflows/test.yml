@@ -96,7 +96,14 @@ jobs:
         uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
-      - run: zig build cross-check
+      # `--summary all` so the log names the 34 binaries it compiled (17
+      # libraries x 2 targets). Without it the step is silent on success: it
+      # takes about a minute of real work and the log shows only the command,
+      # so a reader cannot tell a working gate from one that did nothing. That
+      # is the same failure mode as a check that produces no output, applied to
+      # a check that *did* pass -- the job was green, and still said nothing
+      # about what it had verified.
+      - run: zig build cross-check --summary all
 
   fuzz:
     # `zig build fuzz` was never in CI, so the randomized property runner was
