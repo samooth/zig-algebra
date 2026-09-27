@@ -23,9 +23,24 @@ it.
 - **Affected:** everything that commits through `zig-hash`'s Blake3 — the
   `MerkleTree` and `MMR` constructors in `merkle/root.zig`, and the query-point
   binding in `binary-field/src/pcs.zig`.
-- **Not affected:** the Fiat-Shamir challenge derivation. `zig-fri` and
-  `zig-transcript` both use `std.crypto.hash.Blake3`, not this one, so
-  challenges were never derived from it.
+- **Not affected:** the Fiat-Shamir challenge derivation *in this repository*.
+  `libs/fri/src/root.zig:73` and `libs/transcript/src/transcript.zig:31` both
+  use `std.crypto.hash.Blake3`, not this one, so no challenge here was ever
+  derived from it. The exposure was commitments and Merkle openings, not
+  challenges.
+- **Affected elsewhere, and the opposite direction from the obvious guess:** a
+  consumer whose own transcript imports `@import("zig-hash").Blake3` **is**
+  affected, because its challenges came from this function. That is not knowable
+  from here — it is the consumer's repository and its own advisory is the
+  authority. `zk-zkml`, which uses `std.crypto.hash.Blake3` throughout, is not
+  affected; `zig-zk`'s attestation about itself is its own to make, and this
+  file does not assert it.
+
+The asymmetry is the point, and it is easy to get backwards. What is *not*
+affected is the code in this repository. What *is* affected is whoever imported
+the broken hash, and a reader of this file cannot see their imports — which is
+exactly why the per-consumer claim belongs in the consumer's advisory. Naming
+them here is a courtesy so nobody has to go looking, not a substitute.
 
 If you need commitments that interoperate, use `std.crypto.hash.Blake3`
 directly, or wait for `v0.5.2`. There is no compatibility mode: the old digest
@@ -134,6 +149,29 @@ The affected implementation had four compounding defects:
 
 The historical regression test accepted honestly folded random data 16/16
 times.
+
+## Consumers in other repositories
+
+This advisory answers "does this affect me" for a user of zig-algebra's `fri`
+at 0.3.0 or earlier. It does not answer "does this affect a project that holds
+its own copy", and that is a separate question with a separate answer, because
+the fix and the vulnerable code can drift apart. Two named cases, so a reader
+does not have to go looking:
+
+- **`zig-zk` is affected** — it holds its own FRI and transcript, so whether
+  this advisory reaches it depends on its code and not on this repository's.
+  Its own advisory is the authority; the attestation that it applies there is
+  theirs, not ours, and we cannot read that repository from here. What we can
+  attest is the mechanism: a consumer whose Fiat-Shamir transcript derives its
+  challenges from `zig-hash`'s `Blake3` — see the non-standard commitments
+  section above — was deriving them from a function that is not BLAKE3, which
+  bears on exactly the replay check this advisory's fix rests on.
+- **`zk-zkml` is not affected** — it uses `std.crypto.hash.Blake3` throughout
+  rather than this repository's, and its own tests are its attestation.
+
+Both statements are cross-references, not audits. A project with a private copy
+of anything here should read this file and then decide for itself, which is the
+same discipline as for any of the code above.
 
 ## Current implementation
 

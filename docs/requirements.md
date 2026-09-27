@@ -88,7 +88,9 @@ because they were written before the instrument existed.
 | 11 | Every module that is built **in any target** is also type-checked there | `build.zig` — `cross_register`, `libs_with_example` | `zig build cross-check` compiles the eight example executables for both foreign targets, 16 artefacts, and CI runs the same step | `libs/rng/src/main.zig:44` carried a `std.debug.assert` for the whole life of the repository because no CI job compiled that file. **This row was unsatisfied when the table was written and was closed by deleting code rather than adding a gate** — see the audit |
 | 12 | A document asserts a **sequence**, not a state | `AGENTS.md` §0 | — | "the hash was broken" expires when the state moves. It was wrong twice in opposite directions: `v0.5.0` was "published" and had not been, then `v0.5.1` was "not published" and had |
 | 13 | The audit happens before the tag, not after | `AGENTS.md`, "Releasing: the tag is the gate" | `v0.5.2` shipped with the fix in it; `v0.5.1` shipped a false CHANGELOG paragraph because the tag was taken before anyone read it | Tagging first, which is the natural order and the wrong one. A tag is a photograph; a later correction does not reach it |
-| 14 | Who consumes a new capability, and how they learn it has not diverged, is decided **before** it is written | `AGENTS.md` §0 | The circular-domain work has not started; this row is why | Writing the code and then asking who wants it. That is how `binary-field` diverged from its fork for three releases, and the interoperability bug in the Merkle leaf hashing was invisible from both sides because a round trip is self-consistent |
+| 14 | A transcript challenge is a function of the transcript state | **Not satisfied** | Nothing. `libs/transcript` has no known-answer vector for its challenge derivation | Adding 1 to the first byte of the finalised digest changes every challenge and all 10 tests pass. Fiat-Shamir is only sound if the challenge is exactly the hash of the state, and nothing here would notice if it were not |
+| 15 | Who consumes a new capability, and how they learn it has not diverged, is decided **before** it is written | `AGENTS.md` §0 | The circular-domain work has not started; this row is why | Writing the code and then asking who wants it. That is how `binary-field` diverged from its fork for three releases, and the interoperability bug in the Merkle leaf hashing was invisible from both sides because a round trip is self-consistent |
+| 16 | Every input guard is exercised by a test that would fail without it | **Not satisfied** — see the mutation log | Missing for: `kzg/src/root.zig:166-167` (on-curve, subgroup), `merkle/src/merkle_tree.zig:26` (`validPathIndex`), `bigint/src/gcd.zig:83` (negative modulus), `algebra-traits/src/root.zig:92` (invert zero), `transcript`'s challenge derivation | Disabling any of those guards leaves every test green. They are not wrong — they are untested, and a guard nobody exercises is a claim nothing can falsify. `kzg` is the sharpest: **two** consecutive `return false` guards, six tests, and both are dead code |
 
 ## Mutations watched failing
 
@@ -99,6 +101,19 @@ was produced by breaking working code on purpose and reading the failure.
 |---|---|---|
 | BLAKE3 ROOT flag in the wrong place | fuzz | `FAIL BLAKE3 vs stdlib at len=1025` |
 | BLAKE3 block buffer not zeroed after a full block | fuzz **and** the 45-vector KAT | `FAIL … at len=65`, `Blake3 KAT failed at len=65` |
+| `?windows.HANDLE` reverted to `windows.HANDLE` | `cross-check` | `expected type '*anyopaque', found '@TypeOf(null)'` |
+| `cyclotomicSqr` coefficient 2 → 1 | `pairing` tests, incl. the `py_ecc` KAT | 6 tests fail, incl. `cyclotomicSqr matches generic sqr` |
+| `poly` degree guard `>` → `>=` | `poly` tests | 2 tests fail |
+| `serialization` flag guard `1` → `2` | `serialization` tests | 1 test fails |
+| `ntt` non-power-of-two guard removed | `ntt` tests | 1 test fails |
+| `linalg` `NotSquare` `!=` → `>` | `linalg` tests | 1 test fails |
+| **`kzg` on-curve guard disabled** | **nothing — 6/6 pass** |
+| **`kzg` subgroup guard disabled** | **nothing — 6/6 pass** |
+| **`merkle` `validPathIndex` `<` → `<=`** | **nothing — 18/18 pass** |
+| **`transcript` `digest[0] += 1` after the final** | **nothing — 10/10 pass** |
+| **`bigint` negative-modulus guard removed** | **nothing — 19/19 pass** |
+| **`algebra-traits` `inv` guard made vacuous** | **nothing — 4/4 pass** |
+| **`parallel` chunk `(count+nw-1)/nw` → `(count+nw)/nw`** | **nothing — 2/2 pass** — benign: it changes work *balance*, not results, so a result-equality check cannot see it and should not |
 | `SmallField.add` reduction off by one | fuzz | runner exits non-zero |
 | `foldLinear` reverted to `a + t·(a + b)` | fuzz | `Sumcheck: honest 0/80 verified` |
 | the same fold | unit tests | 4 tests fail, including both negatives |
@@ -124,18 +139,18 @@ where a rewrite would buy something and where it would not.
 | `field` | 83 | **unknown** | **yes** — `add` reduction | no |
 | `binary-field` | 96 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 25 | **unknown** | **yes** — torus generator | no |
-| `pairing` | 57 | **demonstrated** — `py_ecc` (EIP-197) | no | no |
+| `pairing` | 57 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
-| `merkle` | 18 | **unknown** | no | no |
-| `poly` | 28 | **unknown** | no | no |
-| `bigint` | 19 | **unknown** | no | no |
-| `transcript` | 10 | **unknown** | no | no |
-| `serialization` | 15 | **unknown** | no | no |
-| `ntt` | 15 | **unknown** | no | no |
-| `linalg` | 11 | **unknown** | no | no |
-| `kzg` | 6 | **unknown** | no | no |
-| `algebra-traits` | 4 | **unknown** | no | no |
-| `parallel` | 2 | **unknown** | no | no |
+| `merkle` | 18 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
+| `bigint` | 19 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `transcript` | 10 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
+| `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
+| `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
+| `kzg` | 6 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `algebra-traits` | 4 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `parallel` | 2 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 
 ### What the table says
 
@@ -159,10 +174,30 @@ One of the three is `hash`, which hid a non-BLAKE3 the whole time — which is t
 argument for the requirement being about provenance and not about having
 vectors.
 
-**Ten libraries have never been seen to fail.** `merkle`, `poly`, `bigint`,
-`transcript`, `serialization`, `ntt`, `linalg`, `kzg`, `algebra-traits` and
-`parallel`. Every test in them has only ever run green, so the honest statement
-about their coverage is that it is unmeasured.
+**Seven of the ten unmeasured libraries were measured, and six guards are
+dead code.** A mutation was written for each: change a guard, a comparison, an
+off-by-one. Six of twelve mutations were caught, and the six that survived are
+the finding. They are not subtle:
+
+- **`kzg` has two consecutive `return false` guards that no test exercises** —
+  on-curve and subgroup membership, in a library with six tests. Both are
+  currently dead code.
+- **`merkle`'s `validPathIndex` accepts an index one past the leaf count** under
+  mutation, and nothing notices. That is a real off-by-one in a proof path.
+- **`transcript`'s challenge derivation has no known-answer vector.** Adding 1 to
+  the first byte of the finalised digest changes every challenge, and all ten
+  tests pass. Fiat-Shamir is only sound if the challenge is exactly the hash of
+  the state, and nothing here would notice if it were not.
+- **`bigint` accepts a negative modulus** under mutation; **`algebra-traits`
+  silently returns something for inverting zero**; both unnoticed.
+- `parallel`'s chunk computation is mutable without consequence — correctly so,
+  since it changes work *balance* and not results, and a result-equality check
+  should not see it.
+
+These are requirements 14 and 16 in the table, marked not satisfied, with the
+path of the gate that is missing. A guard nobody exercises is a claim nothing
+can falsify, which is the fifth instance from the rule above arriving in a
+different costume.
 
 **`parallel` reports 2 tests and `timing.zig` has a third** that the root step
 never collects, for the reason in requirement 11: a file not imported from the
