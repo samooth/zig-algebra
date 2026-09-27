@@ -4,25 +4,36 @@ All notable changes to zig-algebra are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking changes).
 
-> **Correction: `v0.4.0`, `v0.5.0` and `v0.5.1` were created as local tags and
-> treated as published. They were never published.** `git ls-remote --tags
-> origin` ends at `v0.3.2`; the three later tags exist only in this repository.
-> An earlier version of this header said the opposite -- that `v0.5.0` was
-> "published with a broken build step" and that the tag "was pushed anyway" --
-> and that was false. Nothing of the 0.5.0 P0 work ever reached a consumer, so
-> its broken `zig build bench` harms nobody, and `v0.5.1` carries the fix
-> precisely *because* the tag never left this machine.
+> **The release history of 0.4.0 and 0.5.0, in order, because the order is the
+> point.**
+>
+> - `v0.4.0` and `v0.5.0` were created as local tags, and **never left this
+>   repository**. As of 2026-09-27 the published tags are `v0.1.0` …
+>   `v0.3.2` plus `v0.5.1`; there is no `v0.4.0` and no `v0.5.0` on the remote,
+>   and there never was. Both remain signed and un-moved locally, because
+>   deleting them would lose the order; their content is contained in
+>   `v0.5.1`.
+> - `v0.5.1` was re-pointed locally, more than once, while it was still
+>   unpublished — once to carry the torus work, once to carry the Windows
+>   compile fix — and was then **published on 2026-09-27** at `22df684`.
+> - That publication is what this paragraph previously got wrong, in the
+>   opposite direction. An earlier revision said `v0.5.1` "was never published";
+>   the revision before that said `v0.5.0` was "published with a broken build
+>   step" and "pushed anyway". Neither was true when written, and each stopped
+>   being true when the state moved. See "write sequences, not states" in
+>   `AGENTS.md`; this paragraph is the sequence.
 >
 > **Two process failures, not one.**
 >
 > 1. *The workflow did not run on tags.* `on.push.tags: ['v*']` was absent, so
 >    a tag could be created with a red `benchmark` job and nobody would find
->    out from CI. Fixed in `v0.5.1`.
-> 2. *Local tags were annotated as published.* The fiction in the paragraph
->    above is the more expensive of the two, because it **justified a
->    decision**: re-pointing `v0.5.1` was the right move, but it was made on a
->    false premise. The rule "never move a published tag" is unchanged and
->    still correct; the premise under it was not.
+>    out from CI. Fixed before `v0.5.1` was published.
+> 2. *Local tags were annotated as published.* This is the expensive one,
+>    because it **justified a decision**: re-pointing `v0.5.1` was correct, but
+>    it was done on a premise that was false, and the next session reading this
+>    file would have inherited the wrong reason along with the right action. The
+>    rule "never move a published tag" is unchanged and still correct; the
+>    premise underneath it was not.
 >
 > The rule that follows from the second failure is in `AGENTS.md`: **an artifact
 > exists when a consumer can fetch it, not when you created it.** A local tag is
@@ -31,13 +42,20 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 > For the record, the compile error itself was real: the P0 sweep below turned
 > `rootOfUnity` and `nttWithTwiddles` into error unions, and
 > `libs/pairing/src/bench.zig` had two `void` helpers calling them with `try`.
-> `zig build bench` does not build at `v0.5.0`, and that is fixed in `v0.5.1`.
+> `zig build bench` does not build at `v0.5.0`. Nobody was harmed by that,
+> because `v0.5.0` never reached anyone. Anyone who needs a tag whose
+> `zig build bench` compiles should use `v0.5.1` or later, and that statement
+> became true on 2026-09-27 when `v0.5.1` was actually pushed.
 >
-> `v0.4.0` and `v0.5.0` are kept locally, un-moved and correctly signed, because
-> deleting them would lose the record of what shipped in what order. Their
-> content is also contained in `v0.5.1`. Anyone who needs a tag whose
-> `zig build bench` compiles should use `v0.5.1` or later — and note that this
-> only means something once `v0.5.1` is actually pushed.
+> **`v0.5.1` is published and therefore frozen.** It is at `22df684`; that tag
+> is now what the "never move a published tag" rule protects, so it cannot be
+> re-pointed. Two consequences, both expected. The Windows fix (`22df684`) is
+> inside it, but this changelog correction is **not** — it is on `main` after
+> the tagged commit, and ships with the next release. And the changelog *inside*
+> the `v0.5.1` tarball still carries the earlier, fictional paragraph, because
+> that text was frozen into the tag a commit before it was corrected. Both are
+> the rule working: a wrong premise inside a published tag is paid for with
+> `v0.5.2`, not with a rewrite.
 
 ## [Unreleased]
 
@@ -133,11 +151,11 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [v0.5.0] — 2026-09-27
 
-> **Local tag. Never published** — `git ls-remote --tags origin` ends at
-> `v0.3.2`. Nothing below reached a consumer, which is why the broken
-> `zig build bench` documented in the header costs nobody anything. The tag is
-> kept, un-moved and signed, as a record of the order; its content is also in
-> `v0.5.1`.
+> **Created as a local tag and never pushed; as of 2026-09-27 there is no
+> `v0.5.0` on the remote.** Nothing below reached a consumer, which is why the
+> broken `zig build bench` documented in the header costs nobody anything. Kept
+> un-moved and signed as a record of the order; its content is also in
+> `v0.5.1`, published the same day.
 
 ### Security (P0 class, second sweep — advisory ZA-2026-003)
 
@@ -237,8 +255,12 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
 
 ## [v0.5.1] — 2026-09-27
 
-> **Local tag. Not yet published.** This section describes work that exists in
-> this repository; the tag has not been pushed. See the header.
+> **Published 2026-09-27 at `22df684`.** Its run (36328763514) was green on
+> all three operating systems at 416/416 each, and it was the first tag push in
+> this repository to trigger the gate at all. This section is therefore frozen:
+> the tag cannot be re-pointed, and the changelog correction that follows
+> `22df684` on `main` is **not** in it. See the header for the full sequence and
+> for what that costs.
 
 The follow-up to 0.5.0: the fix for the broken `zig build bench` described
 above, the release gate whose absence let that happen, the assert ledger, the
@@ -252,7 +274,7 @@ sign-inversion bug that only a prime field could expose.
 > `[v0.5.0]` are present above with their full contents, so a consumer reading
 > `0.5.1` reads the complete history rather than a gap. Writing it down so the
 > next session reads it as a decision instead of an oversight: the intervening
-> MINORs were never published, and the work in them was real.
+> MINORs were created locally and never pushed, and the work in them was real.
 
 ### Corrections to this changelog
 
@@ -406,7 +428,8 @@ sign-inversion bug that only a prime field could expose.
 
 ## [v0.4.0] — 2026-09-27
 
-> **Local tag. Never published** — like `v0.5.0`, this exists only in this
+> **Created as a local tag and never pushed; as of 2026-09-27 there is no
+> `v0.4.0` on the remote** — like `v0.5.0`, this exists only in this
 > repository. Kept un-moved and signed so the version history stays readable;
 > its content is also in `v0.5.1`.
 

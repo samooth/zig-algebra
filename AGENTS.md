@@ -95,6 +95,28 @@ leaves the error visible, with its date and its cause, and a history in which
 the error never happened leaves no trace that the criterion was ever applied to
 a false premise.
 
+**Write sequences, not states. A document that asserts a state goes stale the
+moment the state moves; one that asserts a sequence does not.**
+
+This changelog got the same paragraph wrong twice, in opposite directions.
+First it said `v0.5.0` was "published with a broken build step", "pushed anyway",
+"possibly cloned" — it had not been, and nothing of that release ever reached
+anyone. Then the correction said `v0.5.1` "was never published" — true when
+written, and false as soon as the tag was pushed, which is what happened next.
+Both times the same cause: the sentence said *is* or *were* about something that
+has a moment.
+
+The version that survives is the ordered one: "`v0.4.0` and `v0.5.0` were created
+locally and never left this repository; `v0.5.1` was re-pointed locally while
+unpublished and was published on 2026-09-27 at `22df684`." That is still true in
+a year. "v0.5.1 is not published" stopped being true in the next commit. **Give
+the moment a date**, because "was published" without one is a state with the
+same defect, only slower.
+
+The same applies to any claim about the remote: `origin/main` is at `<sha>` *as
+of <date>* beats `origin/main is up to date`, and the first goes stale visibly
+instead of quietly.
+
 This is not hypothetical here. The same shape has shipped three times in this
 workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
 `zig-bigint` that no library under test referenced, and an unconnected
