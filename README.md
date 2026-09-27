@@ -5,11 +5,11 @@
 
 A modular ecosystem of 17 algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig 0.16.0.
 
-> **Status:** workspace version `0.5.0` (see [Versioning](#versioning)). No
+> **Status:** workspace version `0.5.1` (see [Versioning](#versioning)). No
 > independent cryptographic audit has been performed; "production candidate"
 > below means test-covered, not audited. Review `SECURITY.md` before use.
 >
-> `0.4.0` and `0.5.0` are hardening releases: input validation that used to be
+> `0.4.0`, `0.5.0` and `0.5.1` are hardening releases: input validation that used to be
 > `std.debug.assert` (invisible in `ReleaseFast`) is now typed errors, and the
 > legacy total wrappers are explicitly marked as such. `0.5.0` closes the same
 > defect class in the ten libraries `0.4.0` did not cover, including two on the
@@ -332,14 +332,24 @@ each library carries its own `build.zig.zon` with an independent semver
 Library count grew over time: 14 libraries at v0.1.0, 16 at v0.2.0
 (`fri` + `transcript`), 17 at v0.2.2 (`kzg`).
 
-- **`0.5.0`** (current) extends the validation hardening to `algebra-traits`,
+- **`0.5.1`** (current) fixes the `zig build bench` compile error that shipped
+  in `v0.5.0`, and carries the release gate whose absence let it: CI now
+  triggers on `tags: ['v*']`, and AGENTS.md requires the tag to be pushed only
+  after CI is green on that exact commit. `v0.5.0` is **not** moved — it is
+  signed and possibly cloned, and rewriting a published tag to hide a compile
+  error is worse than publishing a patch. It also carries the assert ledger
+  (`zig build assert-check`), the `fri`/`parallel` packaging fixes, and the
+  characteristic-agnostic Lagrange and folding arithmetic. Manifests in this
+  release: `binary-field` 0.4.0, `parallel` 0.2.0, `fri` 0.3.0, `bigint` 0.3.0.
+- **`0.5.0`** extends the validation hardening to `algebra-traits`,
   `poly`, `linalg`, `fri`, `ntt`, `field`, `rng`, `hash` and `pairing`, and
   fixes eight dead `format` methods, and adds the assert ledger
   (`zig build assert-check`). Bumped: `algebra-traits` 0.3.0, `bigint` 0.3.0,
   `curve` 0.5.0, `field` 0.4.0, `fri` 0.3.0, `hash` 0.3.0, `kzg` 0.2.1,
   `linalg` 0.2.0, `ntt` 0.2.0, `pairing` 0.4.0, `poly` 0.2.0, `rng` 0.4.0,
   `binary-field` 0.4.0, `parallel` 0.2.0. `merkle`, `serialization` and
-  `transcript` are unchanged.
+  `transcript` are unchanged. See the `0.5.1` entry below for what that release
+  changed and why two releases landed back to back.
 
   `fri` 0.3.0 and `parallel` 0.2.0 are the two packaging fixes: `fri` declared
   `.dependencies = .{}` while hand-wiring three sibling libraries from `../`,

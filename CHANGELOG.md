@@ -4,7 +4,19 @@ All notable changes to zig-algebra are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking changes).
 
-## [Unreleased]
+> **Published with a broken build step.** `zig build bench` does not compile at
+> this tag: the P0 sweep below turned `rootOfUnity` and `nttWithTwiddles` into
+> error unions, and `libs/pairing/src/bench.zig` had two `void` helpers calling
+> them with `try`. The `benchmark` CI job was red on this commit and the tag was
+> pushed anyway, because no CI job ran on tag pushes at the time.
+>
+> **`v0.5.0` is not moved.** It is signed and possibly cloned, and rewriting a
+> published tag to hide a compile error is worse than publishing a patch. The fix
+> is `v0.5.1`, which also carries the release gate whose absence let this
+> happen. Anyone who needs a tag whose `zig build bench` compiles should use
+> `v0.5.1` or later.
+
+## [v0.5.0] — 2026-09-27
 
 ### Security (P0 class, second sweep — advisory ZA-2026-003)
 
@@ -101,6 +113,15 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   are now `pub fn format(self, writer: *std.Io.Writer) std.Io.Writer.Error!void`
   and work with `{f}`. This is why `zig-poly`'s `toString` now yields
   `1 + 2*x + 3*x^2` instead of a struct listing.
+
+## [v0.5.1] — 2026-09-27
+
+The follow-up to 0.5.0: the fix for the broken `zig build bench` described
+above, the release gate whose absence let that happen, the assert ledger, the
+two packaging fixes, and the characteristic-agnostic Lagrange and folding
+arithmetic. Two releases in a row is not churn. 0.5.0 closed a P0 class
+across ten libraries; 0.5.1 closed the release process, and found a
+sign-inversion bug that only a prime field could expose.
 
 ### Corrections to this changelog
 

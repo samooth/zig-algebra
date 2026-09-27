@@ -180,6 +180,60 @@ also why the binary-field suite could never have noticed either way.
 `polynomial.zig`'s test vector in the `extend` test is a statement about the
 field, not a characteristic-2 claim, and is left alone.
 
+## The size gate and native-width testability are in direct conflict
+
+This is a structural property of the problem, not an oversight in
+`prime_fixture.zig`, and rediscovering it costs a day, so it is written here.
+
+`Sumcheck(F)`, `MlePcs(F, E)` and `CommittedMlePcs(F, E)` require
+`F.BITS >= 128` (`MIN_SAFE_BITS`). That is a *security* threshold: below it the
+4-bit challenges are grindable, so the entry points refuse.
+
+For a prime-field fixture to be a trustworthy witness it must be
+*checkable*: the field's own arithmetic and an independent reference must agree
+exactly, not modulo something. The only way to get an exact reference is to
+compute in a native integer wide enough that products do not overflow. A
+31-bit prime leaves products at 62 bits, which fits `u64` comfortably, so the
+oracle is exact. **A 128-bit prime does not: its products need 256 bits, so the
+"independent oracle" has to be a `u256` reduction or a second Montgomery
+implementation — which is no longer independent, it is the same technique twice.**
+
+So the two requirements are in direct tension:
+
+| Requirement | Wants |
+|---|---|
+| `Sumcheck(F)` accepts it | `BITS >= 128`, i.e. arithmetic in 256 bits and up |
+| An exact independent oracle | arithmetic in ≤ 64 bits, i.e. `BITS <= 31` |
+
+**Any field small enough for the arithmetic to be exact in native width is below
+`MIN_SAFE_BITS`.** `M31` at 31 bits is the ceiling of what this workspace can
+witness exactly, and it is 97 bits short of the gate.
+
+### Two consequences, both true
+
+1. **The generalized path has no coverage through the secure entry point.** The
+   `prime_fixture.zig` tests instantiate `SumcheckUnsafe`, and one of them
+   asserts that `Sumcheck(Prime31)` *rejects* the field. That test is honest
+   about the trade, but nobody has run a ≥128-bit prime through the secure
+   `Sumcheck` and checked the generalized Lagrange arithmetic there. With the
+   current fixture that is not possible.
+2. **The gap is a property of the design, not of the fixture.** Closing it means
+   building a `u256` prime field and a reference that is independent of it —
+   realistically a `BigInt`-based oracle from `zig-bigint`, which
+   `binary-field` does not currently depend on.
+
+What the fixture *does* establish, and it is not nothing: the arithmetic is
+character-agnostic. The generalized `interpolateCoeffs`, `Multilinear.fold` and
+`kernelTables` are exercised on a field where `sub` is not `add`, which is the
+property that a binary-field matrix structurally cannot observe. The
+`SumcheckUnsafe` variant runs the identical arithmetic in the identical inner
+loop; only the challenge width differs.
+
+Anyone reading "the fixture tests the generalized sum-check" should read it as
+"through the sound path's *arithmetic*", never as "through the sound path's
+*entry point*". The code itself already marks that distinction: the secure
+variant returns `error.FieldTooSmall`, and the fixture's test says so.
+
 ## A correctness fix is not a release gate
 
 Worth stating separately, because the instinct after a validation sweep is to

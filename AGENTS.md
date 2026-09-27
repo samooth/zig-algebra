@@ -53,7 +53,7 @@ wired to `buildTrace` — so the message existed and nothing could ever see it.
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
-version 0.5.0) covering fields, curves, pairings, and STARK building blocks.
+version 0.5.1) covering fields, curves, pairings, and STARK building blocks.
 No independent cryptographic audit exists; see SECURITY.md before making
 security claims.
 
@@ -205,7 +205,7 @@ test "property: associativity" {
 
 ## Versioning
 
-Root `build.zig.zon` carries the workspace version (`0.5.0`); each library has
+Root `build.zig.zon` carries the workspace version (`0.5.1`); each library has
 its own independent semver in `libs/<name>/build.zig.zon` (currently
 `0.1.0`–`0.5.0`). Bump the library version for API changes, the workspace
 version for ecosystem-level releases, and record both in `CHANGELOG.md`.

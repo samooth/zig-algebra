@@ -7,10 +7,22 @@
 //! `F.BITS >= 128`, and every field this workspace instantiates over is binary,
 //! so the Lagrange and folding arithmetic in `sumcheck.zig`, `pack.zig` and
 //! `polynomial.zig` has only ever run where `sub` is literally `add`. Those
-//! expressions are written as `add` because in characteristic 2 `a - b == a + b`
+//! expressions were written as `add` because in characteristic 2 `a - b == a + b`
 //! is a law, not a coincidence -- which is exactly the situation where a
 //! transcription error is invisible. A prime field is what makes the difference
 //! observable.
+//!
+//! **This fixture is below `MIN_SAFE_BITS`, and that is forced.** 31 bits is what
+//! leaves products inside `u64`, so the reference below is exact rather than a
+//! second copy of the same technique. A 128-bit prime would need 256-bit
+//! products, at which point the "independent" oracle is a `u256` reduction or a
+//! second Montgomery implementation -- not independent. So any field small
+//! enough to witness exactly is below the secure threshold, and this one enters
+//! through `SumcheckUnsafe`. What it establishes is that the arithmetic is
+//! characteristic-agnostic; what it does not establish is the secure entry
+//! point's behaviour, which no fixture in this tree can reach. See
+//! `docs/assert-ledger.md`, "The size gate and native-width testability are in
+//! direct conflict".
 //!
 //! Two properties make the fixture trustworthy rather than merely present:
 //!
