@@ -4,7 +4,18 @@ Cryptographic hash functions for Zig. Includes traditional hashes (Blake3, Blake
 
 ## Features
 
-- **Blake3** — parallelizable, with keyed and key-derivation modes
+- **Blake3** — parallelizable, with keyed and key-derivation modes.
+  **It did not implement BLAKE3 until `96b65c7` (v0.5.2):** the root output
+  recompressed the already-compressed state instead of the input CV and the
+  original block, and the block buffer was not zeroed after a full block, which
+  is observable from 65 bytes of input. Both defects are in the repository's
+  first commit, so **every release up to and including v0.5.1 emits
+  non-standard digests.** It is now pinned by 45 canonical vectors from an
+  independent implementation, with sweeps around 1024 and 2048 bytes because
+  BLAKE3's chunk is 1024 bytes and a single-block vector cannot reach the
+  defect. Anything committed through this hash before v0.5.2 is a commitment to
+  a different function than BLAKE3, and will not verify against another
+  implementation.
 - **Blake2b256 / Blake2s256** — fast, used in many protocols
 - **Keccak-256** — Ethereum-compatible
 - **SHA3-256** — NIST standard
