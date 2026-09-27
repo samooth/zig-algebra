@@ -266,3 +266,23 @@ test "modInverse accessible via Gcd re-export" {
     const inv = try G.modInv(Big.fromU64(3), Big.fromU64(11));
     try std.testing.expect(inv.eql(Big.fromU64(4))); // 3*4 = 12 ≡ 1 mod 11
 }
+
+test "modInv rejects a negative modulus and a zero modulus" {
+    // Guards `modInv`'s modulus check. A negative modulus is the interesting
+    // one: `mod` and the final `mod(m)` on a negative modulus are not the
+    // modular inverse anybody means, and the guard is the only thing stopping
+    // them. Written mutation-first: with the `isNegative` arm removed, the
+    // negative case below returns instead of erroring.
+    const Big = BigInt(8);
+    const G = ExtendedGcd(8);
+
+    try std.testing.expectError(error.InvalidModulus, G.modInv(Big.fromU64(3), Big.zero()));
+    try std.testing.expectError(
+        error.InvalidModulus,
+        G.modInv(Big.fromU64(3), Big.fromU64(11).neg()),
+    );
+
+    // And the positive path still works, so the guard is not simply rejecting
+    // everything.
+    try std.testing.expect((try G.modInv(Big.fromU64(3), Big.fromU64(11))).eql(Big.fromU64(4)));
+}

@@ -88,9 +88,9 @@ because they were written before the instrument existed.
 | 11 | Every module that is built **in any target** is also type-checked there | `build.zig` — `cross_register`, `libs_with_example` | `zig build cross-check` compiles the eight example executables for both foreign targets, 16 artefacts, and CI runs the same step | `libs/rng/src/main.zig:44` carried a `std.debug.assert` for the whole life of the repository because no CI job compiled that file. **This row was unsatisfied when the table was written and was closed by deleting code rather than adding a gate** — see the audit |
 | 12 | A document asserts a **sequence**, not a state | `AGENTS.md` §0 | — | "the hash was broken" expires when the state moves. It was wrong twice in opposite directions: `v0.5.0` was "published" and had not been, then `v0.5.1` was "not published" and had |
 | 13 | The audit happens before the tag, not after | `AGENTS.md`, "Releasing: the tag is the gate" | `v0.5.2` shipped with the fix in it; `v0.5.1` shipped a false CHANGELOG paragraph because the tag was taken before anyone read it | Tagging first, which is the natural order and the wrong one. A tag is a photograph; a later correction does not reach it |
-| 14 | A transcript challenge is a function of the transcript state | **Not satisfied** | Nothing. `libs/transcript` has no known-answer vector for its challenge derivation | Adding 1 to the first byte of the finalised digest changes every challenge and all 10 tests pass. Fiat-Shamir is only sound if the challenge is exactly the hash of the state, and nothing here would notice if it were not |
+| 14 | A transcript challenge is a function of the transcript state | **Not satisfiable as written, and that is the finding** — see `SECURITY.md`, "The transcript's challenge derivation is not verifiable today" | No instrument exists, and none can: the derivation implements no published specification, so there is no external vector to compare against | Adding 1 to the first byte of the finalised digest changes every challenge and all 10 tests pass. The ten tests are properties any deterministic function satisfies, a counter included. Closing this means matching the construction to a published transcript and adopting its vectors — a design decision, not a test |
 | 15 | Who consumes a new capability, and how they learn it has not diverged, is decided **before** it is written | `AGENTS.md` §0 | The circular-domain work has not started; this row is why | Writing the code and then asking who wants it. That is how `binary-field` diverged from its fork for three releases, and the interoperability bug in the Merkle leaf hashing was invisible from both sides because a round trip is self-consistent |
-| 16 | Every input guard is exercised by a test that would fail without it | **Not satisfied** — see the mutation log | Missing for: `kzg/src/root.zig:166-167` (on-curve, subgroup), `merkle/src/merkle_tree.zig:26` (`validPathIndex`), `bigint/src/gcd.zig:83` (negative modulus), `algebra-traits/src/root.zig:92` (invert zero), `transcript`'s challenge derivation | Disabling any of those guards leaves every test green. They are not wrong — they are untested, and a guard nobody exercises is a claim nothing can falsify. `kzg` is the sharpest: **two** consecutive `return false` guards, six tests, and both are dead code |
+| 16 | Every input guard is exercised by a test that would fail without it | **Not satisfied** — see the mutation log | Missing for: `kzg/src/root.zig:166-167` (on-curve, subgroup), `merkle/src/merkle_tree.zig:26` (`validPathIndex`), `bigint/src/gcd.zig:83` (negative modulus), `algebra-traits/src/root.zig:92` (invert zero) | Disabling any of those guards leaves every test green. **None of them is wrong** — they are untested, and a guard nobody exercises is a claim nothing can falsify. Correctness and coverage are separate findings and conflating them is its own error. `kzg` is the sharpest: **two** consecutive `return false` guards, six tests, and both are dead code |
 
 ## Mutations watched failing
 
@@ -107,12 +107,12 @@ was produced by breaking working code on purpose and reading the failure.
 | `serialization` flag guard `1` → `2` | `serialization` tests | 1 test fails |
 | `ntt` non-power-of-two guard removed | `ntt` tests | 1 test fails |
 | `linalg` `NotSquare` `!=` → `>` | `linalg` tests | 1 test fails |
-| **`kzg` on-curve guard disabled** | **nothing — 6/6 pass** |
-| **`kzg` subgroup guard disabled** | **nothing — 6/6 pass** |
-| **`merkle` `validPathIndex` `<` → `<=`** | **nothing — 18/18 pass** |
-| **`transcript` `digest[0] += 1` after the final** | **nothing — 10/10 pass** |
-| **`bigint` negative-modulus guard removed** | **nothing — 19/19 pass** |
-| **`algebra-traits` `inv` guard made vacuous** | **nothing — 4/4 pass** |
+| **`kzg` on-curve guard disabled** | **nothing — 6/6 pass, and it is *dead code*** |
+| **`kzg` subgroup guard disabled** | **nothing — 6/6 pass, and it has *no reachable witness*** |
+| **`merkle` `validPathIndex` `<` → `<=`** | `merkle: a path index at or past the leaf count is rejected` |
+| **`transcript` `digest[0] += 1` after the final** | **nothing — 10/10 pass, and there is no vector to write** |
+| **`bigint` negative-modulus guard removed** | `modInv rejects a negative modulus and a zero modulus` |
+| **`algebra-traits` `inv` guard made vacuous** | `invChecked rejects zero while inv stays total` |
 | **`parallel` chunk `(count+nw-1)/nw` → `(count+nw)/nw`** | **nothing — 2/2 pass** — benign: it changes work *balance*, not results, so a result-equality check cannot see it and should not |
 | `SmallField.add` reduction off by one | fuzz | runner exits non-zero |
 | `foldLinear` reverted to `a + t·(a + b)` | fuzz | `Sumcheck: honest 0/80 verified` |
@@ -183,11 +183,42 @@ the finding. They are not subtle:
   on-curve and subgroup membership, in a library with six tests. Both are
   currently dead code.
 - **`merkle`'s `validPathIndex` accepts an index one past the leaf count** under
-  mutation, and nothing notices. That is a real off-by-one in a proof path.
-- **`transcript`'s challenge derivation has no known-answer vector.** Adding 1 to
-  the first byte of the finalised digest changes every challenge, and all ten
-  tests pass. Fiat-Shamir is only sound if the challenge is exactly the hash of
-  the state, and nothing here would notice if it were not.
+  mutation, and nothing notices. **The code is correct** -- `index < leaf_count`
+  is right, and the off-by-one is what the mutation introduces. What is missing
+  is the test that would catch it, in a module 209 files across the other two
+  repositories depend on. Not a live bug; absent coverage, and it closes the
+  same way: with a test that brings the guard down.
+- **`kzg`'s two guards are not merely untested: one is dead code and the other
+  has no reachable witness.** `verify` opens with an on-curve check and then a
+  subgroup check, and `isG1InSubgroup(p)` is
+  `p.infinity or (p.isOnCurve() and ...)` — so anything the first guard rejects,
+  the second rejects too. The first is a decision point nothing can reach, and
+  disabling it changes no outcome. The second needs a point in the cofactor
+  torsion: `G1·r` is the point at infinity, because the generator already has
+  order `r`, and a scan of 64 values of `x` over `y² = x³ + 3` found 42 on-curve
+  points with exact square roots and **zero** outside the subgroup. BN254's G1 is
+  documented as having a trivial cofactor, which would make the second guard
+  redundant rather than merely untested; that part is not verified here and the
+  scan cannot distinguish a trivial cofactor from a large one. Both guards stay
+  in the code — removing one is a contract change — and both are marked
+  decorative rather than cited as coverage. An attempt to pin the redundancy
+  with a test was itself reverted: the test could not be made to fail, which is
+  the rule refusing a check that cannot fail.
+- **`transcript`'s challenge derivation has no known-answer vector, and there is
+  none to write.** Adding 1 to the first byte of the finalised digest changes
+  every challenge and all ten tests pass. The ten tests are properties —
+  determinism, domain separation, sequentiality, length prefix — and every one
+  of them is satisfied by any deterministic function, a counter included. So
+  the provenance question comes first, and the answer is: **the derivation
+  implements no published specification.** No RFC, no EIP, no reference
+  implementation is cited anywhere in `libs/transcript`, and the construction is
+  a house design — `std.crypto.hash.Blake3`, a domain string, length-prefixed
+  absorbs, finalise-and-rekey. There is therefore no external vector to compare
+  against, and a hand-written `expected` here would be the first instance of our
+  own rule with the *appearance* of a vector, which is worse than the original
+  because it would look like provenance. **Verdict: this derivation is not
+  verifiable today.** That is a design fact rather than a coverage gap, and it
+  is recorded in `SECURITY.md` as such.
 - **`bigint` accepts a negative modulus** under mutation; **`algebra-traits`
   silently returns something for inverting zero**; both unnoticed.
 - `parallel`'s chunk computation is mutable without consequence — correctly so,

@@ -76,6 +76,35 @@ without that treatment were the ones that hid `zig-hash`'s — a hash verified
 only by its own tests cannot be distinguished from a different hash that is
 equally self-consistent, which is the whole failure here.
 
+## The transcript's challenge derivation is not verifiable today
+
+`libs/transcript` implements a Fiat-Shamir transcript: `std.crypto.hash.Blake3`,
+a caller-supplied domain string, length-prefixed absorbs, and a
+finalise-and-rekey step so each challenge depends on the previous one. **No
+published specification is implemented.** No RFC, no EIP and no reference
+implementation is cited anywhere in the file, and the construction is a house
+design.
+
+That has a consequence worth stating plainly rather than deferring: **there is
+no known-answer vector for this derivation, and there is none to write.** Its
+ten tests are properties — determinism, domain separation, sequentiality, length
+prefix — and every one of them is satisfied by any deterministic function,
+including a counter. A mutation confirms the gap: adding 1 to the first byte of
+the finalised digest changes every challenge, and all ten tests pass.
+
+A `expected` value written in this repository would be the first instance of the
+rule in `docs/requirements.md` with the *appearance* of provenance, which is
+worse than having no vector at all, because a reader would stop looking.
+
+So the honest position is a design one, and it matters more than a coverage
+number: **every Fiat-Shamir challenge in every project that uses this transcript
+rests on a construction nobody can check against anything.** For a library that
+other repositories are about to consume, that is a decision for them and for
+whoever owns this one, not a line item in a test plan. Either the construction
+is matched to a published transcript and its vectors adopted, or the
+reproducibility of the challenges is accepted as an assumption to be written
+down.
+
 ## Scope and non-claims
 
 - **Constant time:** not guaranteed. Field inversion (binary GCD), BigInt

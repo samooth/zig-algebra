@@ -327,3 +327,33 @@ pub fn verifyPath(
     }
     return std.mem.eql(u8, &current, &root_hash);
 }
+
+test "merkle: a path index at or past the leaf count is rejected" {
+    // Guards `validPathIndex`, the check that a proof's index names a real
+    // leaf. A tree of four leaves has depth 2, so index 4 is one past the end
+    // and a path of the right length must not open it. Written mutation-first:
+    // with `<` weakened to `<=` this is the test that fails.
+    // Uses this library's own hash rather than std's, so the test does not
+    // depend on a second Blake3 spelling being in scope.
+    const H = hash.Blake3;
+    const Tree = MerkleTree(H);
+    const leaves = [_][]const u8{ "aaaa", "bbbb", "cccc", "dddd" };
+
+    var tree = try Tree.init(std.testing.allocator, &leaves);
+    defer tree.deinit();
+    var proof = try tree.prove(0, std.testing.allocator);
+    defer proof.deinit(std.testing.allocator);
+    const root = tree.root();
+
+    // The same proof, opened at its own index, works.
+    try std.testing.expect(Tree.verifyHashed(root, 0, hash.hashBlake3(leaves[0]), proof));
+
+    // One past the last leaf, same depth: rejected.
+    try std.testing.expect(!Tree.verifyHashed(root, 4, hash.hashBlake3(leaves[0]), proof));
+    try std.testing.expect(!validPathIndex(4, 2));
+    try std.testing.expect(validPathIndex(3, 2));
+
+    // Depth zero has one leaf, so index 1 is already out of range.
+    try std.testing.expect(!validPathIndex(1, 0));
+    try std.testing.expect(validPathIndex(0, 0));
+}

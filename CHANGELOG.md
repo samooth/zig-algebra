@@ -77,6 +77,41 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Added
 
+- **Tests that bring four previously untestable guards down**, written
+  mutation-first: the mutation, the gate that sees it, then the guard restored.
+  `merkle`'s `validPathIndex` boundary, `bigint`'s negative-modulus check,
+  `algebra-traits`'s `invChecked`, and a `kzg` record. The mutation log in
+  `docs/requirements.md` grows from twenty entries to twenty-four, and
+  `merkle` (18 -> 19), `bigint` (19 -> 20) and `algebra-traits` (4 -> 5) each
+  gain the test that their guard needed.
+
+### Security
+
+- **`libs/transcript`'s challenge derivation implements no published
+  specification, and is therefore not verifiable today.** It is a house design
+  — `std.crypto.hash.Blake3`, a domain string, length-prefixed absorbs,
+  finalise-and-rekey — and nothing in the file cites an RFC, an EIP or a
+  reference implementation. Its ten tests are properties that any
+  deterministic function satisfies, a counter included, and a mutation confirms
+  the gap: perturbing the finalised digest by one changes every challenge and
+  all ten tests pass.
+
+  **No known-answer vector is provided**, and none is written here, because a
+  hand-written `expected` in this repository would carry the appearance of
+  provenance without the substance — worse than no vector, because a reader
+  stops looking. Every Fiat-Shamir challenge in every project that uses this
+  transcript rests on a construction nobody can check against anything. Closing
+  this is a design decision: match the construction to a published transcript
+  and adopt its vectors, or record the reproducibility of the challenges as an
+  accepted assumption. `SECURITY.md` carries the detail.
+
+- **`kzg`'s two input guards are not coverage gaps but dead code.** `verify`'s
+  on-curve check is implied by the subgroup check that follows it, since
+  `isG1InSubgroup` already requires `isOnCurve()`; and the subgroup check has no
+  reachable witness from this library's tools. Both guards are kept — removing
+  one is a contract change and belongs in its own commit — and both are marked
+  decorative rather than cited as coverage.
+
 - **`zig build cross-check` compiles the eight library examples.** Each
   `libs/*/src/main.zig` is its library's `example` executable, and until now the
   root build and every CI job compiled only the library's root source. Those

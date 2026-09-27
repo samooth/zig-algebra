@@ -142,3 +142,18 @@ test "lagrangeCoefficient satisfies the partition of unity on distinct xs" {
         try testing.expect(total.eql(TestF7.one()));
     }
 }
+
+test "invChecked rejects zero while inv stays total" {
+    // Guards `invChecked`, and pins the pair's contract: the legacy `inv` is
+    // total and propagates zero, the checked one errors. Written
+    // mutation-first: with the guard made vacuous, the `expectError` below is
+    // the only thing that fails.
+    try testing.expectError(error.InverseOfZero, TestF7.invChecked(TestF7.zero()));
+    try testing.expect(TestF7.inv(TestF7.zero()).isZero());
+
+    // And a real inverse is still an inverse, so the guard is not simply
+    // rejecting everything.
+    const a = TestF7.fromInt(3);
+    try testing.expect((try a.invChecked()).mul(a).eql(TestF7.one()));
+    try testing.expect(TestF7.inverse(a).mul(a).eql(TestF7.one()));
+}
