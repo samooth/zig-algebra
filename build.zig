@@ -93,7 +93,9 @@ pub fn build(b: *std.Build) void {
     );
 
     // transcript -> (stdlib only, no internal deps)
-    _ = lib(
+    // Named for the same reason as `binary_field_mod`: the fuzz runner needs
+    // it to reach `zig-fri`.
+    const transcript_mod = lib(
         b,
         test_step,
         target,
@@ -159,8 +161,23 @@ pub fn build(b: *std.Build) void {
         &.{},
     );
 
+    // fri -> field, merkle, transcript. Built here rather than via `lib()` so
+    // the fuzz runner can import it; `lib()` also wires a test run, and the
+    // fuzz step must not pull the FRI test suite in behind it.
+    const fri_fuzz_mod = b.addModule("zig-fri", .{
+        .root_source_file = b.path("libs/fri/src/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    fri_fuzz_mod.addImport("zig-field", field_mod);
+    fri_fuzz_mod.addImport("zig-merkle", merkle_mod);
+    fri_fuzz_mod.addImport("zig-transcript", transcript_mod);
+
     // binary-field -> algebra-traits, hash, merkle, parallel
-    _ = lib(
+    // Named (not `_ =`) because the mass-fuzz runner imports it: the fuzz gate
+    // was blind to `Sumcheck`, `Prime31` and `Prime128`, which is to say it
+    // could not have caught the characteristic-2 fold.
+    const binary_field_mod = lib(
         b,
         test_step,
         target,
@@ -204,26 +221,25 @@ pub fn build(b: *std.Build) void {
     );
 
     // fri -> transcript, merkle, field
-    {
-        const transcript_mod = b.addModule("zig-transcript-inner", .{
-            .root_source_file = b.path("libs/transcript/src/root.zig"),
-            .target = target,
-            .optimize = optimize,
-        });
-        _ = lib(
-            b,
-            test_step,
-            target,
-            optimize,
-            "zig-fri",
-            "libs/fri/src/root.zig",
-            &.{
-                .{ "zig-transcript", transcript_mod },
-                .{ "zig-merkle", merkle_mod },
-                .{ "zig-field", field_mod },
-            },
-        );
-    }
+    //
+    // The second `addModule("zig-transcript-inner", ...)` that used to live
+    // here is gone: `lib("zig-transcript", ...)` above already produces the
+    // module, and the duplicate was only reachable because nothing outside
+    // this block could name it. Two modules for one library is two things to
+    // keep in step, and the shadowing made the outer name unusable.
+    _ = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-fri",
+        "libs/fri/src/root.zig",
+        &.{
+            .{ "zig-transcript", transcript_mod },
+            .{ "zig-merkle", merkle_mod },
+            .{ "zig-field", field_mod },
+        },
+    );
 
     // poly -> algebra-traits
     _ = lib(
@@ -401,6 +417,14 @@ pub fn build(b: *std.Build) void {
             .{ .name = "zig-field", .module = field_mod },
             .{ .name = "zig-curve", .module = curve_mod },
             .{ .name = "zig-pairing", .module = fuzz_pairing_mod },
+            // Added so the nightly gate can see the code it is supposed to be
+            // gating. Without these the job reported "all fuzz checks passed"
+            // while never constructing a `Sumcheck`, a prime fixture or a torus
+            // domain -- a green run of a check that could not have failed.
+            .{ .name = "zig-binary-field", .module = binary_field_mod },
+            .{ .name = "zig-fri", .module = fri_fuzz_mod },
+            .{ .name = "zig-parallel", .module = parallel_mod },
+            .{ .name = "zig-transcript", .module = transcript_mod },
         },
     });
     const fuzz_exe = b.addExecutable(.{
@@ -408,6 +432,9 @@ pub fn build(b: *std.Build) void {
         .root_module = fuzz_mod,
     });
     const run_fuzz = b.addRunArtifact(fuzz_exe);
+    // `zig build fuzz -- <seed>` replays a specific seed. A failure that cannot
+    // be reproduced is a check that cannot be investigated.
+    if (b.args) |args| run_fuzz.addArgs(args);
     fuzz_step.dependOn(&run_fuzz.step);
 
     // WASM build: freestanding, no entry point; `export fn`s become imports.

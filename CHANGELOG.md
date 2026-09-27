@@ -47,6 +47,25 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Added
 
+- **`fuzz`: the nightly "mass fuzz" actually fuzzes, and can fail.**
+  `timer_seed` was `0xF00D`, a constant named as if a timer had set it, so
+  every night re-checked the same 1.12M field values and 110 pairing pairs and
+  printed "all fuzz checks passed". Two things were wrong. It imported only
+  `zig-field`, `zig-curve` and `zig-pairing`, so it never constructed a
+  `Sumcheck`, a prime fixture or a torus domain -- green through three releases
+  while the characteristic-2 fold sat in `sumcheck.zig`. And it now covers
+  `zig-binary-field` and `zig-fri`: prime-field axioms, `Prime128` against a
+  native `u256 % p` oracle, Sumcheck round trips on both entry points, and FRI
+  round trips over the torus in M31 and M61. The seed comes from the clock, is
+  printed on the first line, and replays with `zig build fuzz -- <seed>`.
+  All three new sections were watched failing: `foldLinear` reverted to
+  `a + t*(a + b)` reports `honest 0/80 verified`, an off-by-one torus
+  generator reports `OrderTooLarge`, and a broken `add` reduction fails the
+  pre-existing runner.
+  Worth recording that the first version of the Sumcheck check was **wrong
+  about the protocol**: it asserted random data must be rejected, and failed
+  80/80, because `Sumcheck` proves the hypercube sum, which any table admits.
+  Low degree is FRI's claim, not its.
 - **`fri`: FRI over the norm-1 torus of `F[p^2]`, so `M31` and `M61` work.**
   `prove`/`verify` now have `proveOn`/`verifyOn` siblings that take the domain
   as a parameter (`prove`/`verify` are unchanged wrappers over `Domain(F)`).

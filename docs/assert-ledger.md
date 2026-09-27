@@ -310,6 +310,65 @@ oracle is exact in `u64` and whose `u64` products are checked against native
 arithmetic. The two fixtures are complementary: `Prime31` witnesses that the
 `add`/`sub` distinction is real, `Prime128` witnesses that the secure path runs
 at all.
+## The nightly "mass fuzz" was not mass, and could not have failed
+
+`fuzz.yml` runs `zig build fuzz -Doptimize=ReleaseFast` on a cron, under a job
+called `mass-fuzz`, whose step is described as "Massive randomized property
+tests". The runner's first line was:
+
+```zig
+var timer_seed: u64 = 0xF00D;
+```
+
+A constant, named as though a timer had produced it. So the job re-checked the
+**same 1,120,000 field values and the same 110 pairing pairs every night**, and
+printed "all fuzz checks passed" each time. The count was massive; the
+randomization was one seed, forever. This is the same shape as the `field 85`
+counter: a label promising coverage the check does not provide.
+
+Two independent things were wrong with it.
+
+**It could not fail on the code that needed gating.** The runner imported
+`zig-field`, `zig-curve` and `zig-pairing`. It never constructed a `Sumcheck`, a
+prime fixture or a torus domain -- so the nightly was green *while the
+characteristic-2 fold sat in `sumcheck.zig`*, through three releases, because
+the gate had no way to see it. `zig-binary-field` and `zig-fri` are now imports
+of the fuzz module, and the runner exercises them: prime-field axioms,
+`Prime128` against a native `u256 % p` oracle, Sumcheck round trips on **both**
+entry points, and FRI prove/verify round trips over the torus in M31 and M61.
+
+**Its own negatives were wrong, and that is worth recording.** The first version
+of the new Sumcheck check asserted that *random* data must be rejected. It
+failed 80/80. The check was wrong, not the sum-check: `Sumcheck` proves the
+**hypercube sum** `sum_x prod_j f_j(x)`, which an honest prover can do for any
+table. Low degree is not its claim -- FRI's folding and the final residual test
+that. The check now asserts the two directions that discriminate: an honest
+proof verifies, and a tampered one does not, on both entry points.
+
+Both new sections were watched failing, which is the only evidence that they
+are load-bearing:
+
+| mutation | result |
+|---|---|
+| `foldLinear` back to `a + t*(a + b)` | `FAIL Sumcheck: honest 0/80 verified` |
+| torus step generator off by one | `error: OrderTooLarge` |
+| `SmallField.add` reduction off by one | fuzz runner exits non-zero |
+
+The third row is the pre-existing runner's answer to "what input does it
+reject": a broken reduction in a field's `add`. It was asked that question here
+for the first time in this tree.
+
+The seed is now taken from the clock, **printed on the first line**, and
+replayable with `zig build fuzz -- <seed>`. A failure that cannot be reproduced
+is a check that cannot be investigated, and a seed nobody printed is a seed
+nobody can replay. An unparseable argument says so and falls back to the clock
+rather than silently using a default.
+
+**A check that produces no output is not a check that passed** applies here too,
+and it is why the seed is on line two rather than at the end: a nightly that
+prints nothing is indistinguishable from one that never ran, and "did the job
+even start" is the first question, not the last.
+
 ## A correctness fix is not a release gate
 
 Worth stating separately, because the instinct after a validation sweep is to
