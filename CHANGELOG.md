@@ -105,6 +105,32 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   and adopt its vectors, or record the reproducibility of the challenges as an
   accepted assumption. `SECURITY.md` carries the detail.
 
+- **Named, because it is a fail-open and not a missing check: off-subgroup
+  pairing inputs return the identity.** `bn254_tower.millerLoop`,
+  `pairingSparse` and `pairingDense` each begin with
+  `if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();`, and all
+  three are declared `Fp12T`. The rejection is a value, so a caller pairing a
+  point outside the prime-order subgroup gets the identity and no indication,
+  and cannot tell it from a pair whose pairing genuinely is the identity.
+
+  **It is specified, not accidental:** `bn254_tower.zig:500` is a test named
+  "rejects off-curve pairing inputs" that asserts exactly `…eql(Fp12T.one())`.
+  The name says "rejects" where the mechanism is "returns the identity", and
+  that naming is the part worth correcting in a reader's head.
+
+  It also matches this repository's own convention twenty-five lines away:
+  `millerLoopPair` is a total wrapper returning a defined value and
+  `millerLoopPairChecked` reports the condition, a split whose comment records
+  why — a `std.debug.assert` compiled out in `ReleaseFast` produced a garbage
+  `Fp12T`. These three have the total half and **no checked half**. The
+  in-policy remedy is a `Checked` counterpart, which is additive and matches
+  `inv`/`invChecked`; it is not applied here, because changing public API that
+  `kzg`, `bench` and the tower module call is a contract change and belongs in
+  its own commit with its own review. The G1 side reduces to `isOnCurve()` and is
+  covered; whether a `q` outside the G2 prime-order subgroup is reachable is
+  **not verified here** — what is verified is that the signature admits no way
+  to signal it either way.
+
 - **`kzg`'s two input guards are not coverage gaps but dead code.** `verify`'s
   on-curve check is implied by the subgroup check that follows it, since
   `isG1InSubgroup` already requires `isOnCurve()`; and the subgroup check has no

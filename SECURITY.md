@@ -76,6 +76,48 @@ without that treatment were the ones that hid `zig-hash`'s — a hash verified
 only by its own tests cannot be distinguished from a different hash that is
 equally self-consistent, which is the whole failure here.
 
+## Off-subgroup pairing inputs return the identity, by design
+
+`bn254_tower.millerLoop`, `pairingSparse` and `pairingDense` all open with
+
+```zig
+if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
+```
+
+and all three are declared `Fp12T`, not `!Fp12T`. **The rejection is therefore
+a value, not an error**, and the failure mode is in the type rather than in the
+code. A caller that pairs a point outside the prime-order subgroup receives the
+identity with no indication, and cannot distinguish it from a pair whose
+pairing genuinely is the identity.
+
+**This is specified behaviour, not an accident** — and that is the useful part.
+`bn254_tower.zig:500` is a test named "rejects off-curve pairing inputs" whose
+body asserts `pairing(bad_g1, G2_generator).eql(Fp12T.one())`. The behaviour is
+pinned deliberately. The name is what misleads: it says "rejects" where the
+mechanism is "returns the identity".
+
+It is also consistent with this repository's own convention, twenty-five lines
+away in the same file: `millerLoopPair` is a total wrapper that catches and
+returns a defined value, and `millerLoopPairChecked` reports the condition
+instead. The comment on `millerLoopPairOpt` records exactly why that split
+exists — a `std.debug.assert` was compiled out in `ReleaseFast`, where an
+infinity input produced a garbage `Fp12T`. **The three sites above have the total
+half and no checked half for the subgroup condition.** The in-policy remedy is
+therefore a `Checked` counterpart, which is additive and matches `inv` /
+`invChecked` and `millerLoopPair` / `millerLoopPairChecked`. It is not applied
+here: adding public API, or changing a signature that `kzg`, `bench` and the
+tower module all call, is a contract change and it belongs in its own commit
+with its own review, per the audit-before-design rule in `AGENTS.md`.
+
+Two bounds on the claim, so nobody reads more into it than is measured. The G1
+side reduces to `isOnCurve()` for this curve, so a G1 input outside the subgroup
+is also off-curve and the existing "rejects off-curve pairing inputs" test does
+cover it. The G2 side does real work in principle, since BN254's G2 cofactor is
+not 1 — **but no point outside the G2 prime-order subgroup is constructed
+anywhere in this tree, so its reachability is not verified here.** What is
+verified is the type-level consequence, which does not depend on reachability:
+the signature admits no way to signal the condition.
+
 ## The transcript's challenge derivation is not verifiable today
 
 `libs/transcript` implements a Fiat-Shamir transcript: `std.crypto.hash.Blake3`,
