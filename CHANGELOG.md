@@ -25,6 +25,22 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Fixed
 
+- **Windows: `zig-rng` did not compile.** `libs/rng/src/csprng.zig` called
+  `BCryptGenRandom(null, ...)` against `windows.HANDLE`, which is `*anyopaque`;
+  a bare `null` does not coerce to a non-optional pointer in Zig 0.16, so the
+  whole `zig-rng` test binary failed to compile on `windows-latest` and its 25
+  tests never ran. Every Linux run was green and so was the Ubuntu CI job --
+  the error is in a branch the host does not take. The parameter is documented
+  by Microsoft as optional (NULL means "system-preferred RNG"), so the
+  declaration is now `?windows.HANDLE`; the ABI is unchanged.
+  Pre-existing since the P0 sweep, not introduced by this release's work.
+- **New gate: `zig build cross-check`,** which compiles every library's test
+  binary for `x86_64-windows-gnu` and `aarch64-macos` without running it, and a
+  `cross-check` CI job. This is the check that would have caught the item above
+  locally, in seconds instead of one CI job. Verified by reverting the fix and
+  watching it report the same error CI did. The blind spot is the mirror image
+  of the characteristic-2 fold: there, char-2 runs could not fail; here, the
+  Linux-only runs could not.
 - **The sum-check fold was characteristic 2** (`binary-field`). `sumcheck.zig`
   folded each round with `a + t·(a + b)` in five places. That expression equals
   the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where

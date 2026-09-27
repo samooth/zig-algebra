@@ -10,8 +10,15 @@ const builtin = @import("builtin");
 const posix = std.posix;
 const windows = std.os.windows;
 
+/// `algorithm` is documented by Microsoft as optional: a NULL handle means
+/// "use the system-preferred RNG". Declaring it `?windows.HANDLE` says that,
+/// and it is what makes the `null` below legal -- `windows.HANDLE` is
+/// `*anyopaque`, and a bare `null` does not coerce to a non-optional pointer in
+/// Zig 0.16, so this file failed to *compile* on Windows. Every other line of
+/// this module is platform-independent, which is why only the Windows CI job
+/// ever saw it. The ABI is unchanged: a nullable pointer is the same shape.
 extern "bcrypt" fn BCryptGenRandom(
-    algorithm: windows.HANDLE,
+    algorithm: ?windows.HANDLE,
     buffer: [*]u8,
     buffer_len: u32,
     flags: u32,

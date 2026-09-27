@@ -369,6 +369,43 @@ and it is why the seed is on line two rather than at the end: a nightly that
 prints nothing is indistinguishable from one that never ran, and "did the job
 even start" is the first question, not the last.
 
+## A green run that cannot fail: the host is the blind spot
+
+The rules above are about checks that report success while testing the wrong
+thing. This one is a check that reports success because it never reaches the
+code where the bug is.
+
+`libs/rng/src/csprng.zig` called `BCryptGenRandom(null, ...)` against a
+`windows.HANDLE`, which is `*anyopaque`. A bare `null` does not coerce to a
+non-optional pointer in Zig 0.16, so the file **did not compile on Windows**,
+`zig-rng` produced no test binary, and its 25 tests never ran. Nothing about
+that is subtle once you see it; what is subtle is everything that stayed green
+while it was true:
+
+- `zig build test` on Linux: 416 pass. The `bcrypt` branch is not taken.
+- the Ubuntu CI job: green.
+- `zig build fuzz` on Linux: green.
+- the Windows CI job: **red**, in 2m35s, naming the file and the line.
+
+So the only check that could see it was the one check nobody runs locally, and
+the finding reached the owner through CI rather than through a local run. That
+is the same disease as the characteristic-2 fold with the roles inverted: there
+the char-2 tests could not fail on a linear bug; here the Linux-only runs could
+not fail on a Windows-only compile error. **A test suite run on one platform is
+not evidence about another, and the cost of that evidence is one CI job.**
+
+`zig build cross-check` now compiles every library's test binary for
+`x86_64-windows-gnu` and `aarch64-macos` and installs it without running it, and
+a `cross-check` CI job runs the same thing. Verified by reverting the one-line
+fix and watching it report the identical error the Windows job did.
+
+macOS is in the list for a second reason. On the run in question the macOS job
+ended with `The operation was canceled` -- the workflow was stopped. A canceled
+job is not a pass and not a failure; it is an **unresolved question**, and
+reporting it either way would be inventing a result. The cross-compile at least
+proves macOS *compiles*, which is a real subset of what the job would have told
+us, and it is available whether or not anyone remembers to re-run the workflow.
+
 ## A correctness fix is not a release gate
 
 Worth stating separately, because the instinct after a validation sweep is to

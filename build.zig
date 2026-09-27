@@ -1,5 +1,26 @@
 const std = @import("std");
 
+/// Foreign targets whose test binaries `cross-check` compiles without running.
+///
+/// The reason this step exists: a test that compiles on the host and fails to
+/// *compile* on another OS is invisible to `zig build test`, because the error
+/// is in a branch the host never takes. `libs/rng/src/csprng.zig` called
+/// `BCryptGenRandom(null, ...)` against a `windows.HANDLE` (`*anyopaque`), which
+/// a bare `null` does not coerce to in Zig 0.16 -- Linux, macOS and every local
+/// run were green, and only the Windows CI job could see it. That is the same
+/// blindness as the characteristic-2 fold, in a different direction: here the
+/// Linux-only runs are the ones that cannot fail.
+///
+/// Compiling is enough; running would need the foreign runner. `macos` and
+/// `windows` are both covered because a canceled macOS job is an open question,
+/// not a pass.
+const cross_targets = [_][]const u8{ "x86_64-windows-gnu", "aarch64-macos" };
+
+/// Set in `build` before the first `lib()` call. A file-scope `var` rather than
+/// a parameter on `lib()`, which has seventeen call sites and none of them care
+/// about cross-compilation.
+var cross_step: ?*std.Build.Step = null;
+
 /// Create the module for a library, register its unit-test binary, and wire a
 /// run step into `test_step` so `zig build test` actually executes the tests
 /// (not merely compiles them).
@@ -36,7 +57,47 @@ fn lib(
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+    cross_register(b, module_name, root_source, imports);
     return mod;
+}
+
+/// Compile `module_name`'s test binary for every foreign target in
+/// `cross_targets`, and attach it to `cross-check`.
+///
+/// Separate modules rather than reusing the host one, because the target is
+/// baked into the module. Installing is how you ask the build system to
+/// *produce* an artifact without running it.
+fn cross_register(
+    b: *std.Build,
+    module_name: []const u8,
+    root_source: []const u8,
+    imports: []const struct { []const u8, *std.Build.Module },
+) void {
+    for (cross_targets) |triple| {
+        const query = std.Target.Query.parse(.{
+            .arch_os_abi = triple,
+            // Diagnostics are omitted deliberately: a bad triple should fail the
+            // step loudly, not be swallowed.
+            // A plain literal: the triple is a source constant, so a dynamic
+            // message would buy nothing.
+        }) catch @panic("cross-check: unparseable target triple in cross_targets");
+        const ct = b.resolveTargetQuery(query);
+        const cm = b.createModule(.{
+            .root_source_file = b.path(root_source),
+            .target = ct,
+            .optimize = .Debug,
+        });
+        for (imports) |imp| cm.addImport(imp[0], imp[1]);
+        const ctests = b.addTest(.{
+            .name = b.fmt("{s}-{s}-tests", .{ module_name, triple }),
+            .root_module = cm,
+        });
+        // `install` forces compilation and links, but never spawns.
+        const inst = b.addInstallArtifact(ctests, .{
+            .dest_dir = .{ .override = .{ .custom = b.fmt("cross/{s}", .{triple}) } },
+        });
+        cross_step.?.dependOn(&inst.step);
+    }
 }
 
 pub fn build(b: *std.Build) void {
@@ -45,6 +106,10 @@ pub fn build(b: *std.Build) void {
 
     // Test step that runs all library tests
     const test_step = b.step("test", "Run all library tests");
+
+    // Compiles every library's test binary for `cross_targets` without running
+    // it. See the comment on `cross_targets` for the bug that motivates it.
+    cross_step = b.step("cross-check", "Compile all test binaries for foreign targets (no run)");
 
     // Assert ledger gate. See docs/assert-ledger.md for the convention.
     // Fails if the tree contains an `std.debug.assert` the committed ledger

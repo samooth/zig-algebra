@@ -81,6 +81,23 @@ jobs:
           name: benchmark-results
           path: benchmark-results.txt
 
+  cross-check:
+    # Compile every library's test binary for Windows and macOS without running
+    # it. This exists because `zig build test` on Linux could not see the
+    # Windows compile error in `libs/rng/src/csprng.zig` -- `BCryptGenRandom`
+    # takes a `windows.HANDLE` (`*anyopaque`) and a bare `null` does not coerce
+    # to it in Zig 0.16. Every Linux run was green; only the `windows-latest`
+    # job could see it, and it did, in 2m35s of CI. Locally the same check is
+    # `zig build cross-check`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build cross-check
+
   fuzz:
     # `zig build fuzz` was never in CI, so the randomized property runner was
     # only ever exercised by whoever happened to run it locally. It is ~40s in
