@@ -133,6 +133,38 @@ systems, the gate green on the tag's own run — because everything *else* did
 get reviewed before the tag. The defect was never "the tag was wrong"; it was
 "the tag was taken before anyone looked".
 
+**The audit goes before the *design*, not only before the tag.** The rule above is
+about a photograph; this one is about the thing being photographed. For new
+functionality, the sharp version is: **before writing it, decide who will
+consume it and how they will know it is still in sync.** The natural order —
+write the code, then ask who wants it — is how the last batch of divergences
+happened, and it is not a coincidence that they were all *consumed* problems
+rather than bugs.
+
+The four questions, in order, and the code comes last:
+
+1. **Who consumes this?** If the answer is a repository that already has a
+   private copy of the same code, then the change is a convergence, not a new
+   feature, and the consumer is a fork. Say so now, while the design is still
+   cheap to change.
+2. **How does that consumer know it did not diverge?** The mechanism has to
+   exist before the code, not after. Here it is the CHANGELOG: a consumer reads
+   it before bumping. Note what was missing last time — the fork *predated* the
+   releases, so there was nothing to read, and the divergence had no channel.
+3. **Who writes the first test of the contract?** The owner of the contract.
+   If the consumer writes it, the contract is theirs and the two implementations
+   only agree by accident.
+4. **Then, and only then, the code.**
+
+And the cheap corollary, which is the difference between *consumption* and
+*forking*: **say what changed, in the artefact the consumer reads.** A library
+README that lists only its current API cannot tell someone evaluating whether
+to adopt it what it took to get here, or what will bite them if they start from
+an older tag instead. That is not documentation polish — a forker from an old
+tag inherits the whole delta with nothing to warn them, including any
+interoperability change, because a changed wire format is invisible in an API
+sketch.
+
 This is not hypothetical here. The same shape has shipped three times in this
 workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
 `zig-bigint` that no library under test referenced, and an unconnected
