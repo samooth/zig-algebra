@@ -146,7 +146,7 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   **83** tests, not 85. Verified by running the suite at `72a4343`, the commit
   that introduced the figures -- the runner already disagreed there, so nothing
   was ever lost, only misreported. Corrected in place rather than left to
-  propagate again. The current figures (root 416, per-library 530) are in
+  propagate again. The current figures (root 417, per-library 531) are in
   AGENTS.md.
 
 ## [v0.5.0] — 2026-09-27

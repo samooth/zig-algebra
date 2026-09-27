@@ -490,6 +490,10 @@ pub fn build(b: *std.Build) void {
             .{ .name = "zig-fri", .module = fri_fuzz_mod },
             .{ .name = "zig-parallel", .module = parallel_mod },
             .{ .name = "zig-transcript", .module = transcript_mod },
+            // So the nightly can hash-check. It could not before: the runner
+            // never touched a hash, which is why a non-BLAKE3 "Blake3" stayed
+            // green through the tag that shipped it.
+            .{ .name = "zig-hash", .module = hash_mod },
         },
     });
     const fuzz_exe = b.addExecutable(.{

@@ -93,44 +93,45 @@ fn wordsFromLittleEndianBytes(bytes: *const [BLOCK_LEN]u8) [16]u32 {
     return words;
 }
 
-fn outputChainingValue(out: *[OUT_LEN]u8, compressed: *const [16]u32) void {
-    for (0..8) |i| {
-        std.mem.writeInt(u32, out[i * 4 ..][0..4], compressed[i], .little);
-    }
-}
+/// The inputs to a chunk's or a parent node's final compression, captured
+/// *before* the choice between "produce a chaining value" and "produce root
+/// output bytes". This is the reference implementation's `Output`, and having
+/// it is the whole fix.
+///
+/// The previous code compressed the chunk's last block eagerly, threw away the
+/// inputs, and then re-compressed the *result* with a zero message block and
+/// `block_len = BLOCK_LEN` in order to produce the output. Two different
+/// computations, so every digest was a self-consistent non-BLAKE3 value: the
+/// tree was BLAKE3, the finalisation was not. `verify` style tests cannot see
+/// that, which is why it survived since the monorepo's first commit.
+const Output = struct {
+    input_cv: [8]u32,
+    block: [16]u32,
+    counter: u64,
+    block_len: u32,
+    flags: u32,
 
-fn outputRootBytes(compressed: *const [16]u32, out: []u8) void {
+    /// This node as a chaining value, for feeding a parent or the next chunk.
+    fn chainingValue(self: Output) [8]u32 {
+        return compress(&self.input_cv, &self.block, self.counter, self.block_len, self.flags)[0..8].*;
+    }
+};
+
+/// Root output bytes, and the XOF extension: one compression per 64 bytes, with
+/// `output_block_counter` in the counter and the ROOT flag added here and only
+/// here. A node is ROOT if and only if it is the one being read out.
+fn outputRootBytes(in: Output, out: []u8) void {
     var output_block_counter: u64 = 0;
     var out_off: usize = 0;
     while (out_off < out.len) : (output_block_counter += 1) {
-        var words: [16]u32 = undefined;
-        @memcpy(words[0..8], compressed[0..8]);
-        @memcpy(words[8..16], &IV);
-        words[12] = @truncate(output_block_counter);
-        words[13] = @truncate(output_block_counter >> 32);
-        words[14] = BLOCK_LEN;
-        words[15] = ROOT;
-
-        var m = [_]u32{0} ** 16;
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-        permute(&m);
-        round(&words, &m);
-
-        for (0..8) |i| {
-            words[i] ^= words[i + 8];
-        }
-
-        const to_write = @min(32, out.len - out_off);
+        const words = compress(
+            &in.input_cv,
+            &in.block,
+            output_block_counter,
+            in.block_len,
+            in.flags | ROOT,
+        );
+        const to_write = @min(BLOCK_LEN, out.len - out_off);
         for (0..to_write / 4) |j| {
             std.mem.writeInt(u32, out[out_off..][0..4], words[j], .little);
             out_off += 4;
@@ -183,10 +184,12 @@ pub const Blake3 = struct {
                     const block_words = wordsFromLittleEndianBytes(&self.buf);
                     self.chaining_value = compress(&self.chaining_value, &block_words, self.chunk_counter, BLOCK_LEN, self.startFlag() | self.flags)[0..8].*;
                     self.blocks_compressed += 1;
+                    // Zeroed, and not merely advanced: `output` reads all 64
+                    // bytes, so a stale tail from a previous block would be
+                    // folded into the last block. The buffer is `undefined` at
+                    // construction, so the tail is not zero by luck either.
+                    @memset(&self.buf, 0);
                     self.buf_len = 0;
-                    if (self.blocks_compressed == CHUNK_LEN / BLOCK_LEN) {
-                        return; // chunk full, caller must handle
-                    }
                 }
                 const want = BLOCK_LEN - self.buf_len;
                 const take = @min(want, in.len);
@@ -196,11 +199,18 @@ pub const Blake3 = struct {
             }
         }
 
-        fn output(self: ChunkState) [16]u32 {
-            const block_words = wordsFromLittleEndianBytes(&self.buf);
-            const block_len = self.buf_len;
-            const flags = self.startFlag() | CHUNK_END | self.flags;
-            return compress(&self.chaining_value, &block_words, self.chunk_counter, block_len, flags);
+        /// The chunk's final block as an `Output`. Note the chaining value here
+        /// is the one *before* that block is compressed, which is what makes a
+        /// single later compression able to serve as both the chaining value and
+        /// the root output.
+        fn output(self: ChunkState) Output {
+            return .{
+                .input_cv = self.chaining_value,
+                .block = wordsFromLittleEndianBytes(&self.buf),
+                .counter = self.chunk_counter,
+                .block_len = self.buf_len,
+                .flags = self.startFlag() | CHUNK_END | self.flags,
+            };
         }
     };
 
@@ -259,31 +269,47 @@ pub const Blake3 = struct {
         return self.cv_stack[self.cv_stack_len];
     }
 
-    fn addChunkChainingValue(self: *Blake3, new_cv: *[8]u32, total_chunks: u64) void {
+    /// A parent node over two child chaining values. `PARENT` nodes always use
+    /// counter 0 and `block_len = BLOCK_LEN`, and they are never ROOT here --
+    /// ROOT is decided once, by `outputRootBytes`, for the single node that is
+    /// actually read out.
+    fn parentOutput(left_child: [8]u32, right_child: [8]u32, key: [8]u32, flags: u32) Output {
+        var block: [16]u32 = undefined;
+        @memcpy(block[0..8], &left_child);
+        @memcpy(block[8..16], &right_child);
+        return .{
+            .input_cv = key,
+            .block = block,
+            .counter = 0,
+            .block_len = BLOCK_LEN,
+            .flags = PARENT | flags,
+        };
+    }
+
+    fn addChunkChainingValue(self: *Blake3, new_cv_in: [8]u32, total_chunks: u64) void {
+        var new_cv = new_cv_in;
         var new_total_chunks = total_chunks;
         while (new_total_chunks & 1 == 0) {
             const left_child = self.popCv();
-            var block_words: [16]u32 = undefined;
-            @memcpy(block_words[0..8], &left_child);
-            @memcpy(block_words[8..16], new_cv);
-            const parent = compress(&self.key, &block_words, 0, BLOCK_LEN, PARENT | self.flags);
-            new_cv.* = parent[0..8].*;
+            new_cv = parentOutput(left_child, new_cv, self.key, self.flags).chainingValue();
             new_total_chunks >>= 1;
         }
-        self.pushCv(new_cv);
+        self.pushCv(&new_cv);
     }
 
     pub fn update(self: *Blake3, input: []const u8) void {
         var in = input;
         while (in.len > 0) {
             if (self.chunk_state.len() == CHUNK_LEN) {
-                var chunk_cv = self.chunk_state.output()[0..8].*;
+                // This chunk is complete and more input is coming, so it is not
+                // the root: it contributes a chaining value to the tree.
+                const chunk_cv = self.chunk_state.output().chainingValue();
                 const total_chunks = self.chunk_state.chunk_counter + 1;
-                self.addChunkChainingValue(&chunk_cv, total_chunks);
+                self.addChunkChainingValue(chunk_cv, total_chunks);
                 self.chunk_state = .{
                     .chaining_value = self.key,
                     .chunk_counter = total_chunks,
-                    .buf = undefined,
+                    .buf = [_]u8{0} ** BLOCK_LEN,
                     .buf_len = 0,
                     .blocks_compressed = 0,
                     .flags = self.flags,
@@ -301,21 +327,18 @@ pub const Blake3 = struct {
     }
 
     pub fn finalizeInto(self: *Blake3, out: []u8) void {
+        // Walk the right edge of the tree, building the root's *inputs*. No
+        // compression happens here: `outputRootBytes` does exactly one, with
+        // the ROOT flag. Compressing in the loop and then compressing the
+        // result again is what made this not BLAKE3.
         var output = self.chunk_state.output();
         var parent_nodes_remaining: usize = self.cv_stack_len;
         while (parent_nodes_remaining > 0) {
             parent_nodes_remaining -= 1;
             const parent_cv = self.cv_stack[parent_nodes_remaining];
-            var block_words: [16]u32 = undefined;
-            @memcpy(block_words[0..8], &parent_cv);
-            @memcpy(block_words[8..16], output[0..8]);
-            if (parent_nodes_remaining == 0) {
-                output = compress(&self.key, &block_words, 0, BLOCK_LEN, PARENT | ROOT | self.flags);
-            } else {
-                output = compress(&self.key, &block_words, 0, BLOCK_LEN, PARENT | self.flags);
-            }
+            output = parentOutput(parent_cv, output.chainingValue(), self.key, self.flags);
         }
-        outputRootBytes(&output, out);
+        outputRootBytes(output, out);
     }
 
     /// One-shot hash as a static method (for compatibility with MerkleTree).

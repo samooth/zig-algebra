@@ -24,6 +24,7 @@ const zc = @import("zig-curve");
 const bf = @import("zig-binary-field");
 const fri = @import("zig-fri");
 const zp = @import("zig-parallel");
+const zh = @import("zig-hash");
 const tp = @import("zig-pairing").bn254_tower_pairing;
 
 const Transcript = @import("zig-transcript").Transcript;
@@ -83,6 +84,51 @@ pub fn main(init: std.process.Init) !void {
     const seed = resolveSeed(init.minimal.args);
     // First line on purpose: it is what a reader pastes into `-- <seed>`.
     std.debug.print("== zig-algebra mass fuzz ==\nseed: {d}\n", .{seed});
+
+    // ---- BLAKE3, against canonical vectors AND the stdlib ----
+    //
+    // The fuzz runner could not see a hash at all before, so `zig-hash`'s
+    // Blake3 shipped as a non-BLAKE3 for the whole life of the repository:
+    // a self-consistent compression, verified only by tests written against
+    // itself. Two independent checks here. The literals pin the known answers
+    // so the test cannot drift with any implementation in the tree, and
+    // `std.crypto.hash.Blake3` -- which is correct, and is what `zig-fri` and
+    // `zig-transcript` use -- is the differential for random lengths, so the
+    // KAT does not have to enumerate 4096 bytes to be convincing.
+    {
+        const literals = [_]struct { input: []const u8, digest: []const u8 }{
+            .{ .input = "", .digest = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262" },
+            .{ .input = "abc", .digest = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85" },
+            .{ .input = "hello world", .digest = "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24" },
+        };
+        for (literals) |v| {
+            const got = zh.hashBlake3(v.input);
+            const hex = std.fmt.bytesToHex(got, .lower);
+            if (!std.mem.eql(u8, v.digest, &hex)) {
+                std.debug.print("FAIL BLAKE3 KAT on {d}-byte input:\n  want {s}\n  got  {s}\n", .{ v.input.len, v.digest, &hex });
+                return error.Blake3KatFailed;
+            }
+        }
+
+        // Differential across the lengths that matter: BLAKE3's chunk is 1024
+        // bytes, so block edges, the chunk counter and the parent tree all
+        // live at and around 1024, 2048 and 4096.
+        var buf: [4200]u8 = undefined;
+        var prng_h = std.Random.DefaultPrng.init(0xB1AE3 +% seed);
+        const rand_h = prng_h.random();
+        for (&buf) |*b| b.* = rand_h.int(u8);
+        const lengths = [_]usize{ 0, 1, 2, 3, 63, 64, 65, 1023, 1024, 1025, 2047, 2048, 2049, 4095, 4096, 4097, 4200 };
+        for (lengths) |n| {
+            const got = zh.hashBlake3(buf[0..n]);
+            var want: [32]u8 = undefined;
+            std.crypto.hash.Blake3.hash(buf[0..n], &want, .{});
+            if (!std.mem.eql(u8, &got, &want)) {
+                std.debug.print("FAIL BLAKE3 vs stdlib at len={d}\n", .{n});
+                return error.Blake3Mismatch;
+            }
+        }
+        std.debug.print("BLAKE3: 3 literal vectors + {d} differential lengths OK\n", .{lengths.len});
+    }
 
     // ---- Field axioms ----
     var timer_seed: u64 = seed;

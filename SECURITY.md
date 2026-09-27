@@ -110,10 +110,10 @@ zig build test --summary all -Doptimize=ReleaseFast
 zig build stark
 ```
 
-Both test modes passed **416/416 tests** (354/354 at the time of the
+Both test modes passed **417/417 tests** (354/354 at the time of the
 ZA-2026-001 fix), and the STARK demo (Fibonacci over Goldilocks) accepted the
 honest proof while rejecting a tampered proof. The FRI tests also pass through
-the standalone `libs/fri` build. The per-library steps sum to **530**.
+the standalone `libs/fri` build. The per-library steps sum to **531**.
 
 > History: when the fix above landed, the same commands reported 297/297
 > tests — that was the suite size at the time, not a different result. The
