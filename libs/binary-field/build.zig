@@ -22,6 +22,17 @@ pub fn build(b: *std.Build) void {
     });
     const merkle_mod = merkle_dep.module("zig-merkle");
 
+    // The fork-join Pool used to be a local copy of zig-parallel's, with its
+    // own copy of that library's tests. It drifted: the copy lost the SPDX
+    // header and the module docs and diverged in its doc comments while the
+    // logic stayed identical, which is exactly the shape that lets two copies
+    // of security-relevant code drift unnoticed.
+    const parallel_dep = b.dependency("zig_parallel", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const parallel_mod = parallel_dep.module("zig-parallel");
+
     const binary_field_mod = b.addModule("zig-binary-field", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -30,6 +41,7 @@ pub fn build(b: *std.Build) void {
     binary_field_mod.addImport("zig-algebra-traits", traits_mod);
     binary_field_mod.addImport("zig-hash", hash_mod);
     binary_field_mod.addImport("zig-merkle", merkle_mod);
+    binary_field_mod.addImport("zig-parallel", parallel_mod);
 
     const test_step = b.step("test", "Run unit tests");
 
@@ -41,6 +53,7 @@ pub fn build(b: *std.Build) void {
     test_module.addImport("zig-algebra-traits", traits_mod);
     test_module.addImport("zig-hash", hash_mod);
     test_module.addImport("zig-merkle", merkle_mod);
+    test_module.addImport("zig-parallel", parallel_mod);
     const root_test = b.addTest(.{
         .root_module = test_module,
     });

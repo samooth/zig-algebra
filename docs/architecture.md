@@ -17,13 +17,15 @@ Layer 1: bigint, hash, transcript
     │                             (primitives + Fiat-Shamir; transcript has no deps)
 Layer 2: field, merkle, rng      (field on bigint; merkle/rng on hash)
     │
-Layer 3: curve, binary-field     (curve on field; binary-field on merkle)
+Layer 3: curve, binary-field     (curve on field; binary-field on merkle+parallel)
     │
 Layer 4: ntt, poly, linalg, pairing
     │                             (ntt/linalg on field, pairing on curve)
 Proof stack: fri, kzg            (fri on transcript+merkle+field, kzg on pairing)
     │
-Utils:  parallel, serialization  (no internal dependencies)
+Utils:  parallel, serialization  (no internal dependencies; parallel is
+                                 consumed by binary-field for the fork-join
+                                 Pool, and is exported as a module since 0.2.0)
 ```
 
 ## Core Design Principles
@@ -372,12 +374,12 @@ cd libs/field && zig build test
 # All libraries
 zig build test
 
-# With specific optimization (same 383 tests, seconds instead of ~1-2 min)
+# With specific optimization (same 381 tests, seconds instead of ~1-2 min)
 zig build test -Doptimize=ReleaseFast
 ```
 
-Counts verified on Zig 0.16.0: the root `zig build test` step runs **383 tests**
-in both Debug and ReleaseFast; per-library steps sum to 499 because `field`
+Counts verified on Zig 0.16.0: the root `zig build test` step runs **381 tests**
+in both Debug and ReleaseFast; per-library steps sum to 497 because `field`
 (85) and `curve` (98) additionally compile their separate `tests/` roots.
 `algebra-traits` had no tests before 0.5.0 and now has 4.
 

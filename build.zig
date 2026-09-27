@@ -145,7 +145,21 @@ pub fn build(b: *std.Build) void {
         &.{.{ "zig-bigint", bigint_mod }},
     );
 
-    // binary-field -> algebra-traits, hash
+    // parallel (no deps). Declared before binary-field, which depends on it
+    // for the fork-join Pool: binary-field/src/pool.zig was a fork of
+    // libs/parallel/src/root.zig that had already drifted, and both copies
+    // carried their own tests.
+    const parallel_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-parallel",
+        "libs/parallel/src/root.zig",
+        &.{},
+    );
+
+    // binary-field -> algebra-traits, hash, merkle, parallel
     _ = lib(
         b,
         test_step,
@@ -157,6 +171,7 @@ pub fn build(b: *std.Build) void {
             .{ "zig-algebra-traits", traits_mod },
             .{ "zig-hash", hash_mod },
             .{ "zig-merkle", merkle_mod },
+            .{ "zig-parallel", parallel_mod },
         },
     );
 
@@ -233,17 +248,6 @@ pub fn build(b: *std.Build) void {
             .{ "zig-algebra-traits", traits_mod },
             .{ "zig-field", field_mod },
         },
-    );
-
-    // parallel (no deps)
-    const parallel_mod = lib(
-        b,
-        test_step,
-        target,
-        optimize,
-        "zig-parallel",
-        "libs/parallel/src/root.zig",
-        &.{},
     );
 
     // serialization (no deps)

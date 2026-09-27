@@ -1,6 +1,6 @@
 const std = @import("std");
 const Polynomial = @import("polynomial.zig");
-const Pool = @import("pool.zig").Pool;
+const Pool = @import("zig-parallel").Pool;
 const Accel = @import("accel.zig");
 const Tower = @import("tower.zig");
 

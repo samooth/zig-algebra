@@ -207,7 +207,7 @@ _ = Committed;
 # From the monorepo root
 zig build test
 
-# Just this library (76 tests, all inline)
+# Just this library (74 tests, all inline)
 cd libs/binary-field && zig build test
 ```
 

@@ -55,7 +55,7 @@ algebra-traits (no deps)
 ├── rng               (→ algebra-traits, hash)
 ├── merkle            (→ algebra-traits, hash)
 ├── field             (→ bigint)
-├── binary-field      (→ algebra-traits, hash, merkle)
+├── binary-field      (→ algebra-traits, hash, merkle, parallel)
 ├── curve             (→ field, hash)
 ├── ntt               (→ algebra-traits, field)
 ├── poly              (→ algebra-traits)
@@ -80,7 +80,7 @@ parallel (no deps) · serialization (no deps)
 | [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 12 |
 | [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 25 |
 | [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 85 |
-| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 76 |
+| [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 74 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 98 |
 | [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 57 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 15 |
@@ -93,10 +93,10 @@ parallel (no deps) · serialization (no deps)
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **383 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
+> **381 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
 > compiles each library's inline `src/` tests only, so `field` and `curve` —
 > the two libraries with separate `tests/` roots — contribute 13 and 54 tests
-> there instead of 85 and 98. The per-library steps sum to 499.
+> there instead of 85 and 98. The per-library steps sum to 497.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 4. `kzg`
 > was added in v0.2.2 as the 17th library.
 
@@ -202,7 +202,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 383 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 381 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |
@@ -334,11 +334,20 @@ Library count grew over time: 14 libraries at v0.1.0, 16 at v0.2.0
 
 - **`0.5.0`** (current) extends the validation hardening to `algebra-traits`,
   `poly`, `linalg`, `fri`, `ntt`, `field`, `rng`, `hash` and `pairing`, and
-  fixes eight dead `format` methods. Bumped: `algebra-traits` 0.3.0, `bigint`
-  0.3.0, `curve` 0.5.0, `field` 0.4.0, `fri` 0.2.0, `hash` 0.3.0, `kzg` 0.2.1,
-  `linalg` 0.2.0, `ntt` 0.2.0, `pairing` 0.4.0, `poly` 0.2.0, `rng` 0.4.0.
-  `binary-field`, `merkle`, `parallel`, `serialization` and `transcript` are
-  unchanged.
+  fixes eight dead `format` methods, and adds the assert ledger
+  (`zig build assert-check`). Bumped: `algebra-traits` 0.3.0, `bigint` 0.3.0,
+  `curve` 0.5.0, `field` 0.4.0, `fri` 0.3.0, `hash` 0.3.0, `kzg` 0.2.1,
+  `linalg` 0.2.0, `ntt` 0.2.0, `pairing` 0.4.0, `poly` 0.2.0, `rng` 0.4.0,
+  `binary-field` 0.4.0, `parallel` 0.2.0. `merkle`, `serialization` and
+  `transcript` are unchanged.
+
+  `fri` 0.3.0 and `parallel` 0.2.0 are the two packaging fixes: `fri` declared
+  `.dependencies = .{}` while hand-wiring three sibling libraries from `../`,
+  which made it unusable as a package; `parallel` never called `addModule` at
+  all, so it could not be imported as a dependency — which is why
+  `binary-field` carried a fork of its fork-join `Pool`. That fork is gone
+  (0.4.0); its two tests were byte-identical duplicates of `parallel`'s, so the
+  count drops by two without losing coverage.
 - **`0.4.0`** carried the same hardening for `field`, `binary-field`, `merkle`,
   `rng`, `serialization` and `curve` (`field` and `binary-field` to `0.3.0`,
   `curve` to `0.4.0`, `rng` to `0.3.0`, `serialization` to `0.2.0`, `merkle` to

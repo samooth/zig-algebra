@@ -102,6 +102,30 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   and work with `{f}`. This is why `zig-poly`'s `toString` now yields
   `1 + 2*x + 3*x^2` instead of a struct listing.
 
+### Packaging
+
+- **`zig-fri` was unconsumable as a package (0.2.0 -> 0.3.0).**
+  `build.zig.zon` declared `.dependencies = .{}` while `src/root.zig` imports
+  `zig-field`, `zig-merkle` and `zig-transcript`, and `build.zig` hand-wired
+  all three from `../transcript/src/root.zig` and friends. A consumer resolving
+  `zig_fri` got no dependencies, and the relative paths it would have needed do
+  not exist in a package cache. It was the only library in the workspace not
+  using `b.dependency`; it now declares its three dependencies and resolves
+  them through the package manager.
+- **`zig-parallel` could not be imported at all (0.1.1 -> 0.2.0).** Its
+  `build.zig` never called `addModule`, so it exposed no module to consumers.
+  That is the reason `zig-binary-field` carried a local fork of the fork-join
+  `Pool`, and it is worth stating as a root cause: a library that cannot be
+  consumed gets copied, and the copy drifts. The fork had lost the SPDX header
+  and the module docs and diverged in its doc comments while the logic stayed
+  identical, and its two tests were byte-identical duplicates of
+  `parallel`'s — so it looked like the fork had its own coverage of the `Pool`
+  when it was running the same two tests a second time. `pool.zig` is deleted
+  (0.4.0) and `sumcheck.zig` imports `zig-parallel` directly. Test count
+  therefore drops from 383 to 381 (and `binary-field` from 76 to 74) with no
+  loss of coverage: the duplicated assertions no longer run twice.
+
+
 ### Versioning
 
 - Root `build.zig.zon` is now **`0.5.0`** (was `0.4.0`); every library keeps
@@ -114,11 +138,11 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   `binary-field`, `merkle`, `parallel`, `serialization` and `transcript` are
   unchanged, so the per-library range stays `0.1.0` (`transcript`) to `0.5.0`
   (`curve`).
-- **Test counts.** The root `zig build test` step now runs **382 tests**
+- **Test counts.** The root `zig build test` step now runs **381 tests**
   (verified on Zig 0.16.0 in Debug and ReleaseFast), up from 354; per-library
-  `zig build test` steps sum to **498**, up from 470, because `field` (85) and
+  `zig build test` steps sum to **497**, up from 470, because `field` (85) and
   `curve` (98) also compile their separate `tests/` roots. Per-library totals:
-  algebra-traits 4, bigint 18, binary-field 76, curve 98, field 85, fri 12,
+  algebra-traits 4, bigint 19, binary-field 74, curve 98, field 85, fri 12,
   hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28,
   rng 25, serialization 15, transcript 10. The new tests are the negative cases
   for every error above (mismatched lengths, non-power-of-two lengths, over-

@@ -4,39 +4,29 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Local transcript dependency
-    const transcript_mod = b.addModule("zig-transcript", .{
-        .root_source_file = b.path("../transcript/src/root.zig"),
+    // Declared dependencies, resolved through the package manager. Before
+    // 0.3.0 these modules were hand-wired from `../transcript/src/root.zig`
+    // and friends while build.zig.zon declared `.dependencies = .{}`. That
+    // combination made the package unusable outside this monorepo: a consumer
+    // resolving `zig_fri` got no dependencies, and the relative paths it would
+    // have needed do not exist in a package cache.
+    const transcript_dep = b.dependency("zig_transcript", .{
         .target = target,
         .optimize = optimize,
     });
+    const transcript_mod = transcript_dep.module("zig-transcript");
 
-    const bigint_mod = b.addModule("zig-bigint", .{
-        .root_source_file = b.path("../bigint/src/root.zig"),
+    const merkle_dep = b.dependency("zig_merkle", .{
         .target = target,
         .optimize = optimize,
     });
-    const field_mod = b.addModule("zig-field", .{
-        .root_source_file = b.path("../field/src/lib.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    field_mod.addImport("zig-bigint", bigint_mod);
+    const merkle_mod = merkle_dep.module("zig-merkle");
 
-    // Local merkle dependency
-    const hash_mod = b.addModule("zig-hash", .{
-        .root_source_file = b.path("../hash/src/root.zig"),
+    const field_dep = b.dependency("zig_field", .{
         .target = target,
         .optimize = optimize,
     });
-    const merkle_mod = b.addModule("zig-merkle", .{
-        .root_source_file = b.path("../merkle/src/root.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "zig-hash", .module = hash_mod },
-        },
-    });
+    const field_mod = field_dep.module("zig-field");
 
     _ = b.addModule("zig-fri", .{
         .root_source_file = b.path("src/root.zig"),

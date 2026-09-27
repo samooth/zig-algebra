@@ -96,13 +96,17 @@ fn nttSetup() void {
     const F = FrScalar;
     ntt_buf = std.heap.page_allocator.alloc(F, 1 << 20) catch @panic("oom");
     for (ntt_buf, 0..) |*x, i| x.* = F.fromInt(@as(u64, i % 1000));
-    const root = try F.rootOfUnity(ntt_buf.len);
+    // `rootOfUnity` and the transforms are error unions since 0.5.0. A failure
+    // here means the field's two-adicity is below 20, which is a property of
+    // the predefined field, not of the benchmark, so it panics with the
+    // reason rather than silently running a wrong transform.
+    const root = F.rootOfUnity(ntt_buf.len) catch |e| std.debug.panic("rootOfUnity(2^20) failed: {s}", .{@errorName(e)});
     ntt_tw = ntt_mod.precomputeTwiddles(F, 20, root, std.heap.page_allocator) catch @panic("oom");
 }
 
 fn nttFr() void {
     nttSetup();
-    try ntt_mod.nttWithTwiddles(FrScalar, ntt_buf, 20, ntt_tw);
+    ntt_mod.nttWithTwiddles(FrScalar, ntt_buf, 20, ntt_tw) catch |e| std.debug.panic("nttWithTwiddles failed: {s}", .{@errorName(e)});
     sink ^= @intFromBool(ntt_buf[0].isZero());
 }
 

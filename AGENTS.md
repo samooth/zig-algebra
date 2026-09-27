@@ -1,5 +1,44 @@
 # zig-algebra — Agent Guide
 
+## §0 Nothing Counts as Exercised Until a Test Calls It
+
+**A declaration that no test calls is not exercised, no matter how many greps
+find its name.** The thing that exercises code is a test calling it. Not
+`refAllDecls`, not taking the address of a decl, not `installArtifact`, not a
+`pub` on a public export surface, not compiling. A test that calls it.
+
+Three tiers, and only the third is coverage:
+
+| Tier | What it proves | Example that looked like coverage |
+|------|----------------|-----------------------------------|
+| compiles | the types line up | `addExecutable` on `src/main.zig`; a `pub` re-export in a root file |
+| is collected | inline `test` blocks get analyzed and can run | `std.testing.refAllDecls(@This())` — necessary, still not a call |
+| **is called** | **the behaviour ran and was asserted** | `test "..." { try f(x); }` |
+
+**The specific trap in this workspace: logic that lives only in an example is
+never executed.** All eight `libs/*/src/main.zig` are built as executables; the
+`test` step roots are `src/root.zig` (or `src/lib.zig`) plus the separate
+`tests/` roots, so nothing in a `main.zig` runs. Each of those files also
+defines a local toy field with its own `inv`/`div`, duplicated from the tested
+one — and that duplicate is exactly where `std.debug.assert(!a.isZero())`
+survived the 0.5.0 P0 sweep, because no test step ever type-checked it as a
+test root and the verification was test-driven. A reviewer's grep finds it; the
+suite never touches it.
+
+So: **an example calls the library, it does not re-implement it.** If example
+code needs a field or a helper, import the tested one. If a `main.zig` grows
+logic that a caller depends on, move it into the library where a test can
+reach it. The same rule applies to a `pub` helper with no caller — that is
+dead code wearing a public signature, and `zig build assert-check` is the
+mechanical half of catching it (see `docs/assert-ledger.md`).
+
+This is not hypothetical here. The same shape has shipped three times in this
+workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
+`zig-bigint` that no library under test referenced, and an unconnected
+diagnostic in a sibling repo's test file that was already written but never
+wired to `buildTrace` — so the message existed and nothing could ever see it.
+"Un gadget que nadie invoca nunca falla."
+
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
 version 0.5.0) covering fields, curves, pairings, and STARK building blocks.
@@ -9,14 +48,15 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (383 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 383 tests, seconds
+zig build test        # Run all library tests (381 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 381 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
 zig build wasm        # examples/wasm_fp.zig -> wasm32-freestanding
 zig build wasm-pairing  # examples/wasm_pairing.zig -> wasm32-freestanding
 zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
+zig build assert-check             # assert ledger vs the tree (see §0)
 ```
 
 `zig build` with no step runs the full test suite when
@@ -24,7 +64,7 @@ zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (383 total vs. 499 summed over all per-library steps).
+tests only (381 total vs. 497 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -113,12 +153,21 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 383; per-library
-  `zig build test` totals sum to 499 (field 85, curve 98 include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 381; per-library
+  `zig build test` totals sum to 497 (field 85, curve 98 include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 19, binary-field 76, curve 98, field 85, fri 12, hash 18, kzg 6,
+  bigint 19, binary-field 74, curve 98, field 85, fri 12, hash 18, kzg 6,
   linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
+
+### What the Gates Do and Do Not Cover
+
+`zig build assert-check` enforces the §0 rule *partially*: it fails on a new
+`std.debug.assert` the ledger does not account for, and specifically on a new
+one in a `pub` entry point. It does **not** detect a `pub fn` with no caller
+and no assert — "declared but never called" is currently unenforced, and the
+`main.zig` case is the one that bit three times. Treat the ledger as the
+mechanical half of the rule, not the whole of it.
 
 ### Property-Based Testing Pattern
 For ring/field axioms, generate random elements and verify:

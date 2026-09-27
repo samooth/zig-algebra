@@ -1,8 +1,18 @@
 .{
     .name = .zig_fri,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .fingerprint = 0x27cecf3a9281bc44,
     .minimum_zig_version = "0.16.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .zig_field = .{
+            .path = "../field",
+        },
+        .zig_merkle = .{
+            .path = "../merkle",
+        },
+        .zig_transcript = .{
+            .path = "../transcript",
+        },
+    },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
 }
