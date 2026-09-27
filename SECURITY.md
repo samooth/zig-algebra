@@ -8,6 +8,40 @@ vectors and being covered by negative tests are *not* an audit. Every use of
 this code — especially `pairing`, `fri`, `kzg` and `binary-field` — requires
 your own review, threat model and parameter selection.
 
+## Non-standard commitments in every release through v0.5.1
+
+**`zig-hash`'s `Blake3` did not implement BLAKE3, in any release, including
+`v0.1.0`.** The defect is present in `86605a1`, the first commit of the
+monorepo. It is fixed on `main` after `a5d197a` and first shipped in
+`v0.5.2`.
+
+It was a self-consistent compression that produced a wrong digest for every
+input. Any commitment made under it is not a BLAKE3 commitment, and an opening
+or transcript produced by another BLAKE3 implementation will not verify against
+it.
+
+- **Affected:** everything that commits through `zig-hash`'s Blake3 — the
+  `MerkleTree` and `MMR` constructors in `merkle/root.zig`, and the query-point
+  binding in `binary-field/src/pcs.zig`.
+- **Not affected:** the Fiat-Shamir challenge derivation. `zig-fri` and
+  `zig-transcript` both use `std.crypto.hash.Blake3`, not this one, so
+  challenges were never derived from it.
+
+If you need commitments that interoperate, use `std.crypto.hash.Blake3`
+directly, or wait for `v0.5.2`. There is no compatibility mode: the old digest
+is not a variant of the new one, it is a different function.
+
+**How the known-answer vectors are sourced, because this is the part to check
+when adding a primitive.** Hashes are validated against canonical vectors from
+an **independent** implementation, never against their own test output.
+`binary-field` and `hash` are pinned to BLAKE3 vectors produced outside this
+repository, and `fuzz_runner.zig` differential-tests them against
+`std.crypto.hash.Blake3` over every length around BLAKE3's 1024-byte chunk
+boundary. The pairing KATs come from `py_ecc`. The two earlier primitives
+without that treatment were the ones that hid `zig-hash`'s — a hash verified
+only by its own tests cannot be distinguished from a different hash that is
+equally self-consistent, which is the whole failure here.
+
 ## Scope and non-claims
 
 - **Constant time:** not guaranteed. Field inversion (binary GCD), BigInt
