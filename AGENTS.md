@@ -253,10 +253,14 @@ rewriting history that someone already fetched is worse than publishing 0.5.1
 with a line. This is not hypothetical: `v0.5.0` (c47b4b0) shipped a
 `zig build bench` that did not compile, and the fix is `v0.5.1`.
 
-**Push the tag only after CI is green on that exact commit.** `main` is not a
-sufficient precondition — the commit has to be on `main` *and* the run for that
-SHA must be green, because the failure mode is shipping a commit whose CI was
-red at the time and green-looking later on a different SHA.
+**Push `main` first, and the tag only once the run for that SHA is green.** The
+order is not stylistic and it is not a deadlock: CI only runs on what is on the
+remote, so a commit that is not pushed has no run to wait for. Concretely —
+push `main`, read the run for that exact SHA, and if it is green, push the tag.
+The tag push re-runs CI by way of the trigger, and that re-run is *detection
+after the fact*; the push of `main` first is the prevention. `main` alone is
+not a sufficient precondition, because the failure mode is shipping a commit
+whose CI was red at the time and green-looking later on a different SHA.
 
 `on.push.tags: ['v*']` is in the tree, so once this lands a tag push runs
 `fmt`, `assert-ledger`, `test` on three OSes, `release-smoke`, `benchmark`,
