@@ -9,8 +9,23 @@
 //! `H_k = <g^(2^(adicity-k))>` of the base field (natural exponent order:
 //! `domain[i] = g_k^i`). Antipodal pairs `x / -x` sit at positions
 //! `(j, j + n/2)`, and squaring maps `H_k -> H_{k-1}` two-to-one — exactly
-//! the FRI fold structure. Requires a field with `two_adicity >= k`
-//! (Goldilocks: 32; M31 has two-adicity 1 and cannot be used here).
+//! the FRI fold structure. Requires a field with `two_adicity >= k` (Goldilocks:
+//! 32; M31's base field has two-adicity 1).
+//!
+//! **M31 is usable, over the torus.** The sentence that used to stand here --
+//! "M31 has two-adicity 1 and cannot be used here" -- was true of the base
+//! field and false of the package. `proveOn`/`verifyOn` take the domain as a
+//! parameter, and `torus.TorusDomain` supplies one built from the norm-1 torus
+//! of `F[p^2]`, whose order is `p + 1` rather than `p - 1`. For a Mersenne prime
+//! that is the whole ballgame: `2^31 - 1 + 1 = 2^31`, so a field whose base
+//! two-adicity is 1 gets a domain of size `2^31` from the torus. M61 gets 61 the
+//! same way. Two qualifications, because the obvious summary is wrong in both
+//! directions: the torus is *not* an improvement in general -- for Goldilocks
+//! `p + 1` has 2-adicity 1 while the base field has 32, which is why FRI keeps
+//! using the multiplicative subgroup there -- and for `F[p^2]` the extension's
+//! own `two_adicity` (`v2(p-1) + v2(p+1)`, 32 for M31) is also large enough, so
+//! the torus is the domain you want for its structure, not the only one that
+//! runs.
 //!
 //! ## Commit phase (Fiat-Shamir made non-interactive)
 //!
@@ -94,6 +109,11 @@ const MerkleTree = @import("zig-merkle").MerkleTree(Blake3Hash);
 /// `x_j^2 = g_{k-1}^j`, so the fold child of the antipodal pair
 /// `(j, j + n/2)` lands at position `j` of the half-size domain — the
 /// natural layout is preserved at every layer.
+/// FRI domains on the norm-1 torus of `F[p^2]`. See `torus.zig` for why
+/// `p + 1` rather than `p - 1` is the modulus that matters, and for the
+/// generator derivation.
+pub const torus = @import("torus.zig");
+
 pub fn Domain(comptime F: type) type {
     return struct {
         log_n: u6,
@@ -286,8 +306,33 @@ fn hashPair(comptime F: type, x: F, neg_x: F) [HASH_LEN]u8 {
 /// truncating the coefficient vector is lossless; for a cheater the
 /// truncation drops real energy and the re-evaluated residual disagrees
 /// with the last committed layer almost everywhere — queries catch it.
+/// Prove over `Domain(F)`, the multiplicative 2-subgroup of the base field.
+/// The wrapper every existing caller uses; see `proveOn` for the general form.
 pub fn prove(
     comptime F: type,
+    allocator: std.mem.Allocator,
+    transcript: anytype,
+    evals: []const F,
+    config: Config,
+) FriError!Proof {
+    return proveOn(F, Domain(F), allocator, transcript, evals, config);
+}
+
+/// Prove over an arbitrary FRI domain.
+///
+/// `Dom` is any type with the `Domain(F)` shape -- `init`, `size`, `at`,
+/// `fill`. That is the whole point: `Domain(F)` builds its subgroup from
+/// `F.two_adicity`, so a field with 2-adicity 1 (`M31`) had no usable domain
+/// at all, and nothing in the signature could express "some other subgroup of
+/// order `2^k`". `torus.TorusDomain` supplies one, built from the norm-1 torus
+/// of `F[p^2]`, whose order is `p + 1`.
+///
+/// The prover/verifier pair must agree on `Dom`: they derive the fold's `x_j`
+/// and the queries' positions from it, and nothing in a proof records which
+/// domain was used.
+pub fn proveOn(
+    comptime F: type,
+    comptime Dom: type,
     allocator: std.mem.Allocator,
     transcript: anytype,
     evals: []const F,
@@ -346,7 +391,7 @@ pub fn prove(
 
         // Fold with the antipodal pair (j, j + half): the child lands at
         // position j of the half-size natural domain (x_j^2 = g_{k-1}^j).
-        const dom = try Domain(F).init(F, log_cur);
+        const dom = try Dom.init(F, log_cur);
         const next = allocator.alloc(F, half) catch return FriError.OutOfMemory;
         for (0..half) |j| {
             const x = dom.at(j);
@@ -363,7 +408,7 @@ pub fn prove(
     // ---------- residual ----------
     // Interpolate the final layer (length 2^log_final, natural order) to
     // coefficients and truncate to the degree bound.
-    const full_coeffs = interpolateToCoeffs(F, allocator, layer_evals[rounds], config.log_final) catch return FriError.OutOfMemory;
+    const full_coeffs = interpolateToCoeffs(F, Dom, allocator, layer_evals[rounds], config.log_final) catch return FriError.OutOfMemory;
     defer allocator.free(full_coeffs);
 
     const residual_bytes = allocator.alloc([]const u8, residual_len) catch return FriError.OutOfMemory;
@@ -401,12 +446,13 @@ pub fn prove(
 /// keep this cheap.
 fn interpolateToCoeffs(
     comptime F: type,
+    comptime Dom: type,
     allocator: std.mem.Allocator,
     values: []const F,
     log_final: u6,
 ) FriError![]F {
     const m = values.len; // == 2^log_final
-    const dom = try Domain(F).init(F, log_final);
+    const dom = try Dom.init(F, log_final);
     // Solve the Vandermonde system V·c = v with V[i][j] = x_i^j.
     const mat = allocator.alloc(F, m * (m + 1)) catch return FriError.OutOfMemory;
     defer allocator.free(mat);
@@ -540,8 +586,23 @@ fn buildQueries(
 ///   4. Folding consistency across all rounds (exact positional equality).
 ///   5. The last fold matches the residual's evaluation on the final
 ///      domain — the degree anchor.
+/// Verify against `Domain(F)`. See `proveOn` for why the domain is a parameter
+/// at all, and `verifyOn`.
 pub fn verify(
     comptime F: type,
+    transcript: anytype,
+    proof: *const Proof,
+    config: Config,
+) FriError!bool {
+    return verifyOn(F, Domain(F), transcript, proof, config);
+}
+
+/// Verify against the same `Dom` the proof was produced on. `Dom` must match
+/// the prover's: a proof carries no record of its domain, so a mismatch is a
+/// caller error that surfaces as a failed proof, not a typed one.
+pub fn verifyOn(
+    comptime F: type,
+    comptime Dom: type,
     transcript: anytype,
     proof: *const Proof,
     config: Config,
@@ -589,7 +650,7 @@ pub fn verify(
     // 2^log_final > degree bound): rate < 1 gives the soundness distance.
     var final_evals_buf: [4096]F = undefined;
     if (final_len > 4096) return FriError.InvalidProof;
-    const dom_final = try Domain(F).init(F, proof.log_final);
+    const dom_final = try Dom.init(F, proof.log_final);
     for (0..final_len) |i| {
         const xi = dom_final.at(i);
         var acc = F.zero();
@@ -628,7 +689,7 @@ pub fn verify(
             }
 
             // Fold: child at layer r+1, position j.
-            const dom_r = try Domain(F).init(F, layer_log);
+            const dom_r = try Dom.init(F, layer_log);
             const xv = dom_r.at(j);
             const even = x.add(negx).mul(half_inv);
             const odd = x.sub(negx).div(xv).mul(half_inv);
@@ -853,7 +914,7 @@ test "fri v2: interpolateToCoeffs recovers a degree-1 polynomial" {
         const x = dom.at(i);
         values[i] = c0.add(c1.mul(x));
     }
-    const coeffs = try interpolateToCoeffs(Goldilocks, a, values, log_f);
+    const coeffs = try interpolateToCoeffs(Goldilocks, Domain(Goldilocks), a, values, log_f);
     defer a.free(coeffs);
     try testing.expectEqual(@as(usize, 64), coeffs.len);
     try testing.expect(coeffs[0].eql(c0));
@@ -955,4 +1016,168 @@ test "Domain.fill rejects a buffer of the wrong length" {
     try testing.expectError(error.LengthMismatch, dom.fill(&short));
     var long: [17]Goldilocks = undefined;
     try testing.expectError(error.LengthMismatch, dom.fill(&long));
+}
+
+// ============================================================================
+// FRI over the norm-1 torus (M31, M61)
+// ============================================================================
+
+/// The premise of every test below, asserted rather than assumed: the base
+/// 31-bit field has 2-adicity **1**, so it has no 2-subgroup of order 4 and
+/// `Domain(M31)` cannot produce a FRI domain of any useful size. That is the
+/// reason the base field was documented as unusable here.
+fn assertBaseFieldCannotHostFRI() !void {
+    try testing.expectEqual(@as(usize, 1), zfield.M31.two_adicity);
+    try testing.expectError(error.DomainTooLarge, Domain(zfield.M31).init(zfield.M31, 2));
+}
+
+test "torus FRI: the base M31 field cannot host a domain, and the torus can" {
+    try assertBaseFieldCannotHostFRI();
+
+    // The torus's order is p + 1, and 2^31 - 1 + 1 = 2^31.
+    try testing.expectEqual(@as(comptime_int, 31), torus.torusAdicity(zfield.M31));
+    const F = torus.Torus31;
+    const Dom = torus.TorusDomain(F, zfield.M31);
+    const dom = try Dom.init(F, 8);
+    try testing.expectEqual(@as(usize, 256), dom.size());
+
+    // And it is a genuinely different domain from the ambient 2-adic subgroup
+    // of the same field: the extension's own two_adicity is 32, so
+    // `Domain(F)` also happens to work, but on a split group whose elements
+    // need not have norm 1. The torus is the one that does.
+    try testing.expectEqual(@as(usize, 32), F.two_adicity);
+    for (0..dom.size()) |i| {
+        try testing.expectEqual(@as(u64, 1), Dom.norm(dom.at(i)));
+    }
+}
+
+test "torus FRI: an honest proof verifies over the torus in M31" {
+    // **The capability, not the absence of breakage.** Every other FRI test in
+    // this file runs on Goldilocks, whose 2-adicity is 32, so "nothing broke"
+    // says nothing about a domain none of them touches. This asserts the new
+    // thing works: a degree-32 polynomial committed on the torus domain of
+    // F_M31[i], proved and verified.
+    try assertBaseFieldCannotHostFRI();
+
+    const a = testing.allocator;
+    const F = torus.Torus31;
+    const Dom = torus.TorusDomain(F, zfield.M31);
+    const log_n: u6 = 8;
+    const n: usize = @as(usize, 1) << log_n;
+    const cfg = testConfig(log_n, 8);
+
+    const dom = try Dom.init(F, log_n);
+    var evals = try a.alloc(F, n);
+    defer a.free(evals);
+    // f(x) = x^2 + 3x + 7, degree 2, well inside the degree-32 bound.
+    const c1 = F.fromInt(3);
+    const c2 = F.fromInt(7);
+    for (0..n) |i| {
+        const x = dom.at(i);
+        evals[i] = x.sqr().add(x.mul(c1)).add(c2);
+    }
+
+    var pt = Transcript.init("torus-m31");
+    var proof = try proveOn(F, Dom, a, &pt, evals, cfg);
+    defer proof.deinit(a);
+
+    var vt = Transcript.init("torus-m31");
+    try testing.expect(try verifyOn(F, Dom, &vt, &proof, cfg));
+}
+
+test "torus FRI: the same proof is rejected when the data is not low degree" {
+    // The negative, on the new field. Without it the positive above would also
+    // pass against a verifier that accepts everything.
+    const a = testing.allocator;
+    const F = torus.Torus31;
+    const Dom = torus.TorusDomain(F, zfield.M31);
+    const log_n: u6 = 8;
+    const n: usize = @as(usize, 1) << log_n;
+    const cfg = testConfig(log_n, 8);
+
+    var prng = std.Random.DefaultPrng.init(0x7025);
+    const rng = prng.random();
+    const evals = try a.alloc(F, n);
+    defer a.free(evals);
+    for (evals) |*x| x.* = F.random(rng);
+
+    var pt = Transcript.init("torus-m31-neg");
+    var proof = try proveOn(F, Dom, a, &pt, evals, cfg);
+    defer proof.deinit(a);
+    var vt = Transcript.init("torus-m31-neg");
+    try testing.expect(!(try verifyOn(F, Dom, &vt, &proof, cfg)));
+}
+
+test "torus FRI: a tampered proof is rejected" {
+    const a = testing.allocator;
+    const F = torus.Torus31;
+    const Dom = torus.TorusDomain(F, zfield.M31);
+    const log_n: u6 = 8;
+    const n: usize = @as(usize, 1) << log_n;
+    const cfg = testConfig(log_n, 8);
+    const dom = try Dom.init(F, log_n);
+
+    var evals = try a.alloc(F, n);
+    defer a.free(evals);
+    const c1 = F.fromInt(3);
+    for (0..n) |i| {
+        const x = dom.at(i);
+        evals[i] = x.sqr().add(x.mul(c1));
+    }
+    var pt = Transcript.init("torus-m31-tamper");
+    var proof = try proveOn(F, Dom, a, &pt, evals, cfg);
+    defer proof.deinit(a);
+
+    // Honest first, so a `false` below is about the tampering.
+    var vt0 = Transcript.init("torus-m31-tamper");
+    try testing.expect(try verifyOn(F, Dom, &vt0, &proof, cfg));
+
+    // `residual` is serialized bytes, so this is what tampering actually looks
+    // like: flip a bit in a coefficient the verifier will re-expand.
+    @constCast(proof.residual[0])[F.NUM_BYTES - 1] ^= 0x01;
+    var vt = Transcript.init("torus-m31-tamper");
+    try testing.expect(!(try verifyOn(F, Dom, &vt, &proof, cfg)));
+}
+
+test "torus FRI: the same proof verifies over the torus in M61" {
+    const a = testing.allocator;
+    const F = torus.Torus61;
+    const Dom = torus.TorusDomain(F, zfield.M61);
+    const log_n: u6 = 8;
+    const n: usize = @as(usize, 1) << log_n;
+    const cfg = testConfig(log_n, 8);
+
+    // M61 is a different modulus, a different extension and a different
+    // torus, so the generator search and the order check both run again.
+    try testing.expectEqual(@as(comptime_int, 61), torus.torusAdicity(zfield.M61));
+
+    const dom = try Dom.init(F, log_n);
+    var evals = try a.alloc(F, n);
+    defer a.free(evals);
+    const c1 = F.fromInt(5);
+    const c2 = F.fromInt(11);
+    for (0..n) |i| {
+        const x = dom.at(i);
+        evals[i] = x.sqr().add(x.mul(c1)).add(c2);
+    }
+    var pt = Transcript.init("torus-m61");
+    var proof = try proveOn(F, Dom, a, &pt, evals, cfg);
+    defer proof.deinit(a);
+    var vt = Transcript.init("torus-m61");
+    try testing.expect(try verifyOn(F, Dom, &vt, &proof, cfg));
+}
+
+test "torus FRI: log_n above the torus 2-adicity is a typed error" {
+    const F = torus.Torus31;
+    const Dom = torus.TorusDomain(F, zfield.M31);
+    // 32 is one past M31's torus 2-adicity of 31. Typed, not an assert: the
+    // prover reaches `log_domain` from config and the verifier from
+    // `proof.log_domain`, so both are caller-controlled.
+    try testing.expectError(error.DomainTooLarge, Dom.init(F, 32));
+    try testing.expectError(error.DomainTooLarge, Dom.init(F, 63));
+    // 31 is the largest that works, and it is reachable without materialising
+    // it: `size()` is arithmetic, and building the elements is the caller's
+    // memory decision, not the domain's.
+    const dom = try Dom.init(F, 31);
+    try testing.expectEqual(@as(u64, @as(u64, 1) << 31), @as(u64, dom.size()));
 }

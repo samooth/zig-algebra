@@ -47,6 +47,25 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Added
 
+- **`fri`: FRI over the norm-1 torus of `F[p^2]`, so `M31` and `M61` work.**
+  `prove`/`verify` now have `proveOn`/`verifyOn` siblings that take the domain
+  as a parameter (`prove`/`verify` are unchanged wrappers over `Domain(F)`).
+  `torus.zig` builds a domain on the torus `T = {N(x) = 1}`, which is cyclic of
+  order `p + 1` -- and for a Mersenne prime that is the whole point:
+  `2^31 - 1 + 1 = 2^31`, so a field whose base two-adicity is **1** gets a FRI
+  domain of size `2^31`. M61 gets 61. The `root.zig` header said "M31 has
+  two-adicity 1 and cannot be used here"; that was true of the base field and
+  false of the package, and is corrected in the same commit.
+  The generator is derived by Cayley parametrization in raw `u128` arithmetic
+  and then re-checked through the field's own `pow`, because construction and
+  verification being the same computation would prove nothing. Two
+  qualifications the obvious summary would have got wrong: the torus is **not**
+  an improvement in general (for Goldilocks `p + 1` has 2-adicity 1 against the
+  base field's 32, which is why FRI keeps the multiplicative subgroup there),
+  and `F[p^2]`'s own `two_adicity` (32 for M31) is also large enough, so the
+  torus is the domain you want for its structure rather than the only one that
+  runs. 2's invertibility, which the fold's `1/2` depends on, is stated and
+  checked rather than assumed.
 - **`binary-field`: a 128-bit prime fixture, `Prime128`** (`p = 2^128 - 159`).
   The first field in this workspace that runs the **secure** `Sumcheck(F)`
   entry point rather than `SumcheckUnsafe`, which is what exposed the fold
@@ -66,7 +85,7 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   **83** tests, not 85. Verified by running the suite at `72a4343`, the commit
   that introduced the figures -- the runner already disagreed there, so nothing
   was ever lost, only misreported. Corrected in place rather than left to
-  propagate again. The current figures (root 403, per-library 517) are in
+  propagate again. The current figures (root 416, per-library 530) are in
   AGENTS.md.
 
 ## [v0.5.0] — 2026-09-27

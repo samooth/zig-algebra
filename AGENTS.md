@@ -48,6 +48,25 @@ looked entirely plausible, it was exercised on every run, and it was wrong.
 composites, Carmichael numbers included. Ask of any checker in this tree: what
 input does it reject, and has anyone run that?
 
+**A check that produces no output is not a check that passed -- it is a check
+that did not run.** This is a *different* failure mode from the one above, and
+both rules are needed. A check that always passes is caught by breaking it and
+watching it go red. A check that never runs is not caught that way at all: it
+produces no output, and no output is indistinguishable from a check nobody
+invoked. The discriminator is concrete: **report the check's output, not its
+exit code.** An empty result is an unresolved question, not a pass, and it has
+to be resolved before it is reported -- not after.
+
+The instance that forced the rule: verifying the signature on the re-pointed
+`v0.5.1` tag with `git tag -v v0.5.1 | rg 'Good signature'`. GPG in this
+environment is localised, so it answers `Firma correcta`, the grep matched
+nothing, and it exited non-zero -- a "failure" that was really a language
+mismatch. It was one step from being reported as a tag that was not signed
+correctly, or, read the other way, as a grep that had been silently
+discarded. `git tag -v` had actually succeeded. Both directions of that check
+are the same question asked about two different things: *what does this
+checker reject, and has anyone run it?*
+
 So: **an example calls the library, it does not re-implement it.** If example
 code needs a field or a helper, import the tested one. If a `main.zig` grows
 logic that a caller depends on, move it into the library where a test can
@@ -71,8 +90,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (403 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 403 tests, seconds
+zig build test        # Run all library tests (416 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 416 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -87,7 +106,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (403 total vs. 517 summed over all per-library steps).
+tests only (416 total vs. 530 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -176,10 +195,10 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 403; per-library
-  `zig build test` totals sum to 517 (field and curve include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 416; per-library
+  `zig build test` totals sum to 530 (field and curve include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 19, binary-field 96, curve 98, field 83, fri 12, hash 18, kzg 6,
+  bigint 19, binary-field 96, curve 98, field 83, fri 25, hash 18, kzg 6,
   linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 - Re-derive a count by running the suite and reading the runner's own summary

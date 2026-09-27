@@ -272,6 +272,36 @@ known primes *and* known composites, Carmichael numbers included. A primality
 oracle that has only ever been asked about the one constant it exists to
 certify has never been shown to reject anything.
 
+## The FRI torus: a fixture that had to exist before the test could
+
+The M31 case is the fourth member of this family, and the first where the
+*missing test* was the whole obstacle rather than something the fixture could
+work around.
+
+`fri` had 12 tests, all on Goldilocks. Its domain type derived the subgroup from
+`F.two_adicity`, and `M31`'s is 1, so a 31-bit STARK field could not be used --
+stated in `fri/src/root.zig:13` as a property of the package. The honest reading
+of "nothing broke" is weak here: every one of those 12 tests runs on a field
+with 2-adicity 32, and the new domain is a field with 1. Passing 12/12 says
+nothing about it, in either direction.
+
+So the acceptance test is a **positive** one: the honest witness that the header
+declared impossible verifies over the torus in M31, with M61 alongside. That is
+a capability assertion -- "this now works" -- rather than a non-regression one.
+It is also what forces `torus.zig` into the compilation graph: `fri` has no
+`refAllDecls`, so a bare `pub const torus = @import(...)` is lazily unanalysed
+and the file's 7 tests silently never run. That was confirmed the direct way,
+by putting a `@compileError` in the file and watching the build stay green --
+which is also how two compile errors in it (`Base.NON_RESIDUE`, which lives on
+the *extension*, and a `u6` counter that cannot reach 64) were found. Reported
+without that step, this would have been a file that exists, is referenced by
+name, and exercises nothing.
+
+Both new claims are falsifiable in both directions: honest proof verifies, and
+random data plus a tampered residual byte are rejected, on the same field and
+the same domain. A verifier that returned `true` unconditionally fails the
+second; one that returned `false` unconditionally fails the first.
+
 **Consequence:** anyone reading "the fixture tests the generalized sum-check"
 can now mean the entry point, not just the arithmetic. `Prime31` still
 instantiates `SumcheckUnsafe` and still asserts that `Sumcheck(Prime31)`
