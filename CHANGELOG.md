@@ -4,43 +4,51 @@ All notable changes to zig-algebra are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking changes).
 
-> **Published with a broken build step.** `zig build bench` does not compile at
-> this tag: the P0 sweep below turned `rootOfUnity` and `nttWithTwiddles` into
-> error unions, and `libs/pairing/src/bench.zig` had two `void` helpers calling
-> them with `try`. The `benchmark` CI job was red on this commit and the tag was
-> pushed anyway, because no CI job ran on tag pushes at the time.
+> **Correction: `v0.4.0`, `v0.5.0` and `v0.5.1` were created as local tags and
+> treated as published. They were never published.** `git ls-remote --tags
+> origin` ends at `v0.3.2`; the three later tags exist only in this repository.
+> An earlier version of this header said the opposite -- that `v0.5.0` was
+> "published with a broken build step" and that the tag "was pushed anyway" --
+> and that was false. Nothing of the 0.5.0 P0 work ever reached a consumer, so
+> its broken `zig build bench` harms nobody, and `v0.5.1` carries the fix
+> precisely *because* the tag never left this machine.
 >
-> **`v0.5.0` is not moved.** It is signed and possibly cloned, and rewriting a
-> published tag to hide a compile error is worse than publishing a patch. The fix
-> is `v0.5.1`, which also carries the release gate whose absence let this
-> happen. Anyone who needs a tag whose `zig build bench` compiles should use
-> `v0.5.1` or later.
+> **Two process failures, not one.**
+>
+> 1. *The workflow did not run on tags.* `on.push.tags: ['v*']` was absent, so
+>    a tag could be created with a red `benchmark` job and nobody would find
+>    out from CI. Fixed in `v0.5.1`.
+> 2. *Local tags were annotated as published.* The fiction in the paragraph
+>    above is the more expensive of the two, because it **justified a
+>    decision**: re-pointing `v0.5.1` was the right move, but it was made on a
+>    false premise. The rule "never move a published tag" is unchanged and
+>    still correct; the premise under it was not.
+>
+> The rule that follows from the second failure is in `AGENTS.md`: **an artifact
+> exists when a consumer can fetch it, not when you created it.** A local tag is
+> not a release, it is an intention.
+>
+> For the record, the compile error itself was real: the P0 sweep below turned
+> `rootOfUnity` and `nttWithTwiddles` into error unions, and
+> `libs/pairing/src/bench.zig` had two `void` helpers calling them with `try`.
+> `zig build bench` does not build at `v0.5.0`, and that is fixed in `v0.5.1`.
+>
+> `v0.4.0` and `v0.5.0` are kept locally, un-moved and correctly signed, because
+> deleting them would lose the record of what shipped in what order. Their
+> content is also contained in `v0.5.1`. Anyone who needs a tag whose
+> `zig build bench` compiles should use `v0.5.1` or later — and note that this
+> only means something once `v0.5.1` is actually pushed.
 
 ## [Unreleased]
 
-> **Version not chosen.** `v0.5.1` is already tagged locally at `c1d1ecf` and
-> does not contain this work, so the honest label is `Unreleased` until the
-> release decision is made. The published-tag rule applies: `v0.5.0` is not
-> moved, and `v0.5.1` is only re-pointed if it is still unpublished.
+> **Version not chosen.** `v0.5.1` is tagged locally and does not contain this
+> work, so the honest label is `Unreleased` until the release decision is made.
+> `v0.5.0` is not moved. `v0.5.1` may be re-pointed because it is **unpublished**,
+> which is the whole of the justification -- see the header for why an earlier
+> version of this file gave a different reason.
 
 ### Fixed
 
-- **Windows: `zig-rng` did not compile.** `libs/rng/src/csprng.zig` called
-  `BCryptGenRandom(null, ...)` against `windows.HANDLE`, which is `*anyopaque`;
-  a bare `null` does not coerce to a non-optional pointer in Zig 0.16, so the
-  whole `zig-rng` test binary failed to compile on `windows-latest` and its 25
-  tests never ran. Every Linux run was green and so was the Ubuntu CI job --
-  the error is in a branch the host does not take. The parameter is documented
-  by Microsoft as optional (NULL means "system-preferred RNG"), so the
-  declaration is now `?windows.HANDLE`; the ABI is unchanged.
-  Pre-existing since the P0 sweep, not introduced by this release's work.
-- **New gate: `zig build cross-check`,** which compiles every library's test
-  binary for `x86_64-windows-gnu` and `aarch64-macos` without running it, and a
-  `cross-check` CI job. This is the check that would have caught the item above
-  locally, in seconds instead of one CI job. Verified by reverting the fix and
-  watching it report the same error CI did. The blind spot is the mirror image
-  of the characteristic-2 fold: there, char-2 runs could not fail; here, the
-  Linux-only runs could not.
 - **The sum-check fold was characteristic 2** (`binary-field`). `sumcheck.zig`
   folded each round with `a + t·(a + b)` in five places. That expression equals
   the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where
@@ -124,6 +132,12 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   AGENTS.md.
 
 ## [v0.5.0] — 2026-09-27
+
+> **Local tag. Never published** — `git ls-remote --tags origin` ends at
+> `v0.3.2`. Nothing below reached a consumer, which is why the broken
+> `zig build bench` documented in the header costs nobody anything. The tag is
+> kept, un-moved and signed, as a record of the order; its content is also in
+> `v0.5.1`.
 
 ### Security (P0 class, second sweep — advisory ZA-2026-003)
 
@@ -223,12 +237,22 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
 
 ## [v0.5.1] — 2026-09-27
 
+> **Local tag. Not yet published.** This section describes work that exists in
+> this repository; the tag has not been pushed. See the header.
+
 The follow-up to 0.5.0: the fix for the broken `zig build bench` described
 above, the release gate whose absence let that happen, the assert ledger, the
 two packaging fixes, and the characteristic-agnostic Lagrange and folding
 arithmetic. Two releases in a row is not churn. 0.5.0 closed a P0 class
 across ten libraries; 0.5.1 closed the release process, and found a
 sign-inversion bug that only a prime field could expose.
+
+> **The version jump from 0.3.2 to 0.5.1 skips two MINORs on purpose.** In
+> `0.y.z` the MINOR carries the incompatible changes, and both `[v0.4.0]` and
+> `[v0.5.0]` are present above with their full contents, so a consumer reading
+> `0.5.1` reads the complete history rather than a gap. Writing it down so the
+> next session reads it as a decision instead of an oversight: the intervening
+> MINORs were never published, and the work in them was real.
 
 ### Corrections to this changelog
 
@@ -266,6 +290,37 @@ sign-inversion bug that only a prime field could expose.
 
 
 ### Fixed
+
+- **`zig-rng` did not compile on Windows.** `libs/rng/src/csprng.zig` called
+  `BCryptGenRandom(null, ...)` against `windows.HANDLE`, which is `*anyopaque`.
+  A bare `null` does not coerce to a non-optional pointer in Zig 0.16, so the
+  whole `zig-rng` test binary failed to compile on `windows-latest` and its 25
+  tests never ran. The build summary reported `391/391 tests passed` — 416 minus
+  the 25 that could not build — which reads like a pass. Microsoft documents the
+  handle as optional (NULL means "system-preferred RNG"), so the declaration is
+  now `?windows.HANDLE`; the ABI is unchanged. Pre-existing since the P0 sweep
+  (`1e53043`), not introduced by this release's work, but it was the only red
+  job and therefore a release blocker.
+
+  **This is the fourth instance of one class: a file or module that is built but
+  never type-checked as a test root, on some axis.** The first was
+  `libs/rng/src/main.zig`, which the 0.4.0 P0 sweep missed because no test step
+  ever compiled it as a test root. The second and third were packaging
+  (`bbc08ff`: `fri` was not a consumable package). The fourth is this one, and
+  the axis is the **operating system**: every Linux run was green, the Ubuntu CI
+  job was green, `zig build fuzz` was green, because the error sits in a branch
+  the host never takes. The multiplatform gate did not see it for exactly the
+  reason the `src/`-only gate did not see `main.zig` — the thing that is not
+  checked is the thing that breaks.
+
+- **New gate: `zig build cross-check`,** which compiles every library's test
+  binary for `x86_64-windows-gnu` and `aarch64-macos` and installs it without
+  running it, plus a `cross-check` CI job. This is the check that would have
+  caught the item above locally, in seconds, rather than through one 2m35s CI
+  job. It was verified by reverting the one-line fix and watching it report the
+  identical error the Windows job did. The blind spot is the mirror image of
+  the characteristic-2 fold: there, char-2 runs could not fail on a linear bug;
+  here, the Linux-only runs could not fail on a Windows-only compile error.
 
 - **Lagrange and folding arithmetic in `zig-binary-field` is now
   characteristic-agnostic where it was not.** The Lagrange basis, its
@@ -350,6 +405,10 @@ sign-inversion bug that only a prime field could expose.
   remaining known gap; `derivative` and `toString` are fixed and removed from it.
 
 ## [v0.4.0] — 2026-09-27
+
+> **Local tag. Never published** — like `v0.5.0`, this exists only in this
+> repository. Kept un-moved and signed so the version history stays readable;
+> its content is also in `v0.5.1`.
 
 ### Security (P0 class: asserted preconditions)
 

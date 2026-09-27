@@ -74,6 +74,27 @@ reach it. The same rule applies to a `pub` helper with no caller — that is
 dead code wearing a public signature, and `zig build assert-check` is the
 mechanical half of catching it (see `docs/assert-ledger.md`).
 
+**An artifact exists when a consumer can fetch it, not when you created it. A
+local tag is not a release, it is an intention.** This is the same shape as the
+two rules above: a name promising something the thing does not deliver.
+
+`v0.4.0`, `v0.5.0` and `v0.5.1` were all created locally and all three were
+written about as though they were published — the changelog said `v0.5.0` was
+"pushed anyway" and "possibly cloned" when `git ls-remote --tags origin` ends at
+`v0.3.2`. The cost was not the mislabel. It was that the fiction **justified a
+decision**: re-pointing `v0.5.1` was correct, but on a premise that was false,
+and a future session reading the changelog would inherit the wrong reason along
+with the right action.
+
+The rule "never move a published tag" is unchanged and still right. What was
+wrong was the premise underneath it. So before treating anything as shipped,
+check what the remote actually has — `git ls-remote --tags origin` — and if the
+changelog and the remote disagree, the changelog is the thing that is broken,
+not the record. A correction committed on top is better than a rewrite: it
+leaves the error visible, with its date and its cause, and a history in which
+the error never happened leaves no trace that the criterion was ever applied to
+a false premise.
+
 This is not hypothetical here. The same shape has shipped three times in this
 workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
 `zig-bigint` that no library under test referenced, and an unconnected
