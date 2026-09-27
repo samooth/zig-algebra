@@ -23,6 +23,54 @@ been seen to fail has not demonstrated that it carries anything.
 Everything here was verified by running it, at the commits cited. Where a
 figure could not be established it says so rather than rounding up.
 
+## The value of a check is not what it asserts, it is what can fail
+
+A check written against an implementation pins that implementation, whatever it
+is. A digest, an error name, a round trip, a signature — the check cannot tell
+"correct" from "what we wrote". Five instances of it, all in this repository and
+all with the path where each can be read:
+
+1. **A self-generated known-answer vector.** `libs/hash/src/root.zig` asserted
+   `bd214b44…` for `"hello world"`, a digest this implementation had produced
+   itself; BLAKE3 gives `d74981ef…`. It was named
+   `cryptographic hash known-answer vectors`, and it pinned a non-BLAKE3 for the
+   whole life of the repository.
+2. **A round trip.** `binary-field`'s tests round-tripped on every field in the
+   package while `Sumcheck` rejected **honest** proofs over any
+   odd-characteristic field. A round trip is consistent by construction.
+3. **An error set.** `libs/hash/src/root.zig` asserted `InverseOfZero` from
+   `divChecked` — the hand-rolled field's answer, not `zig-field`'s, which is
+   `DivisionByZero`. A test that fixes the wrong error is worse than no test: it
+   turns the mistake into the contract, and the first person to port the demo
+   would have seen the test fail and concluded the library was wrong.
+4. **A signature-shaped check.** `zig build assert-check` fails when a
+   `std.debug.assert` appears that the ledger does not account for. Its only
+   possible failure mode is "the code changed shape". That makes it a drift
+   detector, not a proof of correctness.
+5. **A declared surface no input can reach.** `libs/field/src/field.zig:651`
+   and `:1354` declare `divChecked` as returning
+   `error{ DivisionByZero, InverseOfZero }`, but `invChecked` fails only on a
+   zero value and `divChecked` has already returned before calling it, so the
+   `InverseOfZero` arm is unreachable in both backends. It is indistinguishable
+   from a reachable, correct arm to any test, because telling them apart needs
+   the input that does not exist. `AGENTS.md:286` documents the two-error set,
+   so doc and implementation agree: a dead arm *by contract*. It is not narrowed
+   here — narrowing a public error set is an API break.
+
+The fifth is not a check, which is why the rule has to be stated wider than
+checks. **A declaration is a claim about behaviour, and a claim nothing can
+falsify is a claim nothing can test.**
+
+### What to do when a check cannot fail
+
+Two options, and picking neither is not one of them: give the check an input
+that would break it, or mark it as decorative and stop citing it. The mechanism
+is a **mutation** — a mutation is a check that is asked a question it could
+answer wrongly — and the [mutation log](#mutations-watched-failing) is what makes
+this rule operable rather than rhetorical. A rule with no mutation log behind it
+is an intention, and this table has two rows marked as intentions precisely
+because they were written before the instrument existed.
+
 ## Requirements
 
 | # | requisito | vive en | lo sostiene | se rompe si |

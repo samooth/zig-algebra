@@ -98,6 +98,32 @@ looked entirely plausible, it was exercised on every run, and it was wrong.
 composites, Carmichael numbers included. Ask of any checker in this tree: what
 input does it reject, and has anyone run that?
 
+**The value of a check is not what it asserts, it is what can fail. A check
+written against an implementation pins that implementation -- a digest, an
+error name, a round trip, a signature -- and cannot tell "correct" from "what we
+wrote".** This generalises the rule above; the five instances are listed with
+their paths in `docs/requirements.md`, and each is a real one here:
+
+1. a self-generated KAT — `hash` asserted a Blake3 digest it had produced itself
+   for the whole life of the repository;
+2. a round trip — `binary-field` round-tripped on every field in the package
+   while `Sumcheck` rejected honest proofs over odd characteristic;
+3. an error set — a test asserted the hand-rolled field's `divChecked` error,
+   not `zig-field`'s, so porting the demo would have "proved" the library wrong;
+4. a shape check — `assert-check`'s only possible failure is "the code changed
+   shape", which makes it a drift detector, not a proof;
+5. a declared surface nothing can reach — `divChecked` declares
+   `DivisionByZero | InverseOfZero` and can only produce the first, and a
+   declaration nothing can falsify is a claim nothing can test.
+
+**A check that cannot fail is not a check. Give it an input that would break
+it, or mark it as decorative and stop citing it.** The instrument is a mutation:
+a mutation is a check asked a question it could answer wrongly, and the mutation
+log in `docs/requirements.md` is what makes this operable rather than
+rhetorical. A rule with no instances behind it is an intention — the two rows in
+that table marked as intentions exist because they were written before the
+instrument did.
+
 **A check that produces no output is not a check that passed -- it is a check
 that did not run.** This is a *different* failure mode from the one above, and
 both rules are needed. A check that always passes is caught by breaking it and
