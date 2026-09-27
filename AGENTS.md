@@ -358,6 +358,21 @@ test "property: associativity" {
 }
 ```
 
+## Requirements, and the audit behind a rewrite
+
+`docs/requirements.md` holds the table: what each library has to satisfy, what
+holds each claim up, and what it is meant to catch. A row that cannot name the
+test that sustains it is marked as an intention, because an intention reads
+exactly like a requirement inside a table and the difference is only visible if
+the table says which is which.
+
+It also carries the per-library audit — external vectors, a mutation seen
+failing, and fork history. **Check it before proposing a rewrite.** The question
+is not whether a library is large; it is whether anything could tell you the
+rewrite had not broken it. A rewrite without the requirements and the
+instruments written down first reproduces the fork with extra steps, which is
+what happened to `binary-field` and its fork for three releases.
+
 ## Adding a New Library
 
 1. Create `libs/<name>/build.zig` + `build.zig.zon` + `src/root.zig`.
