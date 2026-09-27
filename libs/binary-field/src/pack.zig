@@ -94,6 +94,14 @@ pub fn PackedMle(comptime F: type) type {
         /// (x + x_i) == (x - x_i) in char 2. Note λ_i(x_j) = δ_ij·d with
         /// d = Z_H'(x_i) = z[1] constant over H; the value-normalized basis is
         /// l_i = λ_i/d.
+        ///
+        /// **This is characteristic-2 specific and is NOT generalized here.** The
+        /// obvious change -- `add` to `sub` in the recurrence below -- is a
+        /// no-op over GF(2^m), so the binary-field suite cannot confirm it, and
+        /// `prime_fixture.zig` shows that `PackedMle.interpolate` does not
+        /// round-trip over a prime field either way. Something else in this
+        /// structure is also specialized, so generalizing one line would make a
+        /// characteristic-2 structure *look* general without being general.
         fn lagrangeBasis(allocator: std.mem.Allocator, z: []const F, x_i: F) ![]F {
             const N = z.len - 1;
             const c = x_i;

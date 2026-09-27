@@ -41,8 +41,11 @@ pub fn Multilinear(comptime Field: type) type {
 
         /// Evaluate the MLE at an arbitrary field point `r` of length k.
         /// Standard repeated-folding: in each round every pair (a, b) at
-        /// positions (2i, 2i+1) becomes a + r_i*(a + b). In characteristic 2,
-        /// (1 - r_i)*a + r_i*b = a + r_i*(a + b).
+        /// positions (2i, 2i+1) becomes (1 - r_i)*a + r_i*b, the linear
+        /// polynomial that interpolates (0 -> a, 1 -> b) at r_i. Over a binary
+        /// field this is the same as a + r_i*(a + b), which is why it used to
+        /// be written that way; the general form is what holds for a prime
+        /// field, and it is checked against one in `prime_fixture.zig`.
         ///
         /// `error.NotPowerOfTwo` for a malformed table, `error.InvalidPointLength`
         /// when `r.len != k` (the old assert let a short `r` fold the table
@@ -60,7 +63,7 @@ pub fn Multilinear(comptime Field: type) type {
                 for (0..half) |i| {
                     const a = cur[2 * i];
                     const b = cur[2 * i + 1];
-                    cur[i] = a.add(ri.mul(a.add(b)));
+                    cur[i] = Field.one().sub(ri).mul(a).add(ri.mul(b));
                 }
                 len = half;
             }
@@ -84,7 +87,7 @@ pub fn Multilinear(comptime Field: type) type {
                 for (0..half) |i| {
                     const a = cur[2 * i];
                     const b = cur[2 * i + 1];
-                    cur[i] = a.add(ri.mul(a.add(b)));
+                    cur[i] = Field.one().sub(ri).mul(a).add(ri.mul(b));
                 }
                 len = half;
             }

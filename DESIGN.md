@@ -143,8 +143,8 @@ and mismatched-length inputs must return typed errors, and must not leave a
 leak, an out-of-bounds access or an unbounded allocation behind. See the
 "Total vs checked" section above.
 
-Counts (Zig 0.16.0): the root `zig build test` step executes 381 tests in both
-Debug and ReleaseFast; per-library steps sum to 497 because `field` (85) and
+Counts (Zig 0.16.0): the root `zig build test` step executes 391 tests in both
+Debug and ReleaseFast; per-library steps sum to 507 because `field` (85) and
 `curve` (98) also compile their `tests/` roots there. See `README.md`.
 
 ## Security Notes

@@ -21,6 +21,10 @@ pub const polynomial = @import("polynomial.zig");
 pub const pack = @import("pack.zig");
 pub const sumcheck = @import("sumcheck.zig");
 pub const pcs = @import("pcs.zig");
+/// A small prime field used only by tests, to exercise the Lagrange and folding
+/// arithmetic over a field where `sub` is not `add`. See the file header for
+/// why the primality check and the independent oracle are both required.
+pub const prime_fixture = @import("prime_fixture.zig");
 
 // Re-export common types
 pub const BinaryField = field.BinaryField;

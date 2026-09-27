@@ -154,8 +154,11 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
         }
 
         /// Lagrange interpolation of a univariate polynomial (degree < n) from
-        /// n distinct points; returns low-first coefficients. Characteristic-2
-        /// aware: (t - x_j) becomes (t + x_j).
+        /// n distinct points; returns low-first coefficients. The basis
+        /// denominator is prod_{i != j} (x_i - x_j); over a binary field
+        /// `sub` is `add`, so this was previously written with `add` and could
+        /// not be distinguished from a transcription error by any test in this
+        /// library. `prime_fixture.zig` checks it over a prime field.
         pub fn interpolateCoeffs(
             allocator: std.mem.Allocator,
             points: []const F,
@@ -181,15 +184,20 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                 var denom = F.one();
                 for (0..n) |j| {
                     if (j == i) continue;
-                    // basis *= (t + points[j]) using a scratch copy.
+                    // basis *= (t - points[j]) using a scratch copy. This was
+                    // `t + points[j]`, which is the same factor in characteristic
+                    // 2 and therefore untestable there: with `+` the sign of
+                    // every coefficient above the constant came out inverted
+                    // over a prime field, and nothing in a binary-field test
+                    // matrix could tell. `prime_fixture.zig` checks it.
                     var next: [64]F = undefined;
                     for (0..deg + 1) |d| {
                         const lo = if (d == 0) F.zero() else basis[d - 1];
                         const hi = if (d == deg) F.zero() else basis[d];
-                        next[d] = lo.add(points[j].mul(hi));
+                        next[d] = lo.sub(points[j].mul(hi));
                     }
                     @memcpy(basis[0 .. deg + 1], next[0 .. deg + 1]);
-                    denom = denom.mul(points[i].add(points[j]));
+                    denom = denom.mul(points[i].sub(points[j]));
                     deg += 1;
                 }
                 const scale = denom.inv().mul(values[i]);

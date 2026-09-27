@@ -25,6 +25,18 @@ survived the 0.5.0 P0 sweep, because no test step ever type-checked it as a
 test root and the verification was test-driven. A reviewer's grep finds it; the
 suite never touches it.
 
+**The rule applies to the checking mechanism too.** A check that reports
+success has to have been *observed failing* on an input that must fail. A gate
+nobody has ever seen go red is decoration, and the most dangerous kind of
+decoration is one that looks rigorous. Before trusting any gate -- a test, a
+scanner, a smoke script, a CI job -- break it on purpose and confirm it says
+so. `zig build assert-check` was proven by adding a `std.debug.assert` to a
+`pub fn` and checking that the failure named the file and the line and exited
+non-zero. The same applies to a regex over a log: feed it a string that should
+match, and one that should not, and confirm both directions. A check written
+by interpolating the expected value into the pattern proves nothing, because it
+cannot fail.
+
 So: **an example calls the library, it does not re-implement it.** If example
 code needs a field or a helper, import the tested one. If a `main.zig` grows
 logic that a caller depends on, move it into the library where a test can
@@ -48,8 +60,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (381 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 381 tests, seconds
+zig build test        # Run all library tests (391 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 391 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -64,7 +76,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (381 total vs. 497 summed over all per-library steps).
+tests only (391 total vs. 507 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -153,10 +165,10 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 381; per-library
-  `zig build test` totals sum to 497 (field 85, curve 98 include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 391; per-library
+  `zig build test` totals sum to 507 (field 85, curve 98 include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 19, binary-field 74, curve 98, field 85, fri 12, hash 18, kzg 6,
+  bigint 19, binary-field 84, curve 98, field 85, fri 12, hash 18, kzg 6,
   linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 
@@ -231,6 +243,40 @@ version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 - ArrayList needs explicit allocator at method calls, not construction.
 - Struct fields need trailing commas.
 - Error unions: `error{X}!T` syntax (not `T!X`).
+
+## Releasing: the tag is the gate
+
+**Never move or delete a published tag.** It is signed and may already be
+cloned. If a released commit is wrong, cut the next patch release and say so in
+the CHANGELOG — a broken build in a tagged release is a one-line fix, and
+rewriting history that someone already fetched is worse than publishing 0.5.1
+with a line. This is not hypothetical: `v0.5.0` (c47b4b0) shipped a
+`zig build bench` that did not compile, and the fix is `v0.5.1`.
+
+**Push the tag only after CI is green on that exact commit.** `main` is not a
+sufficient precondition — the commit has to be on `main` *and* the run for that
+SHA must be green, because the failure mode is shipping a commit whose CI was
+red at the time and green-looking later on a different SHA.
+
+`on.push.tags: ['v*']` is in the tree, so once this lands a tag push runs
+`fmt`, `assert-ledger`, `test` on three OSes, `release-smoke`, `benchmark`,
+`fuzz`, `stark-example` and both wasm smokes. That trigger is **detection, not
+prevention**: the tag already exists publicly by the time the run starts. The
+rule above is the prevention; the trigger makes a violation visible instead of
+silent. It is also unproven until a real tag has been pushed and seen to go
+green -- treat the first one as the gate's own test run, and read it.
+
+**The remote is the owner's.** `main` and the tag namespace are pushed by a
+person, not by an agent in a working tree. Do not push. Hand over the commit
+SHA and the list of what was verified, and let them decide when it ships. A
+tree that is green locally is a reason to offer, not a reason to push -- and
+a GPG failure is a reason to stop and say so, never a reason to commit
+unsigned into a repository whose history is signed.
+
+The gate covers every buildable target. Before 0.5.1 it did not: there was no
+`tags` trigger, `zig build fuzz` was in no job at all, and the `benchmark` job
+carried an "informational only" comment that read as if a red job there did not
+matter. It did matter — a compile error is not an informational number.
 
 ## Signing Commits
 

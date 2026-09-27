@@ -3,6 +3,13 @@ name: test
 on:
   push:
     branches: [main]
+    # A release tag is a release gate. Without this, pushing v* ran zero jobs
+    # and a tag could be published on a commit whose `zig build bench` did not
+    # compile -- which is exactly what happened with v0.5.0 (c47b4b0). This
+    # trigger is detection, not prevention: the human rule in AGENTS.md (do not
+    # push the tag until CI is green on that commit) is what prevents it. The
+    # two are complementary and both are needed.
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -15,6 +22,20 @@ jobs:
         with:
           version: 0.16.0
       - run: zig fmt --check build.zig libs examples bench scripts
+
+  assert-ledger:
+    # The gate from docs/assert-ledger.md: fails on a std.debug.assert the
+    # committed ledger does not account for, and specifically on a new one in a
+    # pub entry point. Part of the release gate, so a new precondition cannot
+    # reach a tag unreviewed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build assert-check
 
   test:
     strategy:
@@ -48,13 +69,30 @@ jobs:
         uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
-      # Informational only: shared runners are noisy; no regression thresholds.
-      - name: Run benchmarks
+      # A red job here BLOCKS the tag. Only the numbers are informational:
+      # shared runners are noisy, so there are no regression thresholds and
+      # nobody should read a slow number as a regression. A compile failure is
+      # not informational, and the comment used to read as if it were, which is
+      # how a broken `zig build bench` sat on a signed tag unnoticed.
+      - name: Build and run benchmarks
         run: zig build bench -Doptimize=ReleaseFast | tee benchmark-results.txt
       - uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: benchmark-results.txt
+
+  fuzz:
+    # `zig build fuzz` was never in CI, so the randomized property runner was
+    # only ever exercised by whoever happened to run it locally. It is ~40s in
+    # ReleaseFast, which is cheap enough to gate on.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build fuzz -Doptimize=ReleaseFast
 
   stark-example:
     runs-on: ubuntu-latest

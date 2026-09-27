@@ -102,6 +102,17 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   and work with `{f}`. This is why `zig-poly`'s `toString` now yields
   `1 + 2*x + 3*x^2` instead of a struct listing.
 
+### Corrections to this changelog
+
+- The `pcs.zig` beta_r generalization was described in an earlier draft of the
+  internal decision notes as landing with the first pass of this work. It did
+  not; it landed afterwards, on its own. It is done now, with the soundness
+  argument recorded: the summand is degree 1 in each variable under either
+  expression, so the sum-check degree bound and the `k+1` summand count are
+  unchanged.
+- `PackedMle` is characteristic-2 specific and is **not** generalized here. See
+  the entry below and `libs/binary-field/README.md`.
+
 ### Packaging
 
 - **`zig-fri` was unconsumable as a package (0.2.0 -> 0.3.0).**
@@ -126,6 +137,50 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   loss of coverage: the duplicated assertions no longer run twice.
 
 
+### Fixed
+
+- **Lagrange and folding arithmetic in `zig-binary-field` is now
+  characteristic-agnostic where it was not.** The Lagrange basis, its
+  normalisation denominator, and the multilinear fold were all written with
+  `add` because over GF(2^m) `a - b == a + b` is a law rather than a
+  coincidence. That makes the expressions untestable in this library: no
+  binary-field test matrix can distinguish `x - y` from `x + y`, and no
+  transcription error in either is observable. Instantiated over a prime field
+  the interpolation of `3 + 5x` returned `3 - 5x` -- every coefficient above
+  the constant sign-inverted, undetectable in characteristic 2.
+  - `Multilinear.eval` and `Multilinear.extend` now fold with
+    `(1 - r_i)*a + r_i*b` (`polynomial.zig`).
+  - `Sumcheck.interpolateCoeffs` now builds the basis with
+    `prod_{j != i} (t - x_j)` and normalises with
+    `prod_{i != j} (x_i - x_j)` (`sumcheck.zig`). The basis recurrence was a
+    sixth occurrence of the same shape, not in the original inventory.
+- **`PackedMle` is deliberately NOT generalized, and the reason is now
+  recorded in the code.** The obvious one-line change to `lagrangeBasis` is a
+  no-op over GF(2^m), so the suite could not confirm it, and instantiating
+  `PackedMle` over a prime field shows `interpolate`/`eval` does not round-trip
+  with `sub` either -- the specialisation is not confined to that one `add`.
+  Changing it would make a characteristic-2 structure *look* general without
+  being general, so it stays char-2 and says so.
+- **`Pcs.kernelTables` now builds the Lagrange kernel in the general form**
+  `l_j(t) = (1 - r_j) + (2·r_j - 1)·t` rather than the characteristic-2 form
+  `t + (1 + r_j)`. The two are identical over GF(2^m); the general form is what
+  holds over a prime field, and the discriminators `2·r_j` and `-1` are
+  identically the char-2 values there. The summand stays degree 1 in each
+  variable, so the sum-check's degree bound -- what the soundness argument rests
+  on -- is unchanged, as is the count of `k+1` multilinear summands. Because the
+  argument is always a hypercube bit, only the line's values at 0 and 1 are
+  needed and the slope is never formed.
+- **`prime_fixture.zig`** adds a small prime field whose modulus is proved prime
+  by exact trial division at comptime, and which is checked against an
+  independent `u64` oracle before being used as a substrate. The primality check
+  is load-bearing rather than decorative: `2^128 - 1` has bit length 128, so it
+  clears a `BITS >= 128` gate, and it is composite
+  (`2^128 - 1 == (2^64 - 1)(2^64 + 1)`). A fixture built on it would pass every
+  size gate and be nonsense. The tests are witnesses, not smoke tests: each
+  asserts that the characteristic-2 form and the general form *disagree* on its
+  input before asserting that the implementation returns the latter.
+
+
 ### Versioning
 
 - Root `build.zig.zon` is now **`0.5.0`** (was `0.4.0`); every library keeps
@@ -138,11 +193,11 @@ arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
   `binary-field`, `merkle`, `parallel`, `serialization` and `transcript` are
   unchanged, so the per-library range stays `0.1.0` (`transcript`) to `0.5.0`
   (`curve`).
-- **Test counts.** The root `zig build test` step now runs **381 tests**
+- **Test counts.** The root `zig build test` step now runs **391 tests**
   (verified on Zig 0.16.0 in Debug and ReleaseFast), up from 354; per-library
-  `zig build test` steps sum to **497**, up from 470, because `field` (85) and
+  `zig build test` steps sum to **507**, up from 470, because `field` (85) and
   `curve` (98) also compile their separate `tests/` roots. Per-library totals:
-  algebra-traits 4, bigint 19, binary-field 74, curve 98, field 85, fri 12,
+  algebra-traits 4, bigint 19, binary-field 84, curve 98, field 85, fri 12,
   hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28,
   rng 25, serialization 15, transcript 10. The new tests are the negative cases
   for every error above (mismatched lengths, non-power-of-two lengths, over-

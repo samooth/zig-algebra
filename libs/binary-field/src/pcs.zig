@@ -13,7 +13,8 @@ const CoreMerkle = @import("zig-merkle");
 ///     f(r) = Σ_{x ∈ {0,1}^k} f(x) · β_r(x),
 ///
 /// where β_r(x) = ∏_j ℓ_j(x_j) is the Lagrange kernel for the point `r` and
-/// each ℓ_j(t) = t + (1 + r_j) is a univariate linear polynomial (char 2).
+/// each ℓ_j(t) = (1 - r_j) + (2·r_j - 1)·t is a univariate linear polynomial,
+/// which over a binary field is the same expression as t + (1 + r_j).
 /// The composed summand is the product of the k+1 multilinear polynomials
 /// `f, ℓ_0, …, ℓ_{k-1}`, so the existing `Sumcheck` applies directly.
 ///
@@ -93,7 +94,8 @@ fn MlePcsWith(comptime F: type, comptime E: type, comptime allow_small_field: bo
         }
 
         /// Build the k univariate Lagrange-basis tables ℓ_j, each of length
-        /// 2^k with entry i = bit_j(i) + (1 + r_j). Caller frees the returned
+        /// 2^k with entry i = l_j(bit_j(i)), where l_j(t) = (1 - r_j) + (2 r_j - 1) t.
+        /// Over a binary field that is bit_j(i) + (1 + r_j). Caller frees the returned
         /// slice and each inner table.
         pub fn kernelTables(
             allocator: std.mem.Allocator,
@@ -112,9 +114,23 @@ fn MlePcsWith(comptime F: type, comptime E: type, comptime allow_small_field: bo
                 tables[j] = try allocator.alloc(E, n);
                 initialized += 1;
                 const rj = r[j];
+                // l_j(t) = (1 - r_j) + (2*r_j - 1) * t is the line through
+                // (0, 1 - r_j) and (1, r_j). Only those two values are needed,
+                // because the argument is always a hypercube bit, so the kernel
+                // table is built from them rather than from the slope.
+                //
+                // Over a binary field the same line is t + (1 + r_j): `-1 = 1`
+                // gives 1 - r_j = 1 + r_j, and the slope 2*r_j - 1 is 0 - 1 = 1.
+                // The general form is written so the summand is degree 1 over
+                // any field, which is what the sum-check's degree bound relies
+                // on; over GF(2^m) it is the identical expression, so this is
+                // not an optimization. `prime_fixture.zig` checks the two forms
+                // disagree over a prime field.
+                const l_at_0 = E.one().sub(rj); // (1 - r_j)
+                const l_at_1 = rj; // l_j(1) = (1 - r_j) + (2 r_j - 1)
                 for (0..n) |i| {
                     const bit: u8 = @intFromBool((i >> @intCast(j)) & 1 == 1);
-                    tables[j][i] = E.fromInt(bit).add(E.one().add(rj));
+                    tables[j][i] = if (bit == 0) l_at_0 else l_at_1;
                 }
             }
             return tables;

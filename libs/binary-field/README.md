@@ -201,13 +201,62 @@ _ = Committed;
 > these entry points proves nothing to a remote verifier. Use them for the
 > on-chain toy format and for tests only.
 
+## Characteristic-agnostic arithmetic, and where it stops
+
+The Lagrange basis, its normalisation denominator, and the multilinear fold were
+all written with `add`, because over GF(2^m) `a - b == a + b` is a law and not a
+coincidence. That is fine as arithmetic and fatal as testing: no binary-field
+test matrix can distinguish `x - y` from `x + y`, so a transcription error in
+either is unobservable. Instantiated over a prime field, the interpolation of
+`3 + 5x` returned `3 - 5x` -- every coefficient above the constant inverted.
+
+`src/prime_fixture.zig` is a small prime field used only by tests, and the
+generalized paths are checked against it:
+
+| Site | Now |
+|------|-----|
+| `Multilinear.eval` / `extend` | fold with `(1 - r_i)*a + r_i*b` |
+| `Sumcheck.interpolateCoeffs` | basis `prod_{j != i} (t - x_j)`, denominator `prod_{i != j} (x_i - x_j)` |
+| `Pcs.kernelTables` | `l_j(t) = (1 - r_j) + (2·r_j - 1)·t`, the same line as `t + (1 + r_j)` in char 2 |
+
+**`PackedMle` is not generalized, on purpose.** The obvious one-line change to
+`lagrangeBasis` is a no-op over GF(2^m) so the suite cannot confirm it, and over
+a prime field `interpolate`/`eval` does not round-trip with `sub` either -- the
+specialization is not confined to that one `add`. Changing it would make a
+characteristic-2 structure look general without being general, so it stays
+characteristic-2 and `pack.zig` says so. `prime_fixture.zig` has a test that
+pins the limitation, so whoever generalizes it has to delete that test rather
+than have it go quietly green.
+
+**The fixture is a witness, not a smoke test.** Each test asserts that the
+characteristic-2 form and the general form *disagree* on its input before
+asserting that the implementation returns the latter; without the first half it
+would pass over a binary field and prove nothing. The modulus is proved prime by
+exact trial division at comptime, which is load-bearing rather than decorative:
+`2^128 - 1` has bit length 128 and therefore clears a `BITS >= 128` gate, and it
+is composite. The field is also checked against an independent `u64` oracle
+before being used as a substrate, because a fixture that shares bugs with the
+code under test is worse than no fixture.
+
+The fixture uses `SumcheckUnsafe` because a 31-bit prime is below the secure
+`Sumcheck` threshold. That is the documented trade for small fields, and the
+arithmetic under test is identical in both variants.
+
+**Soundness note for the `kernelTables` change.** The summand is degree 1 in
+each variable under either expression, so the sum-check's degree bound -- the
+thing the soundness argument rests on -- is unchanged, as is the count of
+`k+1` multilinear summands. Because the argument is always a hypercube bit, only
+the line's values at 0 and 1 are needed and the slope `2·r_j - 1` is never
+formed. The change makes an implicit characteristic-2 dependency explicit; it
+does not alter what is proved.
+
 ## Running Tests
 
 ```bash
 # From the monorepo root
 zig build test
 
-# Just this library (74 tests, all inline)
+# Just this library (84 tests, all inline)
 cd libs/binary-field && zig build test
 ```
 

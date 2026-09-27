@@ -111,38 +111,89 @@ and no new toolchain.
 
 ## Decisions on the review items this file settles
 
-**Prime field for the `binary-field` sum-check test.** `binary-field` does not
-depend on `zig-field`, and `algebra-traits` carries contracts only, so there is
-no prime field available to that library's tests. Decision: **a local prime
-field in the test tree, not a new inter-package dependency.** Two conditions,
-because a hand-rolled fixture that shares bugs with the code under test is worse
-than no fixture:
+**Prime field for the `binary-field` test matrix.** `binary-field` does not
+depend on `zig-field`, and `algebra-traits` carries contracts only, so there was
+no prime field available to that library's tests -- and every field it
+instantiates over is binary, which is precisely the condition under which
+`a - b` and `a + b` cannot be told apart. Decision: **a local prime field in
+the library's own tree, `prime_fixture.zig`, plus `SumcheckUnsafe` over it.**
 
-1. The constant must satisfy the `Sumcheck` contract, so it needs
-   `BITS >= 128`. A 127-bit Mersenne prime is *not* eligible. The fixture
-   therefore carries a comptime primality assertion, so a wrong constant is a
-   compile error rather than a silently non-field.
-2. The fixture must be proven against an **independent oracle** before it is
-   used as a substrate: `add`/`sub`/`mul`/`inv` checked against native
-   `u256` arithmetic modulo the prime over many random values, the same pattern
-   `zig-field` uses against `u512`/`u1024` references.
+Two things this decided that were not obvious beforehand:
 
-Self-contained beats a dependency here: the commit does not wait on another
-repo's release, and the manifest surgery would collide with the `fri` and
-`pool.zig` dependency work.
+1. **Not a large prime.** The instinct was "the secure `Sumcheck` needs
+   `BITS >= 128`, so use a 128-bit prime". Two traps in that. A 127-bit
+   Mersenne prime fails the size gate; and `2^128 - 1` *passes* it while being
+   composite, `2^128 - 1 == (2^64 - 1)(2^64 + 1)`. So the fixture carries an
+   exact comptime primality assertion by trial division -- not extra paranoia,
+   the thing that makes the size gate mean anything -- and uses a 31-bit prime
+   with `SumcheckUnsafe`, which is the documented API for small fields and
+   exercises the identical `interpolateCoeffs` / `Multilinear.eval` arithmetic
+   that needed generalizing. The 31-bit value is chosen because products leave
+   headroom in `u64`, so the oracle is exact rather than modular.
+2. **A witness, not a smoke test.** Each test first asserts that the
+   characteristic-2 form and the general form *disagree* on its input, and only
+   then asserts that the implementation returns the general one. Without the
+   first half the test would still pass over a binary field and prove nothing.
 
-**Consequence accepted:** the `add`→`sub` mechanical fix in
-`interpolateCoeqs` and `lagrangeBasis` is a bit-for-bit no-op under
-characteristic 2, because `BinaryField.sub` is defined as `add`. It lands with
-the prime-field test in the same PR, so the generalized path is covered on
-arrival rather than one refactor later.
+Self-contained beats a dependency: the commit does not wait on another repo's
+release, and the manifest surgery would collide with the `fri` and `parallel`
+dependency work.
+
+**What the fixture found that the binary-field matrix could not.** Instantiated
+over a prime field, the Lagrange interpolation of `3 + 5x` returned `3 - 5x`:
+every coefficient above the constant sign-inverted, because the basis
+recurrence divided by `x + x_j`. Over GF(2^m) that is the same divisor, so
+nothing in the matrix could tell. It also showed that `PackedMle` does not
+round-trip over a prime field with `sub` either -- its specialization is not
+confined to the one `add` -- so `PackedMle` is left characteristic-2 and says
+so, rather than being half-generalized into something that looks general.
+
+**Consequence accepted:** the mechanical `add`->`sub` fix in
+`interpolateCoeqs` is a bit-for-bit no-op under characteristic 2, because
+`BinaryField.sub` is defined as `add`. It lands with the prime-field
+witnesses in the same PR, so the generalized path is covered on arrival rather
+than one refactor later.
 
 **`pack.zig:lagrangeDenom` is not a third site.** It returns `z[1]`, the
 coefficient of x in `Z_H`, which is characteristic-independent. Unchanged.
 
-**`pcs.zig` beta_r is a different class.** `ℓ_j(t) = t + (1 + r_j)` becomes
-`ℓ_j(t) = (1 - r_j) + (2·r_j - 1)·t`, which reduces to the current expression
-exactly under characteristic 2 (`-1 = 1`, `2 = 0`). It is not an `add`→`sub`; it
-changes a two-term expression into a three-term one and touches the sum-check
-inner loop. It lands as its own commit with its own soundness note, because it
-is the change with a real behavioural surface.
+**`pcs.zig` beta_r is a different class, and is done.** `ℓ_j(t) = t +
+(1 + r_j)` becomes `ℓ_j(t) = (1 - r_j) + (2·r_j - 1)·t`, which reduces to the
+current expression exactly under characteristic 2 (`-1 = 1`, `2 = 0`). It is not
+an `add`->`sub`: it changes a two-term expression into a three-term one and
+touches the sum-check inner loop, which is why it got its own commit and its
+own soundness note.
+
+The implementation does not build the slope, because the argument is always a
+hypercube bit: it needs only the two values on the line, `l_j(0) = 1 - r_j` and
+`l_j(1) = r_j`. **Soundness is unchanged.** The summand is degree 1 in each
+variable under either expression, so the sum-check's degree bound -- the thing
+the argument for security actually rests on -- is identical, and the `k+1`
+multilinear summands the composition counts are unchanged. The change makes an
+implicit characteristic-2 dependency explicit; it does not alter what is proved.
+
+`prime_fixture.zig` checks the two forms *disagree* over a prime field before
+asserting the general one is returned, so the test cannot pass vacuously. The
+discriminator is `2·r_j`, which is identically 0 in characteristic 2 -- which is
+also why the binary-field suite could never have noticed either way.
+
+`polynomial.zig`'s test vector in the `extend` test is a statement about the
+field, not a characteristic-2 claim, and is left alone.
+
+## A correctness fix is not a release gate
+
+Worth stating separately, because the instinct after a validation sweep is to
+treat a green run as a licence to cut a release. A correctness fix is
+orthogonal to the release gate in both directions.
+
+- A green run does not authorise a tag. The gate is
+  `on.push.tags: ['v*']` plus the AGENTS.md rule that the tag is pushed only
+  after CI is green on that exact commit. What a green run establishes is that
+  *this* work does not regress the build; whether the tree is a release is a
+  separate decision, and per the rule above the remote's owner makes it.
+- A tag pushed without a gate having ever run is unproven. The first real tag
+  is the gate's own test run, and it should be read rather than assumed.
+
+The reason this is written down: during the 0.5.0 work the natural reading of
+"all green" was "ready to cut 0.5.0", and that is how a tag came to point at a
+commit whose `zig build bench` did not compile.
