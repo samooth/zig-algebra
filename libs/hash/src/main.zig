@@ -2,77 +2,13 @@
 
 const std = @import("std");
 const hash = @import("root.zig");
+const zf = @import("zig-field");
 
-// Minimal F7 field for Poseidon/MiMC demo
-const F7 = struct {
-    const Self = @This();
-    value: u64,
-    pub const modulus: u64 = 7;
-    pub fn zero() Self {
-        return .{ .value = 0 };
-    }
-    pub fn one() Self {
-        return .{ .value = 1 };
-    }
-    pub fn fromInt(x: u256) Self {
-        return .{ .value = @intCast(x % modulus) };
-    }
-    pub fn eql(a: Self, b: Self) bool {
-        return a.value == b.value;
-    }
-    pub fn add(a: Self, b: Self) Self {
-        return fromInt(a.value + b.value);
-    }
-    pub fn sub(a: Self, b: Self) Self {
-        return fromInt(a.value + (modulus - b.value % modulus));
-    }
-    pub fn neg(a: Self) Self {
-        return if (a.value == 0) zero() else fromInt(modulus - a.value);
-    }
-    pub fn mul(a: Self, b: Self) Self {
-        return fromInt(a.value * b.value);
-    }
-    pub fn identity() Self {
-        return one();
-    }
-    pub fn inverse(a: Self) Self {
-        return inv(a);
-    }
-    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
-    /// new code that requires invertibility must call `invChecked`.
-    pub fn inv(a: Self) Self {
-        if (a.isZero()) return zero();
-        return pow(a, modulus - 2);
-    }
-    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
-        if (a.isZero()) return error.InverseOfZero;
-        return pow(a, modulus - 2);
-    }
-    /// Legacy total division: `x / 0 == zero()`.
-    pub fn div(a: Self, b: Self) Self {
-        return mul(a, inv(b));
-    }
-    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
-        return mul(a, try b.invChecked());
-    }
-    pub fn pow(base: Self, exp: u64) Self {
-        var result = one();
-        var b = base;
-        var e = exp;
-        while (e > 0) {
-            if (e & 1 == 1) result = mul(result, b);
-            b = mul(b, b);
-            e >>= 1;
-        }
-        return result;
-    }
-    pub fn isZero(self: Self) bool {
-        return self.value == 0;
-    }
-    pub fn random() Self {
-        return fromInt(1);
-    }
-};
+/// The real field, imported. This file used to declare its own minimal F7 with
+/// 17 methods -- including an `invChecked` that nothing had ever executed --
+/// because the library did not depend on `zig-field`. It was a fork of the
+/// field interface inside a hash example, unbuilt and untested.
+const F7 = zf.Field(7);
 
 fn printHex(name: []const u8, bytes: []const u8) void {
     std.debug.print("{s}: ", .{name});

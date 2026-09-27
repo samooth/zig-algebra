@@ -7,6 +7,9 @@
         .zig_algebra_traits = .{
             .path = "../algebra-traits",
         },
+        .zig_field = .{
+            .path = "../field",
+        },
     },
     .paths = .{
         "build.zig",

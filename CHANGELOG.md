@@ -57,6 +57,36 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 > the rule working: a wrong premise inside a published tag is paid for with
 > `v0.5.2`, not with a rewrite.
 
+## [Unreleased]
+
+> **Not yet published.** The tag follows the audit, not the other way round.
+
+### Fixed
+
+- **`libs/hash` used a hand-rolled field instead of the one in `zig-field`.**
+  `libs/hash/src/root.zig` declared a minimal `F7` for its algebraic-hash tests
+  and `libs/hash/src/main.zig` declared its own for the demo — two copies, 16
+  and 17 methods respectively, including an `invChecked` that had never been
+  executed. They had already diverged from the library they duplicated: the
+  copy's `divChecked` returned `InverseOfZero` where `zig-field`'s returns
+  `DivisionByZero`, and a test was asserting the copy's error set. Both are
+  deleted; `libs/hash` now depends on `zig-field` and uses `zf.Field(7)`. The
+  library did not depend on `zig-field` because nobody had decided that a
+  consumer should — the failure mode the `AGENTS.md` rule about new
+  capabilities describes, inside the repository that writes the rule.
+
+### Added
+
+- **`zig build cross-check` compiles the eight library examples.** Each
+  `libs/*/src/main.zig` is its library's `example` executable, and until now the
+  root build and every CI job compiled only the library's root source. Those
+  files were reachable by `cd libs/<name> && zig build install` and by nothing
+  else, which is how `libs/rng/src/main.zig` kept a `std.debug.assert` no gate
+  had ever compiled. The step now produces 34 test binaries and 16 example
+  executables (eight libraries × `x86_64-windows-gnu` and `aarch64-macos`), and
+  the first build of `hash`'s example is what surfaced the field fork above —
+  so the gate paid for itself before it was finished.
+
 ## [v0.5.2] — 2026-09-27
 
 > **Not yet published; the tag follows the audit, not the other way round.**

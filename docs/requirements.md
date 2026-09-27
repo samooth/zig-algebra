@@ -31,13 +31,13 @@ figure could not be established it says so rather than rounding up.
 | 2 | A hash is differential-tested against a different implementation over the inputs where the structure lives | `examples/fuzz_runner.zig`, nightly `fuzz` job | 3 literal vectors + 17 lengths differential against `std.crypto.hash.Blake3`, including 1023/1024/1025 and 4095/4096/4097 | A single-block vector. BLAKE3's chunk is 1024 bytes, so one short vector never reaches the counter, the cross-chunk chaining, or the parent tree |
 | 3 | A check has to be able to be **seen failing** | `examples/fuzz_runner.zig`, and the mutation log below | Watched mutations, not assertions of intent | A gate that was only ever run green. "It passes" is not evidence that it would have caught anything |
 | 4 | A check that produces no output is not a check that passed | `.github/workflows/test.yml` — `cross-check` uses `--summary all` | Log names the 34 binaries (17 libraries × 2 targets) | A job that is green, ran for a minute, and says nothing about what it verified. A duration is not a claim about coverage |
-| 5 | A round trip proves consistency, not correctness | Nowhere — this is a **known gap**, see the audit | Nothing yet | The characteristic-2 fold bug: `binary-field` round-trips passed on every field in the package while `Sumcheck` rejected **honest** proofs over any odd-characteristic field. It took a 128-bit prime fixture to see it |
+| 5 | A round trip proves consistency, not correctness | Nowhere — this is a **known gap** and it is an intention, not a requirement | Nothing yet, and the absence is the point: **until an instrument exists that detects a self-consistent round trip, no round trip in this repository proves correctness** — including every STARK one | The characteristic-2 fold bug: `binary-field` round-trips passed on every field in the package while `Sumcheck` rejected **honest** proofs over any odd-characteristic field. It took a 128-bit prime fixture to see it. That is a bug in an instrument, not a bug in one library, and it generalises |
 | 6 | A test written against the implementation passes by construction | `AGENTS.md` §0 | The 45-vector KAT, which is pinned to literals | Any test whose expected value came from running the code. See requirement 1 |
 | 7 | A field large enough to be sound is required by the protocol, not by taste | `libs/binary-field/src/sumcheck.zig` — `MIN_SAFE_BITS = 128` | `error.FieldTooSmall` at 128 bits, and `Prime128` crossing it | A field that is 128 bits without being prime: `2^128 - 1` passes the size gate and is composite, `2^128 - 1 == (2^64 - 1)(2^64 + 1)` |
 | 8 | Primality of a fixture's modulus is **proved**, not asserted | `libs/binary-field/src/prime128.zig` — Pocklington certificate | `certifyPrimality()` re-derives `F > √p`, witness `a = 2`, and each prime factor of `F` by a 13-base Miller-Rabin; `isPrimeSmall` is pinned against known primes **and** known composites | A size gate standing in for primality. Also: the first Miller-Rabin here reused the field's `mulmod`, so it computed powers modulo the field's prime instead of modulo `n` and called every small prime composite, `isPrime(97) == false` |
 | 9 | An `add`/`sub` distinction is exercised over a field where they differ | `libs/binary-field/src/prime_fixture.zig`, `prime128.zig` | Tests assert the characteristic-2 form and the general form **disagree** on the input, then that the general one is returned | A characteristic-2 test matrix. There the discriminator `2·r` is identically zero, so no test there can distinguish `x - y` from `x + y` |
 | 10 | A generalized expression must reduce to the characteristic-2 one where that is correct | `libs/binary-field/src/sumcheck.zig` — `foldLinear` | Single shared definition at all five call sites; the 96 `binary-field` tests pass unchanged, which is the proof it is a no-op in char 2 | Copying the kernel instead of sharing it. The drift happened because five sites had five copies and nothing to keep them in step |
-| 11 | Every module that is built **in any target** is also type-checked there | Not satisfied — see the audit | Nothing today | `libs/rng/src/main.zig:44` carried a `std.debug.assert` for the whole life of the repository because no CI job compiled that file. Eight example executables are still built by nobody |
+| 11 | Every module that is built **in any target** is also type-checked there | `build.zig` — `cross_register`, `libs_with_example` | `zig build cross-check` compiles the eight example executables for both foreign targets, 16 artefacts, and CI runs the same step | `libs/rng/src/main.zig:44` carried a `std.debug.assert` for the whole life of the repository because no CI job compiled that file. **This row was unsatisfied when the table was written and was closed by deleting code rather than adding a gate** — see the audit |
 | 12 | A document asserts a **sequence**, not a state | `AGENTS.md` §0 | — | "the hash was broken" expires when the state moves. It was wrong twice in opposite directions: `v0.5.0` was "published" and had not been, then `v0.5.1` was "not published" and had |
 | 13 | The audit happens before the tag, not after | `AGENTS.md`, "Releasing: the tag is the gate" | `v0.5.2` shipped with the fix in it; `v0.5.1` shipped a false CHANGELOG paragraph because the tag was taken before anyone read it | Tagging first, which is the natural order and the wrong one. A tag is a photograph; a later correction does not reach it |
 | 14 | Who consumes a new capability, and how they learn it has not diverged, is decided **before** it is written | `AGENTS.md` §0 | The circular-domain work has not started; this row is why | Writing the code and then asking who wants it. That is how `binary-field` diverged from its fork for three releases, and the interoperability bug in the Merkle leaf hashing was invisible from both sides because a round trip is self-consistent |
@@ -70,67 +70,80 @@ Three questions, all of them answerable without reading the implementation.
 diverged. Most rows are "no", and the "no" is the finding: it is what says
 where a rewrite would buy something and where it would not.
 
-| library | tests | #1 external vectors | #2 mutation seen failing | #3 forked and diverged |
+| library | tests | #1 vector provenance | #2 mutation seen failing | #3 forked and diverged |
 |---|---|---|---|---|
-| `hash` | 19 | **yes** — BLAKE3 45 vectors independent; blake2b/blake2s/sha3 vs `hashlib`; keccak distinct from sha3 | **yes** — 3 mutations | no |
-| `field` | 83 | no | **yes** — `add` reduction | no |
-| `binary-field` | 96 | **yes** — Pocklington certificate, plus `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
-| `fri` | 25 | no | **yes** — torus generator | no |
-| `pairing` | 57 | **yes** — `py_ecc` (EIP-197) | no | no |
-| `rng` | 25 | no | **yes** — `?windows.HANDLE` | no |
-| `merkle` | 18 | no | no | no |
-| `poly` | 28 | no | no | no |
-| `bigint` | 19 | no | no | no |
-| `transcript` | 10 | no | no | no |
-| `serialization` | 15 | no | no | no |
-| `ntt` | 15 | no | no | no |
-| `linalg` | 11 | no | no | no |
-| `kzg` | 6 | no | no | no |
-| `algebra-traits` | 4 | no | no | no |
-| `parallel` | 2 | no | no | no |
+| `hash` | 19 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3 | **yes** — 3 mutations | no |
+| `field` | 83 | **unknown** | **yes** — `add` reduction | no |
+| `binary-field` | 96 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
+| `fri` | 25 | **unknown** | **yes** — torus generator | no |
+| `pairing` | 57 | **demonstrated** — `py_ecc` (EIP-197) | no | no |
+| `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
+| `merkle` | 18 | **unknown** | no | no |
+| `poly` | 28 | **unknown** | no | no |
+| `bigint` | 19 | **unknown** | no | no |
+| `transcript` | 10 | **unknown** | no | no |
+| `serialization` | 15 | **unknown** | no | no |
+| `ntt` | 15 | **unknown** | no | no |
+| `linalg` | 11 | **unknown** | no | no |
+| `kzg` | 6 | **unknown** | no | no |
+| `algebra-traits` | 4 | **unknown** | no | no |
+| `parallel` | 2 | **unknown** | no | no |
 
 ### What the table says
 
-**Two libraries carry external vectors and one of them is where the worst bug
-was.** `hash` has the discipline and was the one that hid a non-BLAKE3 for the
-entire life of the repository, because a self-generated vector looks identical
-to a real one from the inside. That is the argument for row #1 being a
-requirement about *provenance* and not about *having vectors*.
+**Question 1 is not "does it have external vectors?" It is "can you demonstrate
+where they came from?"** The evidence is in this repository's own history:
+`hash` had vectors, they were self-generated, and they hid a non-BLAKE3 for the
+entire life of the repository. A self-generated vector is indistinguishable
+from a real one from the inside.
 
-**Fourteen of the seventeen libraries have no external vector at all.** For a field or a matrix
-that is defensible: the axioms plus an independent implementation are the test.
-For anything that emits a commitment — `merkle`, `transcript`, `kzg`,
-`serialization` — it is not, and a wrong commitment is exactly the failure
-`binary-field` and `hash` both had.
+And that has an uncomfortable consequence for the audit itself: **provenance
+cannot be audited from inside the repository.** Demonstrating it means
+comparing against something outside. So for the fourteen libraries below the
+three, the honest answer is not "no" — it is **unknown**, and an unknown is a
+finding rather than an absence. "We never checked" and "we checked and there is
+nothing" are different claims, and only one of them is true.
+
+**Three libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+blake2b/blake2s/sha3 re-checked against `hashlib`), `pairing` (`py_ecc`,
+EIP-197) and `binary-field` (a Pocklington certificate plus a `u256` oracle).
+One of the three is `hash`, which hid a non-BLAKE3 the whole time — which is the
+argument for the requirement being about provenance and not about having
+vectors.
 
 **Ten libraries have never been seen to fail.** `merkle`, `poly`, `bigint`,
 `transcript`, `serialization`, `ntt`, `linalg`, `kzg`, `algebra-traits` and
 `parallel`. Every test in them has only ever run green, so the honest statement
 about their coverage is that it is unmeasured.
 
-**`parallel` has two tests, and the library reports 2 because only `root.zig`
-is a test root.** `timing.zig` has a third (`nowNs is monotonic across a busy
-wait`) that the root step never collects, for the reason in requirement 11: a
-file that is not imported from the root is lazily unanalysed and its tests do
-not run. Nothing in it has ever been executed beyond collection.
+**`parallel` reports 2 tests and `timing.zig` has a third** that the root step
+never collects, for the reason in requirement 11: a file not imported from the
+root is lazily unanalysed and its tests do not run.
 
-**Requirement 11 is unsatisfied, and it is the cheapest thing on this page.**
-Eight `libs/*/src/main.zig` are the `root_source_file` of each library's
-`example` executable. The root build and every CI job compile the library's
-`src/root.zig`; none of them build the examples, and `cross-check` only adds
-test artifacts over the root source. They are reachable with
-`cd libs/<name> && zig build install` and by nothing else. They are not inert:
-`libs/hash/src/main.zig` declares 18 `pub fn` and re-implements the library's
-own arithmetic, which is the same failure as requirement 14 — an example
-re-implementing instead of importing. Building them costs one `addExecutable`
-per library in the existing `cross_register` helper, and it would have caught
-the `rng` assert before a release did.
+**Requirement 11 was violated by the repository that wrote it, and closing it
+was not the fix anyone would guess.** The eight `main.zig` files were not
+compiled by any build step, so the obvious repair was one `addExecutable` each
+in the existing `cross_register` helper. Adding the gate is what made the real
+state visible: **the first build of `libs/hash/src/main.zig` failed**, because
+the field interface it had been carrying for the repository's whole life was not
+the library's field. Its `divChecked` returned `InverseOfZero` where
+`zig-field`'s returns `DivisionByZero` — and a test in `root.zig` was asserting
+the fork's error set. The repair was to delete both copies of that interface and
+import `zig-field`, and only then to add the gate. Requirement 14 written in this
+repository, demonstrated inside it: a consumer nobody decided, inventing its own
+provider, one with an `invChecked` that has never been executed.
+
+`cross-check` now compiles 34 test binaries and 16 example executables (eight
+libraries × two targets), and the count is checked rather than assumed.
 
 ## What this table does not decide
 
 It does not say a library should be rewritten. It says which ones have an
 instrument that could tell a rewrite had not broken something. On the evidence
-here that is `hash` and `binary-field`, and for `binary-field` the case is not
-the tests — it is that its fork diverged for three releases with nothing on
-either side able to see it. A rewrite without the requirements and the
-instruments written down first would reproduce the fork with extra steps.
+here that is `hash` and `binary-field`, and `binary-field` now has two
+independent reasons rather than one. Its fork diverged for three releases with
+nothing on either side able to see it; **and** it is in the set of libraries
+whose tests have never been seen to fail, so the vectors it does have have never
+demonstrated that they carry. The second is the stronger argument and it points
+at the same place. A rewrite without the requirements and the instruments
+written down first would reproduce the fork with extra steps.

@@ -9,6 +9,7 @@
 //! - Pedersen hash (elliptic-curve based, trait-based)
 
 const std = @import("std");
+const zf = @import("zig-field");
 
 pub const blake3 = @import("blake3.zig");
 pub const blake2 = @import("blake2.zig");
@@ -55,77 +56,13 @@ pub const Hash = struct {
 // Tests
 // ============================================================================
 
-// Minimal F7 field for algebraic hash tests
-const F7 = struct {
-    const Self = @This();
-    value: u64,
-    pub const modulus: u64 = 7;
-    pub const characteristic: u64 = 7;
-    pub const order: u64 = 7;
-
-    pub fn zero() Self {
-        return .{ .value = 0 };
-    }
-    pub fn one() Self {
-        return .{ .value = 1 };
-    }
-    pub fn fromInt(x: u256) Self {
-        return .{ .value = @intCast(x % modulus) };
-    }
-    pub fn toInt(self: Self) u64 {
-        return self.value;
-    }
-    pub fn eql(a: Self, b: Self) bool {
-        return a.value == b.value;
-    }
-    pub fn add(a: Self, b: Self) Self {
-        return fromInt(a.value + b.value);
-    }
-    pub fn sub(a: Self, b: Self) Self {
-        return fromInt(a.value + (modulus - b.value % modulus));
-    }
-    pub fn neg(a: Self) Self {
-        return if (a.value == 0) zero() else fromInt(modulus - a.value);
-    }
-    pub fn mul(a: Self, b: Self) Self {
-        return fromInt(a.value * b.value);
-    }
-    /// Legacy total inverse: `inv(0) == zero()`. Zero is not an inverse;
-    /// new code that requires invertibility must call `invChecked`.
-    pub fn inv(a: Self) Self {
-        if (a.isZero()) return zero();
-        return pow(a, modulus - 2);
-    }
-    pub fn invChecked(a: Self) error{InverseOfZero}!Self {
-        if (a.isZero()) return error.InverseOfZero;
-        return pow(a, modulus - 2);
-    }
-    pub const inverse = inv;
-    /// Legacy total division: `x / 0 == zero()`.
-    pub fn div(a: Self, b: Self) Self {
-        return mul(a, inv(b));
-    }
-    pub fn divChecked(a: Self, b: Self) error{InverseOfZero}!Self {
-        return mul(a, try b.invChecked());
-    }
-    pub fn pow(base: Self, exp: u64) Self {
-        var result = one();
-        var b = base;
-        var e = exp;
-        while (e > 0) {
-            if (e & 1 == 1) result = mul(result, b);
-            b = mul(b, b);
-            e >>= 1;
-        }
-        return result;
-    }
-    pub fn isZero(self: Self) bool {
-        return self.value == 0;
-    }
-    pub fn random() Self {
-        return fromInt(1);
-    } // stub
-};
+/// The real field, imported. The algebraic-hash tests and the example each used
+/// to declare their own minimal F7 -- 16 and 17 methods respectively, including
+/// `invChecked` implementations that had never been executed -- because the
+/// library did not depend on `zig-field` and no one decided that a consumer
+/// should. Two copies of a fork of the field interface, one of them in a file
+/// no build target compiled.
+const F7 = zf.Field(7);
 
 test "Blake3 basic hash" {
     const msg = "hello world";
@@ -408,7 +345,12 @@ test "F7 legacy inv/div are total and the checked variants reject zero" {
     try std.testing.expect(F7.inv(F7.zero()).isZero());
     try std.testing.expect(F7.div(F7.one(), F7.zero()).isZero());
     try std.testing.expectError(error.InverseOfZero, F7.invChecked(F7.zero()));
-    try std.testing.expectError(error.InverseOfZero, F7.divChecked(F7.one(), F7.zero()));
+    // `DivisionByZero`, not `InverseOfZero`. The hand-rolled F7 this test was
+    // written against returned `InverseOfZero` from `divChecked`, so the test
+    // was asserting the fork's error set rather than the library's -- the two
+    // had already diverged, and the divergence was only visible when the real
+    // field was imported.
+    try std.testing.expectError(error.DivisionByZero, F7.divChecked(F7.one(), F7.zero()));
     const a = F7.fromInt(3);
     try std.testing.expect((try a.invChecked()).mul(a).eql(F7.one()));
 }

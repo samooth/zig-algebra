@@ -16,6 +16,26 @@ const std = @import("std");
 /// not a pass.
 const cross_targets = [_][]const u8{ "x86_64-windows-gnu", "aarch64-macos" };
 
+/// Libraries that ship a `src/main.zig` example executable.
+///
+/// Declared rather than probed: a step that references a missing root source
+/// fails the build, and filesystem probing during configure is a worse trade
+/// than a list. `cross_register` turns each into a real executable for each
+/// foreign target, which is what makes requirement 11 hold -- until now those
+/// eight files were reachable by `cd libs/<name> && zig build install` and by
+/// nothing else, which is how `libs/rng/src/main.zig` kept a
+/// `std.debug.assert` that no gate had ever compiled.
+const libs_with_example = [_][:0]const u8{
+    "zig-algebra-traits",
+    "zig-bigint",
+    "zig-hash",
+    "zig-linalg",
+    "zig-merkle",
+    "zig-pairing",
+    "zig-poly",
+    "zig-rng",
+};
+
 /// Set in `build` before the first `lib()` call. A file-scope `var` rather than
 /// a parameter on `lib()`, which has seventeen call sites and none of them care
 /// about cross-compilation.
@@ -57,7 +77,11 @@ fn lib(
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
-    cross_register(b, module_name, root_source, imports);
+    var has_example = false;
+    for (libs_with_example) |name| {
+        if (std.mem.eql(u8, name, module_name)) has_example = true;
+    }
+    cross_register(b, module_name, root_source, imports, mod, has_example);
     return mod;
 }
 
@@ -72,6 +96,8 @@ fn cross_register(
     module_name: []const u8,
     root_source: []const u8,
     imports: []const struct { []const u8, *std.Build.Module },
+    self_mod: *std.Build.Module,
+    has_example: bool,
 ) void {
     for (cross_targets) |triple| {
         const query = std.Target.Query.parse(.{
@@ -92,6 +118,53 @@ fn cross_register(
             .name = b.fmt("{s}-{s}-tests", .{ module_name, triple }),
             .root_module = cm,
         });
+        if (has_example) {
+            // `libs/<name>/src/root.zig` -> `libs/<name>/src/main.zig`
+            const dir = root_source[0 .. root_source.len - "root.zig".len];
+            const example_source = std.fmt.allocPrint(
+                b.allocator,
+                "{s}main.zig",
+                .{dir},
+            ) catch @panic("cross-check: out of memory building the example path");
+            const em = b.createModule(.{
+                .root_source_file = b.path(example_source),
+                .target = ct,
+                .optimize = .Debug,
+            });
+            for (imports) |imp| em.addImport(imp[0], imp[1]);
+            em.addImport(module_name, self_mod);
+            // `hash`'s example also needs `zig-field`, which the library itself
+            // does not import: its demo used to declare a hand-rolled field
+            // interface instead, 17 methods of it, one of them an
+            // `invChecked` that had never been executed.
+            if (std.mem.eql(u8, module_name, "zig-hash") or
+                std.mem.eql(u8, module_name, "zig-rng"))
+            {
+                // Built from the local path rather than a dependency: the root
+                // manifest declares no dependencies and creates every library
+                // module from a path.
+                const bm = b.createModule(.{
+                    .root_source_file = b.path("libs/bigint/src/root.zig"),
+                    .target = ct,
+                    .optimize = .Debug,
+                });
+                const fm = b.createModule(.{
+                    .root_source_file = b.path("libs/field/src/lib.zig"),
+                    .target = ct,
+                    .optimize = .Debug,
+                });
+                fm.addImport("zig-bigint", bm);
+                em.addImport("zig-field", fm);
+            }
+            const eexe = b.addExecutable(.{
+                .name = b.fmt("{s}-{s}-example", .{ module_name, triple }),
+                .root_module = em,
+            });
+            const einst = b.addInstallArtifact(eexe, .{
+                .dest_dir = .{ .override = .{ .custom = b.fmt("cross/{s}", .{triple}) } },
+            });
+            cross_step.?.dependOn(&einst.step);
+        }
         // `install` forces compilation and links, but never spawns.
         const inst = b.addInstallArtifact(ctests, .{
             .dest_dir = .{ .override = .{ .custom = b.fmt("cross/{s}", .{triple}) } },
@@ -146,6 +219,17 @@ pub fn build(b: *std.Build) void {
         &.{.{ "zig-algebra-traits", traits_mod }},
     );
 
+    // field -> bigint
+    const field_mod = lib(
+        b,
+        test_step,
+        target,
+        optimize,
+        "zig-field",
+        "libs/field/src/lib.zig",
+        &.{.{ "zig-bigint", bigint_mod }},
+    );
+
     // hash -> algebra-traits
     const hash_mod = lib(
         b,
@@ -154,7 +238,12 @@ pub fn build(b: *std.Build) void {
         optimize,
         "zig-hash",
         "libs/hash/src/root.zig",
-        &.{.{ "zig-algebra-traits", traits_mod }},
+        &.{
+            .{ "zig-algebra-traits", traits_mod },
+            // The algebraic-hash tests use `zf.Field(7)` instead of the
+            // hand-rolled interface this file used to declare for them.
+            .{ "zig-field", field_mod },
+        },
     );
 
     // transcript -> (stdlib only, no internal deps)
@@ -199,17 +288,6 @@ pub fn build(b: *std.Build) void {
             .{ "zig-algebra-traits", traits_mod },
             .{ "zig-hash", hash_mod },
         },
-    );
-
-    // field -> bigint
-    const field_mod = lib(
-        b,
-        test_step,
-        target,
-        optimize,
-        "zig-field",
-        "libs/field/src/lib.zig",
-        &.{.{ "zig-bigint", bigint_mod }},
     );
 
     // parallel (no deps). Declared before binary-field, which depends on it

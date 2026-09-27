@@ -15,15 +15,29 @@ Three tiers, and only the third is coverage:
 | is collected | inline `test` blocks get analyzed and can run | `std.testing.refAllDecls(@This())` — necessary, still not a call |
 | **is called** | **the behaviour ran and was asserted** | `test "..." { try f(x); }` |
 
-**The specific trap in this workspace: logic that lives only in an example is
-never executed.** All eight `libs/*/src/main.zig` are built as executables; the
-`test` step roots are `src/root.zig` (or `src/lib.zig`) plus the separate
-`tests/` roots, so nothing in a `main.zig` runs. Each of those files also
-defines a local toy field with its own `inv`/`div`, duplicated from the tested
-one — and that duplicate is exactly where `std.debug.assert(!a.isZero())`
-survived the 0.5.0 P0 sweep, because no test step ever type-checked it as a
-test root and the verification was test-driven. A reviewer's grep finds it; the
-suite never touches it.
+**The specific trap in this workspace, and it is now closed: logic that lives
+only in an example is never executed.** Each of the eight `libs/*/src/main.zig`
+is its library's `example` executable, and the `test` step roots are
+`src/root.zig` (or `src/lib.zig`) plus the separate `tests/` roots. Until
+`b4fdfd2`'s successor wired them into `cross-check`, those files were reachable
+by `cd libs/<name> && zig build install` and by nothing else — no root build
+step, no CI job — so nothing in a `main.zig` was ever type-checked, let alone
+run. That is where `std.debug.assert(!a.isZero())` survived the 0.5.0 P0 sweep
+in `libs/rng/src/main.zig:44`: a reviewer's grep finds it, the suite never
+touches it.
+
+The gap was not hypothetical, it was structural, and closing it found more than
+the assert. `libs/hash/src/main.zig` had been carrying a **hand-rolled field
+interface** — 16 or 17 methods depending on the file, including an
+`invChecked` that had never been executed — duplicating `zig-field` inside a
+hash example, in a library that did not depend on `zig-field`. Two copies, one
+in `root.zig` for the tests and one in `main.zig` for the demo, and they had
+already diverged: the copy's `divChecked` returned `InverseOfZero` where the
+library's returns `DivisionByZero`, and a test was asserting the copy's error
+set. The fix was not a gate, it was deleting both copies and importing
+`zig-field`; then `cross-check` compiles all eight examples for both foreign
+targets, so the next fork of an interface in a demo fails the build instead of
+waiting for a reviewer.
 
 **The rule applies to the checking mechanism too.** A check that reports
 success has to have been *observed failing* on an input that must fail. A gate
