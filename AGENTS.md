@@ -37,6 +37,42 @@ match, and one that should not, and confirm both directions. A check written
 by interpolating the expected value into the pattern proves nothing, because it
 cannot fail.
 
+**A test written against the implementation passes by construction. Write the
+test against the specification — and a hash is never checked against itself.**
+
+`zig-hash`'s `blake3.zig` was not BLAKE3, for the entire life of this
+repository: a self-consistent compression, wrong in every digest it produced,
+present in the first monorepo commit and in every published tag. It was
+invisible for three reasons that are worth naming individually, because each is
+its own trap.
+
+The tests of `hash` checked determinism, round-trips and self-consistency —
+exactly the class of test that cannot detect that the function is a different
+function. A hash that disagrees with itself is not a hash; agreeing with itself
+proves nothing about which hash it is.
+
+The file *had* a test named `cryptographic hash known-answer vectors`, and that
+is the worse case. Its Blake3 entry asserted `bd214b44…` for `"hello world"`
+where BLAKE3 gives `d74981ef…` — **the "known" answer had been produced by the
+implementation under test.** A self-generated KAT pins the bug and passes
+forever while looking more rigorous than a determinism check. If a vector's
+provenance is "we ran the code", it is not a known-answer vector.
+
+And the nightly `fuzz` job could not have caught it either: it exercised fields
+and FRI and never hashed anything.
+
+The discipline already existed here — `SECURITY.md` documents KATs against
+`py_ecc` for the pairings. It was simply not applied to the one primitive where
+it mattered most. **A pattern that is written down but absent from the list is
+not a control.** When a new primitive is added, the list is what has to change.
+
+The two instruments, and they are different: hard-code the canonical digests from
+an *independent* implementation so the test cannot drift with anything in the
+tree, and differential-test against a different implementation over the inputs
+where the structure lives (for BLAKE3 that is every length around 1024 and 2048,
+because its chunk is 1024 bytes — a single-block vector never exercises the
+counter, the cross-chunk chaining, or the parent tree).
+
 **A checker that has only ever been asked about the one thing it exists to
 certify has never been shown to reject anything.** The sharpest instance here
 is an oracle. The first Miller-Rabin in `prime128.zig` reused the field's
