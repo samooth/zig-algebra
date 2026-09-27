@@ -130,6 +130,11 @@ Two things this decided that were not obvious beforehand:
    exercises the identical `interpolateCoeffs` / `Multilinear.eval` arithmetic
    that needed generalizing. The 31-bit value is chosen because products leave
    headroom in `u64`, so the oracle is exact rather than modular.
+   **(Superseded in part: `Prime127` now crosses the size gate itself and runs
+   the secure `Sumcheck` entry point. See "The size gate and native-width
+   testability looked like a hard conflict" below for why the "impossible"
+   conclusion recorded here was wrong. `Prime31` is kept because its `u64`
+   oracle is exact, which the 128-bit one is not.)**
 2. **A witness, not a smoke test.** Each test first asserts that the
    characteristic-2 form and the general form *disagree* on its input, and only
    then asserts that the implementation returns the general one. Without the
@@ -180,60 +185,91 @@ also why the binary-field suite could never have noticed either way.
 `polynomial.zig`'s test vector in the `extend` test is a statement about the
 field, not a characteristic-2 claim, and is left alone.
 
-## The size gate and native-width testability are in direct conflict
+## The size gate and native-width testability looked like a hard conflict
 
-This is a structural property of the problem, not an oversight in
-`prime_fixture.zig`, and rediscovering it costs a day, so it is written here.
+This section is kept because the conclusion it originally reached was **wrong**,
+and the way it was wrong is the useful part.
 
 `Sumcheck(F)`, `MlePcs(F, E)` and `CommittedMlePcs(F, E)` require
 `F.BITS >= 128` (`MIN_SAFE_BITS`). That is a *security* threshold: below it the
-4-bit challenges are grindable, so the entry points refuse.
+4-bit challenges are grindable, so the entry points refuse. A prime-field
+fixture wants the opposite -- a modulus small enough that an independent
+reference fits in a native integer, so agreement is exact rather than modular.
+A 31-bit prime leaves products at 62 bits and fits `u64`; a 128-bit prime needs
+256.
 
-For a prime-field fixture to be a trustworthy witness it must be
-*checkable*: the field's own arithmetic and an independent reference must agree
-exactly, not modulo something. The only way to get an exact reference is to
-compute in a native integer wide enough that products do not overflow. A
-31-bit prime leaves products at 62 bits, which fits `u64` comfortably, so the
-oracle is exact. **A 128-bit prime does not: its products need 256 bits, so the
-"independent oracle" has to be a `u256` reduction or a second Montgomery
-implementation — which is no longer independent, it is the same technique twice.**
+The original reading was that this is a property of the design: the gap is 97
+bits, no fixture can cross it, and the honest outcome is that the generalized
+path is covered through the sound path's *arithmetic* (`SumcheckUnsafe`, same
+inner loop, wider challenges) but never through its *entry point*. The argument
+against closing it was that a `u256` reduction is "the same technique twice",
+and therefore not an independent oracle.
 
-So the two requirements are in direct tension:
+**That argument does not hold, and the mistake was assuming the two techniques
+would be alike.** `Prime127` (`p = 2^128 - 159`) closes the gate with:
 
-| Requirement | Wants |
-|---|---|
-| `Sumcheck(F)` accepts it | `BITS >= 128`, i.e. arithmetic in 256 bits and up |
-| An exact independent oracle | arithmetic in ≤ 64 bits, i.e. `BITS <= 31` |
+| | field arithmetic | oracle |
+|---|---|---|
+| method | algebraic: `2^128 ≡ 159 (mod p)`, two folds through `u256` | native: `(@as(u256, a) * b) % p` |
+| where the work happens | hand-written shifts and one conditional subtract | the language's own 256-bit multiply and remainder |
 
-**Any field small enough for the arithmetic to be exact in native width is below
-`MIN_SAFE_BITS`.** `M31` at 31 bits is the ceiling of what this workspace can
-witness exactly, and it is 97 bits short of the gate.
+They agree or the differential test fails. A wrong fold constant, a missed
+carry, a bad final subtraction and a wrong `K` all break the comparison, and
+none of them can be masked by a matching error in the other column, because
+neither column is written in terms of the other. The 5000 random products and
+the exhaustive small-value sweep are what make this a witness instead of an
+assertion -- and `p` is not merely *a* large prime: it carries a Pocklington
+certificate (`F = 42113237 · 62826870453001 > √p`, witness `a = 2`, factors
+verified by a 13-base Miller-Rabin that is deterministic below 2^64), so the
+size gate means what it says. `2^128 - 1` would have passed the gate and been
+composite, which is the trap this fixture exists to avoid.
 
-### Two consequences, both true
+## What the 128-bit field found that 31 bits could not
 
-1. **The generalized path has no coverage through the secure entry point.** The
-   `prime_fixture.zig` tests instantiate `SumcheckUnsafe`, and one of them
-   asserts that `Sumcheck(Prime31)` *rejects* the field. That test is honest
-   about the trade, but nobody has run a ≥128-bit prime through the secure
-   `Sumcheck` and checked the generalized Lagrange arithmetic there. With the
-   current fixture that is not possible.
-2. **The gap is a property of the design, not of the fixture.** Closing it means
-   building a `u256` prime field and a reference that is independent of it —
-   realistically a `BigInt`-based oracle from `zig-bigint`, which
-   `binary-field` does not currently depend on.
+Wiring `Prime127` into `Sumcheck` is the first time a field of odd
+characteristic has gone through the secure entry point in this workspace, and
+it exposed a defect that the entire `binary-field` matrix is structurally
+blind to.
 
-What the fixture *does* establish, and it is not nothing: the arithmetic is
-character-agnostic. The generalized `interpolateCoeffs`, `Multilinear.fold` and
-`kernelTables` are exercised on a field where `sub` is not `add`, which is the
-property that a binary-field matrix structurally cannot observe. The
-`SumcheckUnsafe` variant runs the identical arithmetic in the identical inner
-loop; only the challenge width differs.
+**The sum-check fold was characteristic 2.** `sumcheck.zig` folded with
+`a + t·(a + b)` in five places, which is `L_t(x) = (1-t)·f(x) + t·f(1-x)`
+*only* under `1 - t == 1 + t`. Outside characteristic 2 it is a different
+kernel from the one the verifier closes on, so `verify` returned `false` on
+**correct** proofs. A verifier that rejects every honest proof is
+indistinguishable from one that accepts every forged one at the call site, and
+`Sumcheck.verify` returns `!bool` -- the one signature shape where that
+confusion is invisible.
 
-Anyone reading "the fixture tests the generalized sum-check" should read it as
-"through the sound path's *arithmetic*", never as "through the sound path's
-*entry point*". The code itself already marks that distinction: the secure
-variant returns `error.FieldTooSmall`, and the fixture's test says so.
+The fix is a single `foldLinear` helper used by all five sites. It is a
+bit-for-bit no-op under characteristic 2, so all pre-existing proofs are
+unchanged, and the generalized `Multilinear` is now the only definition of the
+kernel in the package.
 
+That is the **third** bug in one family: `interpolateCoeffs`'s `add`->`sub`,
+`kernelTables`' `beta_r`, and now the fold. All three are invisible to a
+characteristic-2 matrix, and all three were found by the same instrument. The
+lesson is not "test prime fields" -- it is that **a fixture whose
+discriminator is identically zero over the fields under test is a fixture that
+cannot fail**, and each of these looked fully covered.
+
+**And the fixture's own Miller-Rabin was wrong first.** The initial version
+reused the field's `mulmod128`, which reduces modulo `PRIME`, to compute
+Miller-Rabin powers for a factor `n` -- so it computed the powers modulo
+`2^128 - 159` instead of modulo `n`, and reported every small prime as
+composite (`isPrime(97) == false`). A separate `mulmodSmall`/`powmodSmall` for
+arbitrary moduli fixed it, and `isPrimeSmall` now has a test pinning it against
+known primes *and* known composites, Carmichael numbers included. A primality
+oracle that has only ever been asked about the one constant it exists to
+certify has never been shown to reject anything.
+
+**Consequence:** anyone reading "the fixture tests the generalized sum-check"
+can now mean the entry point, not just the arithmetic. `Prime31` still
+instantiates `SumcheckUnsafe` and still asserts that `Sumcheck(Prime31)`
+*rejects* the field; both remain, because the 31-bit fixture is the one whose
+oracle is exact in `u64` and whose `u64` products are checked against native
+arithmetic. The two fixtures are complementary: `Prime31` witnesses that the
+`add`/`sub` distinction is real, `Prime127` witnesses that the secure path runs
+at all.
 ## A correctness fix is not a release gate
 
 Worth stating separately, because the instinct after a validation sweep is to

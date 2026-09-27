@@ -25,6 +25,10 @@ pub const pcs = @import("pcs.zig");
 /// arithmetic over a field where `sub` is not `add`. See the file header for
 /// why the primality check and the independent oracle are both required.
 pub const prime_fixture = @import("prime_fixture.zig");
+/// A 128-bit prime field used only by tests, so the **secure** Sumcheck entry
+/// point is exercised with the generalized arithmetic. See the file header for
+/// the Pocklington certificate that proves its modulus prime.
+pub const prime127 = @import("prime127.zig");
 
 // Re-export common types
 pub const BinaryField = field.BinaryField;

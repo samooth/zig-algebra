@@ -125,6 +125,30 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
             current_sum: F,
         };
 
+        /// The one definition of the sum-check folding kernel:
+        /// `L_t(x) = (1 - t) * f(x) + t * f(1 - x)`.
+        ///
+        /// This is the same kernel `polynomial.Multilinear.extend` and
+        /// `Multilinear.eval` use, which is the one the verifier closes on.
+        ///
+        /// It used to be spelled out inline, in five places, as
+        /// `a.add(t.mul(a.add(b)))`. That expression *is* the characteristic-2
+        /// identity -- in char 2, `1 - t == 1 + t`, so it agrees with
+        /// `L_t(x)` -- and this package is entirely characteristic 2, so no
+        /// test here could tell the two apart. Outside char 2 the inline form
+        /// is a different kernel: it disagrees with the kernel the verifier
+        /// uses, and every honest proof over an odd-characteristic field is
+        /// rejected. `verify` returns `false` on a correct proof, which reads
+        /// as "forged" and is indistinguishable from it.
+        ///
+        /// Fixed when the 128-bit prime fixture was wired into `Sumcheck`, the
+        /// first witness in this tree with odd characteristic. A single
+        /// definition is also the point: the drift happened because the kernel
+        /// was copied instead of shared, so there was nothing to keep in sync.
+        fn foldLinear(a: F, b: F, t: F) F {
+            return a.mul(F.one().sub(t)).add(b.mul(t));
+        }
+
         /// Replay the round checks `s_i(0) + s_i(1) == sum_i` and derive the
         /// challenges. Returns null if any round check fails. The caller must
         /// free `challenges`.
@@ -398,7 +422,7 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                                     for (tm.indices) |ti| {
                                         const a = c[ti][2 * rest];
                                         const b = c[ti][2 * rest + 1];
-                                        prod = prod.mul(a.add(self.points[t].mul(a.add(b))));
+                                        prod = prod.mul(foldLinear(a, b, self.points[t]));
                                     }
                                     s = s.add(prod);
                                 }
@@ -429,7 +453,7 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                                 for (tm.indices) |ti| {
                                     const a = cur[ti][2 * rest];
                                     const b = cur[ti][2 * rest + 1];
-                                    prod = prod.mul(a.add(points[t].mul(a.add(b))));
+                                    prod = prod.mul(foldLinear(a, b, points[t]));
                                 }
                                 s = s.add(prod);
                             }
@@ -447,7 +471,7 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                     for (0..half) |rest| {
                         const a = ct[2 * rest];
                         const b = ct[2 * rest + 1];
-                        ct[rest] = a.add(r_i.mul(a.add(b)));
+                        ct[rest] = foldLinear(a, b, r_i);
                     }
                 }
                 len = half;
@@ -594,7 +618,7 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                         for (cur) |ct| {
                             const a = ct[2 * rest];
                             const b = ct[2 * rest + 1];
-                            prod = prod.mul(a.add(points[t].mul(a.add(b))));
+                            prod = prod.mul(foldLinear(a, b, points[t]));
                         }
                         s = s.add(prod);
                     }
@@ -610,7 +634,7 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
                     for (0..half) |rest| {
                         const a = ct[2 * rest];
                         const b = ct[2 * rest + 1];
-                        ct[rest] = a.add(r_i.mul(a.add(b)));
+                        ct[rest] = foldLinear(a, b, r_i);
                     }
                 }
                 len = half;

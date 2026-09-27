@@ -60,8 +60,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (391 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 391 tests, seconds
+zig build test        # Run all library tests (403 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 403 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -76,7 +76,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (391 total vs. 507 summed over all per-library steps).
+tests only (403 total vs. 517 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -165,12 +165,17 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 391; per-library
-  `zig build test` totals sum to 507 (field 85, curve 98 include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 403; per-library
+  `zig build test` totals sum to 517 (field and curve include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 19, binary-field 84, curve 98, field 85, fri 12, hash 18, kzg 6,
+  bigint 19, binary-field 96, curve 98, field 83, fri 12, hash 18, kzg 6,
   linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
+- Re-derive a count by running the suite and reading the runner's own summary
+  (`zig build test --summary all`); do not carry a figure forward from a doc.
+  The `field 85` / `507` pair above was wrong when written -- the runner
+  reported 83 at the very commit that introduced it -- and stayed wrong for
+  four releases because nothing re-measured it.
 
 ### What the Gates Do and Do Not Cover
 

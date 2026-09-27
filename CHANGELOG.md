@@ -16,6 +16,53 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 > happen. Anyone who needs a tag whose `zig build bench` compiles should use
 > `v0.5.1` or later.
 
+## [Unreleased]
+
+> **Version not chosen.** `v0.5.1` is already tagged locally at `c1d1ecf` and
+> does not contain this work, so the honest label is `Unreleased` until the
+> release decision is made. The published-tag rule applies: `v0.5.0` is not
+> moved, and `v0.5.1` is only re-pointed if it is still unpublished.
+
+### Fixed
+
+- **The sum-check fold was characteristic 2** (`binary-field`). `sumcheck.zig`
+  folded each round with `a + t·(a + b)` in five places. That expression equals
+  the linear kernel `L_t(x) = (1-t)·f(x) + t·f(1-x)` *only* where
+  `1 - t == 1 + t`, i.e. in characteristic 2. Outside it, the fold is a
+  different kernel from the one `verify` closes on, so **`verify` returned
+  `false` on correct proofs** over any odd-characteristic field.
+  `verify` returns `!bool`, so a verifier that rejects every honest proof is
+  indistinguishable at the call site from one that accepts every forged one.
+  Fixed by routing all five sites through one `foldLinear` helper, which is a
+  bit-for-bit no-op under characteristic 2 — all pre-existing proofs are
+  unchanged. This is the third bug in one family (after `interpolateCoeffs`'s
+  `add`->`sub` and `kernelTables`' `beta_r`); all three are invisible to a
+  characteristic-2 test matrix, and all three were found by a prime field.
+
+### Added
+
+- **`binary-field`: a 128-bit prime fixture, `Prime127`** (`p = 2^128 - 159`).
+  The first field in this workspace that runs the **secure** `Sumcheck(F)`
+  entry point rather than `SumcheckUnsafe`, which is what exposed the fold
+  above. It carries a Pocklington primality certificate (`F = 42113237 ·
+  62826870453001 > √p`, witness `a = 2`) because `2^128 - 1` passes a 128-bit
+  size gate while being composite, and its independent oracle is native
+  `u256 % p` against the field's algebraic `2^128 ≡ 159` fold — different
+  techniques, so agreement is a real witness. `Prime31` is kept: its `u64`
+  oracle is exact, and it still asserts that `Sumcheck(Prime31)` rejects the
+  field.
+
+### Corrections to this changelog
+
+- The per-library test counts in the `v0.5.0` entry below were wrong when
+  written and were carried forward across four releases. The root step's 391
+  was right; the per-library total was **505**, not 507, because `field` runs
+  **83** tests, not 85. Verified by running the suite at `72a4343`, the commit
+  that introduced the figures -- the runner already disagreed there, so nothing
+  was ever lost, only misreported. Corrected in place rather than left to
+  propagate again. The current figures (root 403, per-library 517) are in
+  AGENTS.md.
+
 ## [v0.5.0] — 2026-09-27
 
 ### Security (P0 class, second sweep — advisory ZA-2026-003)
@@ -216,11 +263,13 @@ sign-inversion bug that only a prime field could expose.
   (`curve`).
 - **Test counts.** The root `zig build test` step now runs **391 tests**
   (verified on Zig 0.16.0 in Debug and ReleaseFast), up from 354; per-library
-  `zig build test` steps sum to **507**, up from 470, because `field` (85) and
+  `zig build test` steps sum to **505**, up from 470, because `field` (83) and
   `curve` (98) also compile their separate `tests/` roots. Per-library totals:
-  algebra-traits 4, bigint 19, binary-field 84, curve 98, field 85, fri 12,
+  algebra-traits 4, bigint 19, binary-field 84, curve 98, field 83, fri 12,
   hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28,
-  rng 25, serialization 15, transcript 10. The new tests are the negative cases
+  rng 25, serialization 15, transcript 10. (This entry originally claimed 507
+  and `field` 85; the runner reported 505 and 83 at this commit. See
+  "Corrections" under Unreleased.) The new tests are the negative cases
   for every error above (mismatched lengths, non-power-of-two lengths, over-
   capacity degrees, non-canonical scalars, points at infinity, out-of-range
   two-adicity, double finalization).
