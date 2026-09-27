@@ -117,6 +117,22 @@ The same applies to any claim about the remote: `origin/main` is at `<sha>` *as
 of <date>* beats `origin/main is up to date`, and the first goes stale visibly
 instead of quietly.
 
+**The corollary, and it is about ordering rather than wording: the audit goes
+before the tag.** See "Releasing: the tag is the gate" for the rule and for the
+two releases it explains — `v0.5.0` shipped a `zig build bench` that did not
+compile, and `v0.5.1` shipped a CHANGELOG paragraph that was false. Both
+because someone tagged before finishing to look. The natural order is tag, then
+review, and it is the wrong order: the tag freezes the state, and a correction
+that arrives afterwards lives in `main` while the published tarball keeps
+telling the old story. The review has to be a step **of the release**, before
+the photo.
+
+That is also why `v0.5.1` can carry a stale paragraph and still be the right
+release. It is sound in every other respect — 416/416 on three operating
+systems, the gate green on the tag's own run — because everything *else* did
+get reviewed before the tag. The defect was never "the tag was wrong"; it was
+"the tag was taken before anyone looked".
+
 This is not hypothetical here. The same shape has shipped three times in this
 workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
 `zig-bigint` that no library under test referenced, and an unconnected
@@ -331,6 +347,38 @@ rewriting history that someone already fetched is worse than publishing 0.5.1
 with a line. This is not hypothetical: `v0.5.0` (c47b4b0) shipped a
 `zig build bench` that did not compile, and the fix is `v0.5.1`.
 
+**The audit goes before the tag, not after. Tagging first is the wrong order,
+and it is the whole order.** A tag freezes state; a lie corrected afterwards
+lives in `main` while the published tarball goes on telling it. Both of this
+repository's bad releases are that mistake, not different ones:
+
+| release | shipped | why |
+|---|---|---|
+| `v0.5.0` | a `zig build bench` that does not compile | tagged before the build was looked at |
+| `v0.5.1` | a CHANGELOG paragraph that was false | tagged before the paragraph was audited |
+
+`v0.5.1` is otherwise sound — 416/416 on three operating systems, the gate green
+on the tag's own run — because for everything *else* there had been a review
+before the tag. The defect is not "the tag was wrong", it is "the tag was taken
+before anyone looked". So the review is a step **of the release**, before the
+photo, and a release is not ready until it has happened. It has no name in the
+build system because nothing automatable can stand in for it: `on.push.tags`
+fires after the tag exists, which is detection, not prevention.
+
+What that review has to include, learned the hard way: the changelog against
+`git ls-remote --tags origin`, the build steps, and the claims in the docs. Not
+the tests — CI does the tests, and it does them after the tag too. The things CI
+cannot do are the ones where the artifact lies about itself.
+
+**A tag is a photograph.** A correction committed after it does not reach the
+photograph; that is what a tag *is*. The cost is paid with the next release
+**that has to exist for some other reason** — not with a release manufactured
+for a changelog, which is the churn the note above calls churn. `v0.5.1` is
+frozen at `22df684` with the stale paragraph inside it, and that stays true
+until something else needs a version. Writing the correction on top is all that
+can be done without rewriting published history, and it is enough: a reader of
+`CHANGELOG.md` on `main` is told the snapshot differs.
+
 **Push `main` first, and the tag only once the run for that SHA is green.** The
 order is not stylistic and it is not a deadlock: CI only runs on what is on the
 remote, so a commit that is not pushed has no run to wait for. Concretely —
@@ -345,8 +393,10 @@ whose CI was red at the time and green-looking later on a different SHA.
 `fuzz`, `stark-example` and both wasm smokes. That trigger is **detection, not
 prevention**: the tag already exists publicly by the time the run starts. The
 rule above is the prevention; the trigger makes a violation visible instead of
-silent. It is also unproven until a real tag has been pushed and seen to go
-green -- treat the first one as the gate's own test run, and read it.
+silent. That trigger is now proven — `v0.5.1` was the first tag push in this
+repository, and its run went green on all three operating systems at 416/416
+each. It is still detection, not prevention: that run is why we know the gate
+works, and it is not why the tag was correct.
 
 **The remote is the owner's.** `main` and the tag namespace are pushed by a
 person, not by an agent in a working tree. Do not push. Hand over the commit
