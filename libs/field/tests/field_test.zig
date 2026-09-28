@@ -80,6 +80,44 @@ fn testRoots(comptime F: type) !void {
     }
 }
 
+test "public hash() is reachable and is a stable, input-dependent digest" {
+    // Four public `hash` bodies had never been analysed by the compiler:
+    // `wrapping_mul` is not a method on u64 -- Zig's wrapping arithmetic is the
+    // `*%` operator -- and nothing called `hash`, so 421 green tests never looked
+    // at it. A test that does nothing but call them is what turns them from code
+    // nobody has read into code that runs.
+    //
+    // **No expected digest is asserted, on purpose.** A literal produced by this
+    // implementation would be a self-generated known-answer vector, which is the
+    // one thing that must never look like provenance. What is asserted here is
+    // the reachability claim and the two properties a map key needs: stable, and
+    // not constant. That the FNV-1a result has any particular value is *not*
+    // claimed, and pinning it would make the test pass for a wrong constant.
+    try std.testing.expect(zf.M31.fromInt(1).hash() != zf.M31.fromInt(2).hash());
+    try std.testing.expectEqual(zf.M31.fromInt(7).hash(), zf.M31.fromInt(7).hash());
+    try std.testing.expect(zf.BLS12_381_Fp.fromInt(1).hash() != zf.BLS12_381_Fp.fromInt(2).hash());
+    try std.testing.expect(zf.Goldilocks.fromInt(1).hash() != zf.Goldilocks.fromInt(2).hash());
+
+    // The extension towers carry their own copies of the same function, and the
+    // cubic one is not instantiated anywhere as a predefined -- which is part of
+    // why it was never analysed. Instantiate it here to reach the body.
+    // `zf.BLS12_381_Fp2` is *not* used here: lib.zig:31 re-exports
+    // `predef.BLS12_381_Fp2`, which that file does not define. Same family as
+    // the four bodies -- declared surface, never reached -- except this one
+    // fails loudly. Reported, not fixed: which non-residue BLS12-381's Fp2
+    // should use is a design decision, not a patch.
+    const Sq = zf.BN254_Fp2;
+    try std.testing.expect(Sq.fromInt(1).hash() != Sq.fromInt(2).hash());
+    try std.testing.expectEqual(Sq.fromInt(5).hash(), Sq.fromInt(5).hash());
+    // A cubic tower over a 381-bit prime needs heavy comptime work, which is
+    // why no predefined instantiates one. The quota is the one AGENTS.md
+    // prescribes for exactly this case.
+    @setEvalBranchQuota(100_000_000);
+    const Cb = zf.CubicExtension(zf.BLS12_381_Fp, zf.BLS12_381_Fp.fromInt(2));
+    try std.testing.expect(Cb.fromInt(1).hash() != Cb.fromInt(2).hash());
+    try std.testing.expectEqual(Cb.fromInt(5).hash(), Cb.fromInt(5).hash());
+}
+
 test "M31 arithmetic" {
     try testFieldArithmetic(zf.M31);
 }

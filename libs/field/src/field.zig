@@ -660,7 +660,7 @@ fn SmallField(comptime modulus: comptime_int) type {
             var v = self.value;
             for (0..8) |_| {
                 hash_val ^= v & 0xFF;
-                hash_val = hash_val.wrapping_mul(1099511628211);
+                hash_val *%= 1099511628211;
                 v >>= 8;
             }
             return hash_val;
@@ -1365,7 +1365,7 @@ fn BigField(comptime modulus: comptime_int) type {
                 var v = limb;
                 for (0..8) |_| {
                     hash_val ^= v & 0xFF;
-                    hash_val = hash_val.wrapping_mul(1099511628211);
+                    hash_val *%= 1099511628211;
                     v >>= 8;
                 }
             }

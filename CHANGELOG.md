@@ -59,6 +59,31 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Four public `hash` methods did not compile.** `field.zig:663,1368` and
+  `extension.zig:227,644` called `hash_val.wrapping_mul(...)` on a `u64`. Zig's
+  wrapping arithmetic is the `*%` operator, not a method, so the bodies were
+  hard errors the moment anything reached them. Nothing did: `rg '\.hash\('`
+  across `libs/` and `examples/` returns zero, and Zig only analyses reachable
+  code, so a suite of 421 green tests had never looked at these four.
+
+  The two extension copies carried a **second** error the review did not report:
+  `hash_val ^= v & 0xFF` with `v` a `u512`, which is `expected type 'u64', found
+  'u512'`. Fixed with an explicit `@truncate` to a `u64` byte plus `*%`.
+
+  **No expected digest is asserted, on purpose.** A literal produced by this
+  implementation would be a self-generated known-answer vector wearing the
+  appearance of one. The test asserts the reachability claim and the two
+  properties a map key needs — stable, and not constant — and says plainly that
+  it does not claim the FNV-1a result has any particular value.
+
+- **A public re-export that names nothing: `lib.zig:31`** re-exports
+  `predef.BLS12_381_Fp2`, which `predef/bls12_381.zig` does not define. Same
+  family as the four bodies — declared surface nobody reaches — except this one
+  fails loudly, on `zig-field.BLS12_381_Fp2`. **Not fixed here:** which
+  non-residue BLS12-381's `Fp2` should use is a design decision, not a patch.
+
 ### Security
 
 - **Named in the title, because the name was doing work the code cannot

@@ -223,8 +223,13 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
             for (0..2) |i| {
                 var v = if (i == 0) self.c0.toU512() else self.c1.toU512();
                 for (0..8) |_| {
-                    hash_val ^= v & 0xFF;
-                    hash_val = hash_val.wrapping_mul(1099511628211);
+                    // `v` is a u512 here, so the byte has to be narrowed before
+                    // it meets the u64 accumulator -- and the multiply is `*%`,
+                    // because Zig's wrapping arithmetic is an operator, not a
+                    // method on u64.
+                    const byte: u64 = @truncate(v);
+                    hash_val ^= byte & 0xFF;
+                    hash_val *%= 1099511628211;
                     v >>= 8;
                 }
             }
@@ -640,8 +645,13 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
             for (0..3) |i| {
                 var v = if (i == 0) self.c0.toU512() else if (i == 1) self.c1.toU512() else self.c2.toU512();
                 for (0..8) |_| {
-                    hash_val ^= v & 0xFF;
-                    hash_val = hash_val.wrapping_mul(1099511628211);
+                    // `v` is a u512 here, so the byte has to be narrowed before
+                    // it meets the u64 accumulator -- and the multiply is `*%`,
+                    // because Zig's wrapping arithmetic is an operator, not a
+                    // method on u64.
+                    const byte: u64 = @truncate(v);
+                    hash_val ^= byte & 0xFF;
+                    hash_val *%= 1099511628211;
                     v >>= 8;
                 }
             }

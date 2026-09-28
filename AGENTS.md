@@ -273,7 +273,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (421 total vs. 535 summed over all per-library steps).
+tests only (421 total vs. 536 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -363,9 +363,9 @@ caller input can influence.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
 - Counts (Zig 0.16.0, verified): root `zig build test` = 421; per-library
-  `zig build test` totals sum to 535 (field and curve include the `tests/`
+  `zig build test` totals sum to 536 (field and curve include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 5,
-  bigint 20, binary-field 96, curve 98, field 83, fri 25, hash 19, kzg 6,
+  bigint 20, binary-field 96, curve 98, field 84, fri 25, hash 19, kzg 6,
   linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 - Re-derive a count by running the suite and reading the runner's own summary
