@@ -41,6 +41,94 @@ const libs_with_example = [_][:0]const u8{
 /// about cross-compilation.
 var cross_step: ?*std.Build.Step = null;
 
+/// Files under a library's `tests/` directory that are **not** test binaries.
+///
+/// Everything else in `libs/*/tests/` is wired into `test_step` by
+/// `wire_tests_roots`, so a newly added test file runs by default. The
+/// exemption list exists only for sources that live in `tests/` but are driven
+/// by another step; the default is deliberately "it runs" rather than "it is
+/// quietly skipped", because the alternative is the blindness this function
+/// exists to close.
+const non_test_sources = [_][2][]const u8{
+    .{ "field", "benchmark.zig" },
+    .{ "field", "fuzz.zig" },
+};
+
+/// Wire every `tests/*.zig` of a library into `test_step`.
+///
+/// **The root step used to run only the inline `src/` tests, so CI opened zero
+/// files under `libs/*/tests/`.** Two P0 findings came out of that directory in
+/// one round -- four public `hash` methods that did not compile, and
+/// `Montgomery`'s wrong inverse for any modulus with zero headroom -- and the
+/// gate that reported 421/421 green never opened either test.
+///
+/// `build.zig:45` already said the step "actually executes the tests", which
+/// resolved *actually executes* without resolving *which tests*. This closes
+/// the second half. The test roots are given exactly one import, their own
+/// library module, which is what every one of them uses.
+fn wire_tests_roots(
+    b: *std.Build,
+    test_step: *std.Build.Step,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    comptime module_name: []const u8,
+    root_source: []const u8,
+    mod: *std.Build.Module,
+) void {
+    // `libs/field/src/lib.zig` -> `libs/field`
+    const src_dir = std.fs.path.dirname(root_source) orelse return;
+    const lib_dir = std.fs.path.dirname(src_dir) orelse return;
+
+    const io = b.graph.io;
+    // Iterate the `tests/` directory itself, not the library directory: the
+    // latter also holds `build.zig`, and a build script is not a test root.
+    const tests_dir = std.fs.path.join(b.allocator, &.{ lib_dir, "tests" }) catch |err| {
+        std.debug.panic("cannot build the tests path for {s}: {s}", .{ lib_dir, @errorName(err) });
+    };
+    // A library without a `tests/` directory is the normal case, so that one
+    // error returns quietly. Anything else means the directory exists and
+    // cannot be read, which is a build problem and must not be swallowed.
+    var dir = std.Io.Dir.cwd().openDir(io, tests_dir, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => std.debug.panic("cannot read {s}: {s}", .{ tests_dir, @errorName(err) }),
+    };
+    defer dir.close(io);
+
+    var it = dir.iterate();
+    while (it.next(io) catch |err| {
+        std.debug.panic("cannot iterate {s}: {s}", .{ tests_dir, @errorName(err) });
+    }) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".zig")) continue;
+        var exempt = false;
+        for (non_test_sources) |pair| {
+            if (std.mem.eql(u8, pair[0], std.fs.path.basename(lib_dir)) and
+                std.mem.eql(u8, pair[1], entry.name))
+            {
+                exempt = true;
+                break;
+            }
+        }
+        if (exempt) continue;
+
+        const root = std.fs.path.join(b.allocator, &.{ lib_dir, "tests", entry.name }) catch |err| {
+            std.debug.panic("cannot build a path for {s}: {s}", .{ entry.name, @errorName(err) });
+        };
+        const stem = entry.name[0 .. entry.name.len - ".zig".len];
+        const tm = b.createModule(.{
+            .root_source_file = b.path(root),
+            .target = target,
+            .optimize = optimize,
+        });
+        tm.addImport(module_name, mod);
+        const tb = b.addTest(.{
+            .name = b.fmt("{s}-{s}-tests", .{ module_name, stem }),
+            .root_module = tm,
+        });
+        test_step.dependOn(&b.addRunArtifact(tb).step);
+    }
+}
+
 /// Create the module for a library, register its unit-test binary, and wire a
 /// run step into `test_step` so `zig build test` actually executes the tests
 /// (not merely compiles them).
@@ -77,6 +165,7 @@ fn lib(
     });
     const run_tests = b.addRunArtifact(tests);
     test_step.dependOn(&run_tests.step);
+    wire_tests_roots(b, test_step, target, optimize, module_name, root_source, mod);
     var has_example = false;
     for (libs_with_example) |name| {
         if (std.mem.eql(u8, name, module_name)) has_example = true;

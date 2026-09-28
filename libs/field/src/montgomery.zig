@@ -72,6 +72,9 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
             break :blk out;
         };
 
+        /// `(p + 1) / 2`, the half-modulus used by `halveMod`.
+        pub const HALF_P_PLUS_ONE: [n]u64 = bigint.intToLimbs(n, (modulus + 1) / 2);
+
         /// The zero element (also Montgomery form of zero).
         pub const ZERO_LIMBS: [n]u64 = [_]u64{0} ** n;
 
@@ -271,14 +274,35 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
         // Montgomery inverse (binary extended GCD)
         // ============================================================
 
-        /// `x += p` (single addition; result < 2p).
-        fn addP(x: *[n]u64) void {
-            var carry: u64 = 0;
-            for (0..n) |i| {
-                const z = @as(u128, x[i]) + @as(u128, MODULUS_LIMBS[i]) + carry;
-                x[i] = @truncate(z);
-                carry = @truncate(z >> 64);
-            }
+        /// `x / 2 mod p`, for `x` in `[0, p)`. Correct for every `x`, odd or even.
+        ///
+        /// This replaces `addP`, which computed `x += p` in place over `[n]u64`
+        /// and **discarded the carry** -- so it computed `(x + p) mod 2^(64n)`
+        /// rather than `x + p`. For a modulus whose bit length is `64 * n` the
+        /// container is exactly full, the headroom is zero, and the addition
+        /// goes wrong whenever `x + p >= 2^(64n)`, i.e. whenever
+        /// `x >= 2^(64n) - p`. For secp256k1 that threshold is `2^32 + 977`,
+        /// which the loop invariant `x in [0, p)` does not exclude, so nearly
+        /// every `x` triggered it. The discarded carry is not a multiple of `p`
+        /// (`2^256 mod p = 2^32 + 977`), so the error did not cancel; the
+        /// following shift halved it and the loop produced a wrong inverse with
+        /// every invariant intact.
+        ///
+        /// **Halving first removes the overflow by construction.** `x >> 1` and
+        /// `(p + 1) / 2` are each below `2^(64n - 1)`, so their sum is below
+        /// `2^(64n)` and cannot carry out of the container at all. For odd `x`
+        /// the identity is exact over the integers:
+        ///
+        ///     (x + p) / 2  ==  (x >> 1) + (p + 1) / 2
+        ///
+        /// and the result is already in `[0, p)`, so `add`'s conditional
+        /// reduction is a no-op here. It stays constant-time: the only
+        /// condition is a bit of the input, and the addition is the existing
+        /// constant-time `add`.
+        fn halveMod(x: *[n]u64) void {
+            const odd = x[0] & 1;
+            ctShr(x, x);
+            if (odd == 1) x.* = add(x.*, HALF_P_PLUS_ONE);
         }
 
         /// Binary extended GCD inverse of `a` (canonical, `[0, p)`), returning
@@ -305,24 +329,20 @@ pub fn Montgomery(comptime modulus: comptime_int) type {
                 if (u[0] & 1 == 0) {
                     ctShr(&u, &u);
                     // x1 = x1 / 2 mod p: if odd, (x1 + p) / 2 (exact since p odd)
-                    if (x1[0] & 1 == 1) addP(&x1);
-                    ctShr(&x1, &x1);
+                    halveMod(&x1);
                 } else if (v[0] & 1 == 0) {
                     ctShr(&v, &v);
-                    if (x2[0] & 1 == 1) addP(&x2);
-                    ctShr(&x2, &x2);
+                    halveMod(&x2);
                 } else if (ctLimbsCmpGt(&u, &v)) {
                     u = sub(u, v);
                     ctShr(&u, &u);
                     x1 = sub(x1, x2);
-                    if (x1[0] & 1 == 1) addP(&x1);
-                    ctShr(&x1, &x1);
+                    halveMod(&x1);
                 } else {
                     v = sub(v, u);
                     ctShr(&v, &v);
                     x2 = sub(x2, x1);
-                    if (x2[0] & 1 == 1) addP(&x2);
-                    ctShr(&x2, &x2);
+                    halveMod(&x2);
                 }
             }
             return x1;

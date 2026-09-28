@@ -257,8 +257,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (423 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 423 tests, seconds
+zig build test        # Run all library tests (541 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 541 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -273,27 +273,20 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (423 total vs. 541 summed over all per-library steps).
+tests only (541 total, and the per-library sum is 541: **the root step now runs the `tests/` roots too**).
 
-> **How the aggregate is derived**, because getting it wrong is how the
-> previous figures drifted: the root step compiles each library's inline
-> `src/` tests only, so it runs `zig-field-tests` (13) and `zig-curve-tests`
-> (54) and **skips their `tests/` roots entirely**. The per-library sum is
-> therefore `root + field's tests/ + curve's tests/`, counted one line per
-> test binary, **including a binary that fails** and **including
-> `ext_quick`**:
+> **How the count is derived**, because getting it wrong is how the previous
+> figures drifted: since the gate fix, `zig build test` compiles **all 27 test
+> binaries** -- the 17 library `src/` roots plus the 10 files under
+> `libs/field/tests/` and `libs/curve/tests/` -- so the root total and the
+> per-library sum are the **same number** and there is no aggregate to
+> reconcile. Before that they were not: the gap was 118 tests in `field` and
+> `curve` that the gate never opened, which is how a P0 in `Montgomery` sat in
+> `main` behind an 11/11 green run.
 >
-> ```
-> libs/field  extension 10 + ext_quick 2 + field_test 49 + ipa 2 + merkle 4
->             + simd 7 + inline 13                                  = 87
-> libs/curve  bls12_381 7 + bn254 7 + hash_to_curve 16 + pasta 14
->             + inline 54                                          = 98
-> aggregate   423 + (87 - 13) + (98 - 54) = 423 + 74 + 44           = 541
-> ```
->
-> Derive it that way or measure it; **do not carry it forward**, and do not
-> add deltas to a figure you have not re-derived. An earlier pass did
-> exactly that and compounded a stale number twice.
+> Measure it; do not carry it forward, and do not add deltas to a figure you have
+> not re-derived. An earlier pass did exactly that and compounded a stale number
+> twice.
 
 
 ## Code Conventions
@@ -383,9 +376,9 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 423; per-library
-  `zig build test` totals sum to 541 (field and curve include the `tests/`
-  roots the root step skips). Per-library totals: algebra-traits 5,
+- Counts (Zig 0.16.0, verified): root `zig build test` = 541; per-library
+  `zig build test` totals sum to 541, which now **equals** the root total because the
+  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 5,
   bigint 20, binary-field 97, curve 98, field 87, fri 25, hash 19, kzg 6,
   linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25,
   serialization 15, transcript 11.

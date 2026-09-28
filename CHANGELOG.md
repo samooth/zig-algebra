@@ -130,6 +130,33 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Fixed
 
+- **`Montgomery`'s binary-GCD inverse is correct for every modulus, including
+  zero-headroom ones.** `addP` computed `x + p` in place over `[n]u64` and
+  discarded the carry, so it computed `(x + p) mod 2^(64n)`. **There is no
+  release in which this was correct:** `addP` is byte-for-byte identical since
+  `86605a1`, the first commit of this repository, and
+  `git diff 22df684 a22dbd9 -- libs/field/src/montgomery.zig` is empty, so
+  `v0.5.1` and `v0.5.2` shipped identical code. See ZA-2026-004.
+
+  The step is now `halveMod`, which halves **first**: `x >> 1` and
+  `(p + 1) / 2` are each below `2^(64n - 1)`, so the sum cannot carry out of the
+  container, and for odd `x` the identity `(x + p) / 2 == (x >> 1) + (p + 1) / 2`
+  is exact over the integers. The overflow is gone **by construction** rather
+  than detected, and the step stays constant-time.
+
+  Measured, and the differential is what makes it credible -- the two moduli
+  that were already correct are the control:
+
+  ```
+  before   secp256k1 (256-bit p, headroom 0):  0 correct, 16 WRONG
+           BN254     (254-bit p, headroom 2): 16 correct,  0 wrong
+           BLS12-381 (255-bit p, headroom 1): 16 correct,  0 wrong
+  after    all three:                          16 correct,  0 wrong
+  ```
+
+  Reverting `halveMod` to the old order makes `zig build test` red again, **and
+  the gate sees it** -- which it could not before the previous commit.
+
 - **Four public `hash` methods did not compile.** `field.zig:663,1368` and
   `extension.zig:227,644` called `hash_val.wrapping_mul(...)` on a `u64`. Zig's
   wrapping arithmetic is the `*%` operator, not a method, so the bodies were
