@@ -88,10 +88,10 @@ because they were written before the instrument existed.
 | 11 | Every module that is built **in any target** is also type-checked there | `build.zig` — `cross_register`, `libs_with_example` | `zig build cross-check` compiles the eight example executables for both foreign targets, 16 artefacts, and CI runs the same step | `libs/rng/src/main.zig:44` carried a `std.debug.assert` for the whole life of the repository because no CI job compiled that file. **This row was unsatisfied when the table was written and was closed by deleting code rather than adding a gate** — see the audit |
 | 12 | A document asserts a **sequence**, not a state | `AGENTS.md` §0 | — | "the hash was broken" expires when the state moves. It was wrong twice in opposite directions: `v0.5.0` was "published" and had not been, then `v0.5.1` was "not published" and had |
 | 13 | The audit happens before the tag, not after | `AGENTS.md`, "Releasing: the tag is the gate" | `v0.5.2` shipped with the fix in it; `v0.5.1` shipped a false CHANGELOG paragraph because the tag was taken before anyone read it | Tagging first, which is the natural order and the wrong one. A tag is a photograph; a later correction does not reach it |
-| 17 | A rejection is **distinguishable** from a value | **Not satisfied** — and the failure is *open*, which is worse than a missing check | Nothing. The sites are `bn254_tower.zig:171` (`millerLoop`), `:442` (`pairingSparse`), `:450` (`pairingDense`); `pairing:431` delegates to the first two | A guard that rejects by returning `Fp12T.one()` hands the caller a well-formed value with no meaning. The signature is `Fp12T`, not `!Fp12T`, so the failure mode is in the type. A consumer that pairs a `q` outside the prime-order subgroup gets the identity and **no indication**, and cannot tell it from a `q` whose pairing genuinely is the identity |
+| 17 | A rejection is **distinguishable** from a value | **Satisfied** — the four totals still fail open, and each one now says so | `bn254_tower: an off-subgroup G2 point is reported by all four checked halves and hidden by all four totals` | Found **not satisfied**, and the failure was *open*, which is worse than a missing check: three sites rejected by returning `Fp12T.one()` from a signature declared `Fp12T`, so the failure mode was in the type. Closed additively — `millerLoopChecked`, `pairingChecked`, `pairingSparseChecked`, `pairingDenseChecked`, each `error{G1NotInSubgroup, G2NotInSubgroup}!Fp12T`, no total signature changed. The totals keep failing open by design, with the loss (an identity indistinguishable from a legitimate one) in each doc comment, and each names its checked half |
 | 14 | A transcript challenge is a function of the transcript state | **Not satisfiable as written, and that is the finding** — see `SECURITY.md`, "The transcript's challenge derivation is not verifiable today" | No instrument exists, and none can: the derivation implements no published specification, so there is no external vector to compare against | Adding 1 to the first byte of the finalised digest changes every challenge and all 10 tests pass. The ten tests are properties any deterministic function satisfies, a counter included. Closing this means matching the construction to a published transcript and adopting its vectors — a design decision, not a test |
 | 15 | Who consumes a new capability, and how they learn it has not diverged, is decided **before** it is written | `AGENTS.md` §0 | The circular-domain work has not started; this row is why | Writing the code and then asking who wants it. That is how `binary-field` diverged from its fork for three releases, and the interoperability bug in the Merkle leaf hashing was invisible from both sides because a round trip is self-consistent |
-| 16 | Every input guard is exercised by a test that would fail without it | **Not satisfied** — see the mutation log | Missing for: `kzg/src/root.zig:166-167` (on-curve, subgroup), `merkle/src/merkle_tree.zig:26` (`validPathIndex`), `bigint/src/gcd.zig:83` (negative modulus), `algebra-traits/src/root.zig:92` (invert zero) | Disabling any of those guards leaves every test green. **None of them is wrong** — they are untested, and a guard nobody exercises is a claim nothing can falsify. Correctness and coverage are separate findings and conflating them is its own error. `kzg` is the sharpest: **two** consecutive `return false` guards, six tests, and both are dead code |
+| 16 | Every input guard is exercised by a test that would fail without it | **Partially satisfied** — see the mutation log | Exercised now: `merkle/src/merkle_tree.zig:26`, `bigint/src/gcd.zig:83`, `algebra-traits/src/root.zig:92`, `bn254_tower.zig` checked halves. Still not: `kzg/src/root.zig:166-167` (on-curve, subgroup) | Disabling the two `kzg` guards leaves every test green. **None of them is wrong** — they are untested, and a guard nobody exercises is a claim nothing can falsify. Correctness and coverage are separate findings and conflating them is its own error. `kzg` is the sharpest: **two** consecutive `return false` guards, six tests, and both are dead code. Note the contrast with requirement 17: the `bn254_tower` guards looked the same but were *live* and failed open — which is why "untested" is not a single finding |
 
 ## Mutations watched failing
 
@@ -108,6 +108,7 @@ was produced by breaking working code on purpose and reading the failure.
 | `serialization` flag guard `1` → `2` | `serialization` tests | 1 test fails |
 | `ntt` non-power-of-two guard removed | `ntt` tests | 1 test fails |
 | `linalg` `NotSquare` `!=` → `>` | `linalg` tests | 1 test fails |
+| **G2 subgroup guard removed from `pairingSparseChecked`** | **caught — `bn254_tower: an off-subgroup G2 point is reported by all four checked halves and hidden by all four totals` fails at `bn254_tower.zig:625`** |
 | **`kzg` on-curve guard disabled** | **nothing — 6/6 pass, and it is *dead code*** |
 | **`kzg` subgroup guard disabled** | **nothing — 6/6 pass, and it has *no reachable witness*** |
 | **`merkle` `validPathIndex` `<` → `<=`** | `merkle: a path index at or past the leaf count is rejected` |
@@ -140,17 +141,17 @@ where a rewrite would buy something and where it would not.
 | `field` | 83 | **unknown** | **yes** — `add` reduction | no |
 | `binary-field` | 96 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 25 | **unknown** | **yes** — torus generator | no |
-| `pairing` | 57 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
+| `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
-| `merkle` | 18 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
-| `bigint` | 19 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `bigint` | 20 | **unknown** | **yes** — negative-modulus guard removed, caught | no |
 | `transcript` | 10 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
 | `kzg` | 6 | **unknown** | **survived** — guard mutated, nothing noticed | no |
-| `algebra-traits` | 4 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `algebra-traits` | 5 | **unknown** | **yes** — `invChecked` zero guard removed, caught | no |
 | `parallel` | 2 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 
 ### What the table says

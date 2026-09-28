@@ -105,6 +105,35 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   and adopt its vectors, or record the reproducibility of the challenges as an
   accepted assumption. `SECURITY.md` carries the detail.
 
+- **Added: the four checked halves for the subgroup condition, additively.**
+  `millerLoopChecked`, `pairingChecked`, `pairingSparseChecked` and
+  `pairingDenseChecked`, each `error{G1NotInSubgroup, G2NotInSubgroup}!Fp12T`.
+  **No total signature changed** — `kzg`, `bench` and the tower module call the
+  totals and are untouched. The two errors are separate so a caller can tell
+  which side failed, where the original combined `or` could not.
+
+  The shape is the repository's own: `millerLoopPair` /
+  `millerLoopPairChecked` twenty-five lines from `millerLoop`, and `inv` /
+  `invChecked`. The four totals keep failing open and each doc comment now
+  names its checked half and states the loss: for an invalid input it returns
+  `Fp12T.one()`, and **that identity is indistinguishable** from a legitimate
+  pairing that is the identity. That is the reason the checked half exists, and
+  it is written down rather than implied.
+
+  The G2 side is witnessed now, which it was not before. BN254's G2 cofactor is
+  not 1, so a test builds an on-curve `q` outside the prime-order subgroup,
+  confirms it with library code (`isOnCurve`, `!isG2InSubgroup`,
+  `!q.scalarMul(r).infinity`), and requires all four checked halves to return
+  `error.G2NotInSubgroup` while all four totals return the identity. The
+  positive comes first in the same test — an in-subgroup pair must pair to
+  something that is not the identity, or the negative would mean nothing.
+  Removing the G2 guard from `pairingSparseChecked` makes that test fail.
+
+  Requirement 17 moves from not satisfied to satisfied. The test that pinned
+  the old behaviour was named "rejects off-curve pairing inputs" while its body
+  asserted the identity; it is renamed to what it does, and now also asserts
+  `error.G1NotInSubgroup`.
+
 - **Named, because it is a fail-open and not a missing check: off-subgroup
   pairing inputs return the identity.** `bn254_tower.millerLoop`,
   `pairingSparse` and `pairingDense` each begin with
@@ -221,7 +250,7 @@ stored data does not carry forward), `merkle` 0.1.2 → 0.1.3, `binary-field`
   **83** tests, not 85. Verified by running the suite at `72a4343`, the commit
   that introduced the figures -- the runner already disagreed there, so nothing
   was ever lost, only misreported. Corrected in place rather than left to
-  propagate again. The current figures (root 417, per-library 531) are in
+  propagate again. The current figures (root 421, per-library 535) are in
   AGENTS.md.
 
 ## [v0.5.0] — 2026-09-27
@@ -552,7 +581,7 @@ sign-inversion bug that only a prime field could expose.
   `zig build test` steps sum to **505**, up from 470, because `field` (83) and
   `curve` (98) also compile their separate `tests/` roots. Per-library totals:
   algebra-traits 4, bigint 19, binary-field 84, curve 98, field 83, fri 12,
-  hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28,
+  hash 18, kzg 6, linalg 11, merkle 18, ntt 15, pairing 58, parallel 2, poly 28,
   rng 25, serialization 15, transcript 10. (This entry originally claimed 507
   and `field` 85; the runner reported 505 and 83 at this commit. See
   "Corrections" under Unreleased.) The new tests are the negative cases

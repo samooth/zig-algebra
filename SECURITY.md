@@ -104,19 +104,37 @@ exists — a `std.debug.assert` was compiled out in `ReleaseFast`, where an
 infinity input produced a garbage `Fp12T`. **The three sites above have the total
 half and no checked half for the subgroup condition.** The in-policy remedy is
 therefore a `Checked` counterpart, which is additive and matches `inv` /
-`invChecked` and `millerLoopPair` / `millerLoopPairChecked`. It is not applied
-here: adding public API, or changing a signature that `kzg`, `bench` and the
-tower module all call, is a contract change and it belongs in its own commit
-with its own review, per the audit-before-design rule in `AGENTS.md`.
+`invChecked` and `millerLoopPair` / `millerLoopPairChecked`. **It is applied,
+additively:** `millerLoopChecked`, `pairingChecked`, `pairingSparseChecked` and
+`pairingDenseChecked` now exist, each `error{G1NotInSubgroup,
+G2NotInSubgroup}!Fp12T`, and **no total signature changed** — `kzg`, `bench` and
+the tower module are untouched. The two errors are separate rather than combined
+so a caller can tell which side failed.
+
+The four totals keep failing open, and each says so in its doc comment: it
+returns `Fp12T.one()` for an invalid input, and **that identity is
+indistinguishable** from a legitimate pairing that is the identity. That is the
+reason the checked half exists, and it is written down rather than implied.
+
+**The G2 side is now witnessed.** BN254's G2 cofactor is not 1, so the
+prime-order subgroup is a vanishing fraction of the twist; a test builds an
+on-curve `q` that is outside it, confirms with library code
+(`isOnCurve`, `!isG2InSubgroup`, `!q.scalarMul(r).infinity`) that it is a
+witness, and then requires all four checked halves to return
+`error.G2NotInSubgroup` while all four totals return the identity. The positive
+comes first in the same test: an in-subgroup pair must pair to something that
+is not the identity, or the negative would mean nothing. Removing the G2 guard
+from `pairingSparseChecked` makes the test fail, so the checked half is not
+decorative.
 
 Two bounds on the claim, so nobody reads more into it than is measured. The G1
 side reduces to `isOnCurve()` for this curve, so a G1 input outside the subgroup
 is also off-curve and the existing "rejects off-curve pairing inputs" test does
-cover it. The G2 side does real work in principle, since BN254's G2 cofactor is
-not 1 — **but no point outside the G2 prime-order subgroup is constructed
-anywhere in this tree, so its reachability is not verified here.** What is
-verified is the type-level consequence, which does not depend on reachability:
-the signature admits no way to signal the condition.
+cover it, and its own test now also asserts `error.G1NotInSubgroup` from
+`pairingChecked`. The G2 side is the one that mattered: its reachability was
+previously unverified, and it is now witnessed by a constructed point. What
+remains type-level is that the four **totals** still admit no way to signal the
+condition, by design and with the loss written in each doc comment.
 
 ## The transcript's challenge derivation is not verifiable today
 
@@ -275,7 +293,7 @@ zig build stark
 Both test modes passed **417/417 tests** (354/354 at the time of the
 ZA-2026-001 fix), and the STARK demo (Fibonacci over Goldilocks) accepted the
 honest proof while rejecting a tampered proof. The FRI tests also pass through
-the standalone `libs/fri` build. The per-library steps sum to **531**.
+the standalone `libs/fri` build. The per-library steps sum to **531** at that release.
 
 > History: when the fix above landed, the same commands reported 297/297
 > tests — that was the suite size at the time, not a different result. The

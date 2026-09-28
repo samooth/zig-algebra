@@ -167,8 +167,22 @@ fn ecAdd12(Ap: EmbPoint, Bp: EmbPoint) EmbPoint {
 /// Optimal ate Miller loop returning the exact rational gnum/gden.
 pub const NumDen = struct { num: Fp12T, den: Fp12T };
 
+/// Sparse Miller loop, total variant.
+///
+/// On an input outside the prime-order subgroup this returns `Fp12T.one()`,
+/// and **that identity is indistinguishable** from a legitimate Miller loop that
+/// happens to be the identity. Use `millerLoopChecked` to tell the two apart.
 pub fn millerLoop(p: G1Point, q: G2Point) Fp12T {
-    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
+    return millerLoopChecked(p, q) catch Fp12T.one();
+}
+
+/// # Errors
+/// `error.G1NotInSubgroup` when `p` is outside the prime-order subgroup of G1,
+/// `error.G2NotInSubgroup` when `q` is outside the prime-order subgroup of G2.
+/// The two are separate so a caller can tell which side failed.
+pub fn millerLoopChecked(p: G1Point, q: G2Point) error{ G1NotInSubgroup, G2NotInSubgroup }!Fp12T {
+    if (!isG1InSubgroup(p)) return error.G1NotInSubgroup;
+    if (!isG2InSubgroup(q)) return error.G2NotInSubgroup;
     return millerLoopPair(p, q).num;
 }
 
@@ -428,8 +442,20 @@ pub fn finalExponentiateSplit(f: Fp12T) Fp12T {
 /// exponentiation (~1.8x faster than the dense reference). Cross-checked
 /// against py_ecc KATs (EIP-197) and the independently-verified
 /// `pairingDense` reference.
+///
+/// Total variant: on an input outside the prime-order subgroup this returns
+/// `Fp12T.one()`, and **that identity is indistinguishable** from a legitimate
+/// pairing that is the identity. Use `pairingChecked` to tell the two apart.
 pub fn pairing(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
     return pairingSparse(p, q);
+}
+
+/// # Errors
+/// `error.G1NotInSubgroup` when `p` is outside the prime-order subgroup of G1,
+/// `error.G2NotInSubgroup` when `q` is outside the prime-order subgroup of G2.
+/// The two are separate so a caller can tell which side failed.
+pub fn pairingChecked(p: zc.bn254.G1, q: zc.bn254.G2) error{ G1NotInSubgroup, G2NotInSubgroup }!Fp12T {
+    return pairingSparseChecked(p, q);
 }
 
 /// Sparse twist-side Miller loop (~15 Fp2 muls/step + 1 Fp12 sqr) with
@@ -438,16 +464,44 @@ pub fn pairing(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
 /// and bilinearity (see tests). Root causes of the historical mismatch
 /// were missing Miller squarings in the accumulator plus inverted w-slot
 /// signs on chord lines; both fixed.
+///
+/// Total variant: on an input outside the prime-order subgroup this returns
+/// `Fp12T.one()`, and **that identity is indistinguishable** from a legitimate
+/// pairing that is the identity. Use `pairingSparseChecked` to tell the two
+/// apart.
 pub fn pairingSparse(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
-    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
+    return pairingSparseChecked(p, q) catch Fp12T.one();
+}
+
+/// # Errors
+/// `error.G1NotInSubgroup` when `p` is outside the prime-order subgroup of G1,
+/// `error.G2NotInSubgroup` when `q` is outside the prime-order subgroup of G2.
+/// The two are separate so a caller can tell which side failed.
+pub fn pairingSparseChecked(p: zc.bn254.G1, q: zc.bn254.G2) error{ G1NotInSubgroup, G2NotInSubgroup }!Fp12T {
+    if (!isG1InSubgroup(p)) return error.G1NotInSubgroup;
+    if (!isG2InSubgroup(q)) return error.G2NotInSubgroup;
     return finalExponentiateSplit(millerLoopPair(p, q).num);
 }
 
 /// Dense py_ecc-faithful reference implementation. Slow (dense Fp12 lines
 /// per step) but independently verified bilinear; used in tests to
 /// cross-check `pairing`.
+///
+/// Total variant: on an input outside the prime-order subgroup this returns
+/// `Fp12T.one()`, and **that identity is indistinguishable** from a legitimate
+/// pairing that is the identity. Use `pairingDenseChecked` to tell the two
+/// apart.
 pub fn pairingDense(p: zc.bn254.G1, q: zc.bn254.G2) Fp12T {
-    if (!isG1InSubgroup(p) or !isG2InSubgroup(q)) return Fp12T.one();
+    return pairingDenseChecked(p, q) catch Fp12T.one();
+}
+
+/// # Errors
+/// `error.G1NotInSubgroup` when `p` is outside the prime-order subgroup of G1,
+/// `error.G2NotInSubgroup` when `q` is outside the prime-order subgroup of G2.
+/// The two are separate so a caller can tell which side failed.
+pub fn pairingDenseChecked(p: zc.bn254.G1, q: zc.bn254.G2) error{ G1NotInSubgroup, G2NotInSubgroup }!Fp12T {
+    if (!isG1InSubgroup(p)) return error.G1NotInSubgroup;
+    if (!isG2InSubgroup(q)) return error.G2NotInSubgroup;
     return finalExponentiateSplit(millerDense(p, q));
 }
 
@@ -498,10 +552,86 @@ test "bn254_tower: non-degenerate" {
     try testing.expect(!e.eql(Fp12T.one()));
 }
 
-test "bn254_tower: rejects off-curve pairing inputs" {
+test "bn254_tower: the total pairing fails open to the identity on an off-curve G1 input" {
     const bad_g1 = zc.bn254.G1.generator(Fp.one(), Fp.one());
     try testing.expect(!isG1InSubgroup(bad_g1));
+    // It returns the identity. It does not reject: the value is the point.
     try testing.expect(pairing(bad_g1, zc.bn254.G2_generator).eql(Fp12T.one()));
+    try testing.expectError(error.G1NotInSubgroup, pairingChecked(bad_g1, zc.bn254.G2_generator));
+}
+
+/// Square root in Fp2, for building the off-subgroup witness below.
+///
+/// `zig-field`'s quadratic extension exposes no `sqrt`, and its `c0`/`c1` are
+/// not reachable from this module, so the components come from the public
+/// serialisation: `toBytes` writes c0 then c1, each `Fp.NUM_BYTES` long. The
+/// round trip is asserted, so a wrong assumption about that layout returns null
+/// instead of yielding a silently wrong component.
+///
+/// For z = a + b·v with v² = -1: when z is a square, `a² + b²` has a root
+/// alpha in Fp, and then c² = (a + alpha)/2 with d = b/(2c) satisfies
+/// (c + d·v)² = z. The root is not trusted -- the caller validates the result
+/// with `isOnCurve` and `isG2InSubgroup`, both library code, so a wrong root
+/// cannot pass.
+fn sqrtFp2(z: Fp2) ?Fp2 {
+    const n = Fp.NUM_BYTES;
+    const bytes = z.toBytes();
+    const a = Fp.fromBytes(bytes[0..n]) catch return null;
+    const b = Fp.fromBytes(bytes[n .. 2 * n]) catch return null;
+    if (!Fp2.new(a, b).eql(z)) return null;
+    const alpha = (a.sqr().add(b.sqr())).sqrt() orelse return null;
+    const two_inv = Fp.fromInt(2).inv();
+    const c = (a.add(alpha).mul(two_inv)).sqrt() orelse return null;
+    const d = b.mul(c.mul(Fp.fromInt(2)).inv());
+    const root = Fp2.new(c, d);
+    if (!root.sqr().eql(z)) return null;
+    return root;
+}
+
+test "bn254_tower: an off-subgroup G2 point is reported by all four checked halves and hidden by all four totals" {
+    const g1 = zc.bn254.G1_generator;
+    const g2 = zc.bn254.G2_generator;
+
+    // The positive first, so the negative means something. Same shape as the
+    // Sumcheck tests: a negative is only evidence next to a positive that
+    // would otherwise have succeeded.
+    try testing.expect(isG2InSubgroup(g2));
+    const good = try pairingChecked(g1, g2);
+    try testing.expect(!good.eql(Fp12T.one()));
+
+    // BN254's G2 cofactor is not 1, so the prime-order subgroup is a vanishing
+    // fraction of the twist and a random on-curve point is almost certainly
+    // outside it. Search for one, and let the library decide whether we got it.
+    var witness: ?G2Point = null;
+    var i: u64 = 0;
+    while (i < 64 and witness == null) : (i += 1) {
+        const x = Fp2.new(Fp.fromInt(i), Fp.one());
+        const rhs = x.mul(x).mul(x).add(zc.bn254.G2_b);
+        if (sqrtFp2(rhs)) |y| {
+            const q = G2Point.generator(x, y);
+            if (q.isOnCurve() and !isG2InSubgroup(q)) witness = q;
+        }
+    }
+    try testing.expect(witness != null);
+    const bad_g2 = witness.?;
+
+    // The witness is what it claims to be, checked with library code and not
+    // with the helper that produced it.
+    try testing.expect(bad_g2.isOnCurve());
+    try testing.expect(!isG2InSubgroup(bad_g2));
+    try testing.expect(!bad_g2.scalarMul(SUBGROUP_ORDER).infinity);
+
+    // All four totals fail open to the identity.
+    try testing.expect(millerLoop(g1, bad_g2).eql(Fp12T.one()));
+    try testing.expect(pairing(g1, bad_g2).eql(Fp12T.one()));
+    try testing.expect(pairingSparse(g1, bad_g2).eql(Fp12T.one()));
+    try testing.expect(pairingDense(g1, bad_g2).eql(Fp12T.one()));
+
+    // All four checked halves report it, and name the G2 side.
+    try testing.expectError(error.G2NotInSubgroup, millerLoopChecked(g1, bad_g2));
+    try testing.expectError(error.G2NotInSubgroup, pairingChecked(g1, bad_g2));
+    try testing.expectError(error.G2NotInSubgroup, pairingSparseChecked(g1, bad_g2));
+    try testing.expectError(error.G2NotInSubgroup, pairingDenseChecked(g1, bad_g2));
 }
 
 test "bn254_tower: bilinear small scalars" {

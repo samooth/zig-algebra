@@ -257,8 +257,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (417 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 417 tests, seconds
+zig build test        # Run all library tests (421 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 421 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -273,7 +273,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (417 total vs. 531 summed over all per-library steps).
+tests only (421 total vs. 535 summed over all per-library steps).
 
 ## Code Conventions
 
@@ -362,11 +362,11 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 417; per-library
-  `zig build test` totals sum to 531 (field and curve include the `tests/`
-  roots the root step skips). Per-library totals: algebra-traits 4,
-  bigint 19, binary-field 96, curve 98, field 83, fri 25, hash 19, kzg 6,
-  linalg 11, merkle 18, ntt 15, pairing 57, parallel 2, poly 28, rng 25,
+- Counts (Zig 0.16.0, verified): root `zig build test` = 421; per-library
+  `zig build test` totals sum to 535 (field and curve include the `tests/`
+  roots the root step skips). Per-library totals: algebra-traits 5,
+  bigint 20, binary-field 96, curve 98, field 83, fri 25, hash 19, kzg 6,
+  linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
