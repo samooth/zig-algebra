@@ -328,3 +328,56 @@ test "modInv with a full-width modulus returns an error instead of trapping" {
     try std.testing.expect(G4.modInv(B4.fromU64(2_147_483_647), ofWidth(218)) != error.Overflow);
     try std.testing.expectEqual(error.Overflow, G4.modInv(B4.fromU64(2_147_483_647), ofWidth(255)));
 }
+
+test "modExp: the width threshold is 32*max_limbs, and the base does not move it" {
+    // Measured across three precisions, and with **two** bases on purpose. A
+    // test with only a wide base would pass for the wrong reason: the
+    // mechanism says `b` is squared every iteration and so reaches full width
+    // regardless of where it started, so the narrow base has to give the same
+    // number. If it ever does not, the threshold is not the thing we measured.
+    inline for (.{ 2, 4, 8 }) |L| {
+        const M = modexp.ModExp(L);
+        const B = bigint.BigInt(L);
+        const ofWidth = struct {
+            fn f(comptime B2: type, w: usize) B2 {
+                var limbs = [_]u64{0xFFFF_FFFF_FFFF_FFFF} ** L;
+                var i = w;
+                while (i < 64 * L) : (i += 1) limbs[i / 64] &= ~(@as(u64, 1) << @intCast(i % 64));
+                return B2{ .limbs = limbs, .len = (w + 63) / 64, .negative = false };
+            }
+        }.f;
+
+        var wide_threshold: usize = 0;
+        var narrow_threshold: usize = 0;
+        var w: usize = 1;
+        while (w <= 64 * L) : (w += 1) {
+            const m = ofWidth(B, w);
+            const wide = m.sub(B.one()) catch m;
+            if (M.modExp(wide, B.fromU64(65537), m) != error.InvalidModulusWidth) wide_threshold = w;
+            if (M.modExp(B.fromU64(3), B.fromU64(65537), m) != error.InvalidModulusWidth) narrow_threshold = w;
+        }
+
+        // The threshold is exactly half the container, in bits.
+        try std.testing.expectEqual(@as(usize, 32 * L), wide_threshold);
+        // And the base is irrelevant, which is the mechanism, not a coincidence.
+        try std.testing.expectEqual(wide_threshold, narrow_threshold);
+        // One bit past it is the declared error, and it is the *renamed* one.
+        const at = ofWidth(B, wide_threshold);
+        try std.testing.expectEqual(
+            error.InvalidModulusWidth,
+            M.modExp(B.fromU64(3), B.fromU64(65537), ofWidth(B, wide_threshold + 1)),
+        );
+        // The boundary itself still works.
+        try std.testing.expect(M.modExp(B.fromU64(3), B.fromU64(65537), at) != error.InvalidModulusWidth);
+    }
+}
+
+test "modExp: a plain multiplication still says Overflow, not InvalidModulusWidth" {
+    // The rename is local to the modular exponentiation. `mul` is the door for
+    // all of `bigint` and cannot know a modulus is involved, so raising the
+    // error there would make this lie about a modulus that does not exist.
+    const L: usize = 2;
+    const B = bigint.BigInt(L);
+    const big = B{ .limbs = [_]u64{0xFFFF_FFFF_FFFF_FFFF} ** L, .len = L, .negative = false };
+    try std.testing.expectEqual(error.Overflow, big.mul(big));
+}

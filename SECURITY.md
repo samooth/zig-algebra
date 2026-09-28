@@ -709,6 +709,54 @@ find the other by accident. **Cross-referencing them is left as a known gap in
 this document rather than silently merged**, because merging a silent wrong
 answer into a design discussion would bury it.
 
+## Advisory ZA-2026-005 — `modExp` cannot handle a modulus wider than half the container
+
+**A declared limitation, not a silent corruption. No release in which the
+threshold was documented, and none in which it was not hit.**
+
+`modExp` and `modExpU64` compute `b * b` inside the loop and reduce
+afterwards, so the product's operands are both of at most `len(m)` limbs.
+`BigInt.mul` rejects when `alen + blen > max_limbs` (`bigint.zig:325`), and both
+operands are the same value, so the trigger is `2 * len(m) > max_limbs`.
+
+**Measured, not derived:** the widest modulus that works is exactly
+`bitLength(m) <= 32 * max_limbs`, at `max_limbs` of 2, 4 and 8. The base does
+not move it -- `b` is squared each iteration, so even a base of 3 reaches full
+width within a few steps, and the threshold is set by `m`.
+
+Before this, a modulus above the threshold returned `error.Overflow`, which is
+true and useless: it says a product did not fit without saying the modulus is
+too wide for the operation. It is now `error.InvalidModulusWidth`.
+
+**The rename is at the call site, not in `mul`, on purpose.** `mul` is the door
+for all of `zig-bigint` and cannot know whether a modulus is involved; an error
+raised there would tell a plain `a * b` that its modulus is too wide. The
+trigger is still `mul`'s guard, which is why mutating that guard breaks the
+tests -- one of them at compile time, because `mulMod`'s error set is inferred
+from `mul`'s, and one at run time with a number in the failure.
+
+### Who this reaches
+
+**External, and that is the whole point.** `modExp` is leaf API: no caller in
+this workspace exceeds half the container, so nothing here is affected. The
+exposure is to consumers who pass a wide modulus, and the case to name is
+`PrimalityTest(8)`: for a 512-bit candidate its modulus exceeds the 256-bit
+threshold, so **every candidate fails**, with an error that did not say why.
+
+### How this differs from the `egcd` overflow, and why they are not one advisory
+
+Same module, opposite shapes, and conflating them would misstate both:
+
+- **`egcd`** had `catch unreachable` over an operation that really can fail.
+  Undefined behaviour in `ReleaseFast`; a case that "worked" now fails; and
+  `egcd` returning an error is a **breaking API change**, not in `v0.5.2`.
+- **`modExp`** never worked past the threshold -- it returned `error.Overflow`.
+  Declaring it is **documentation of an existing failure**, and `BigInt`'s
+  inferred error set means **no contract break**.
+
+One was undefined behaviour, the other was a wrong error name. The fix in each
+is to say what is true, and that is the only thing they share.
+
 ## Reporting
 
 Report suspected vulnerabilities privately to the maintainers. Do not disclose

@@ -130,6 +130,37 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Fixed
 
+- **`modExp` and `modExpU64` report `error.InvalidModulusWidth` when the
+  modulus is too wide for the container.** The loop squares `b` every iteration
+  and reduces afterwards, so the product is `b * b` with both factors of at most
+  `len(m)` limbs, and `BigInt.mul` rejects when `alen + blen > max_limbs`
+  (`bigint.zig:325`). **The threshold is a function of the modulus's width, and
+  it is exactly `bitLength(m) <= 32 * max_limbs`** -- measured at `max_limbs` in
+  2, 4 and 8, not derived.
+
+  The base does not move it, and the mechanism is why: `b` is squared every
+  iteration, so even a base of 3 reaches full width within a few steps. The
+  threshold is set by `m`, not by the starting point.
+
+  **This is not the same as the `egcd` overflow, and the two are not
+  counted the same.** `egcd` had `catch unreachable` over an operation that
+  really could fail, so a case that "worked" now fails: that is a **breaking
+  API change**. `modExp` never worked past the threshold -- it returned
+  `error.Overflow` -- so declaring it is **documentation of an existing silent
+  failure, not a contract break**. `BigInt` uses an inferred error set, so
+  adding an error here breaks nothing.
+
+  The rename to `error.InvalidModulusWidth` happens at the call site and not in
+  `mul`, because `mul` is the door for all of `bigint` and cannot know whether
+  a modulus is involved: an error raised there would tell a plain `a * b` that
+  its modulus is too wide. A test asserts that a plain multiplication still
+  says `error.Overflow`.
+
+  **Blast radius is external.** `modExp` is leaf API with no internal caller
+  above half-width, so nothing in this workspace is affected; the exposure is to
+  consumers. `PrimalityTest(8)` is the case to name: its modulus for a 512-bit
+  candidate exceeds the 256-bit threshold, so it fails for every candidate.
+
 - **`ExtendedGcd.egcd` reports `error.Overflow` instead of being undefined
   behaviour.** `egcd` computed `q * r`, `q * s` and `q * t` over
   `catch unreachable`. The intermediate needs up to twice the width of the
