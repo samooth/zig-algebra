@@ -257,8 +257,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (421 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 421 tests, seconds
+zig build test        # Run all library tests (423 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 423 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -273,7 +273,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (421 total vs. 539 summed over all per-library steps).
+tests only (423 total vs. 541 summed over all per-library steps).
 
 > **How the aggregate is derived**, because getting it wrong is how the
 > previous figures drifted: the root step compiles each library's inline
@@ -288,7 +288,7 @@ tests only (421 total vs. 539 summed over all per-library steps).
 >             + simd 7 + inline 13                                  = 87
 > libs/curve  bls12_381 7 + bn254 7 + hash_to_curve 16 + pasta 14
 >             + inline 54                                          = 98
-> aggregate   421 + (87 - 13) + (98 - 54) = 421 + 74 + 44           = 539
+> aggregate   423 + (87 - 13) + (98 - 54) = 423 + 74 + 44           = 541
 > ```
 >
 > Derive it that way or measure it; **do not carry it forward**, and do not
@@ -383,12 +383,12 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 421; per-library
-  `zig build test` totals sum to 539 (field and curve include the `tests/`
+- Counts (Zig 0.16.0, verified): root `zig build test` = 423; per-library
+  `zig build test` totals sum to 541 (field and curve include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 5,
-  bigint 20, binary-field 96, curve 98, field 87, fri 25, hash 19, kzg 6,
+  bigint 20, binary-field 97, curve 98, field 87, fri 25, hash 19, kzg 6,
   linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25,
-  serialization 15, transcript 10.
+  serialization 15, transcript 11.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
   The `field 85` / `507` pair above was wrong when written -- the runner

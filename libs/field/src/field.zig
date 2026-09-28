@@ -206,6 +206,20 @@ fn SmallField(comptime modulus: comptime_int) type {
             return result.value;
         }
 
+        /// Build an element from little-endian bytes, **rejecting** anything
+        /// `>= p`. This is the entry point whose success set is exactly `[0, p)`,
+        /// which is what makes rejection sampling over it exactly uniform.
+        ///
+        /// Takes `[NUM_BYTES]u8` by value rather than a slice, matching
+        /// `zig-binary-field`'s `fromBytesChecked`, so a caller that works for
+        /// both libraries calls one function. `fromBytes` keeps its slice
+        /// signature for source compatibility.
+        pub fn fromBytesChecked(bytes: [NUM_BYTES]u8) error{ValueOutOfRange}!Self {
+            const result = fromBytesCT(bytes);
+            if (!result.valid) return error.ValueOutOfRange;
+            return result.value;
+        }
+
         /// Uniformly random element in `[0, p)`.
         pub fn random(rnd: std.Random) Self {
             while (true) {
@@ -925,6 +939,20 @@ fn BigField(comptime modulus: comptime_int) type {
             var arr: [NUM_BYTES]u8 = undefined;
             for (bytes, 0..) |b, i| arr[i] = b;
             const result = fromBytesCT(arr);
+            if (!result.valid) return error.ValueOutOfRange;
+            return result.value;
+        }
+
+        /// Build an element from little-endian bytes, **rejecting** anything
+        /// `>= p`. This is the entry point whose success set is exactly `[0, p)`,
+        /// which is what makes rejection sampling over it exactly uniform.
+        ///
+        /// Takes `[NUM_BYTES]u8` by value rather than a slice, matching
+        /// `zig-binary-field`'s `fromBytesChecked`, so a caller that works for
+        /// both libraries calls one function. `fromBytes` keeps its slice
+        /// signature for source compatibility.
+        pub fn fromBytesChecked(bytes: [NUM_BYTES]u8) error{ValueOutOfRange}!Self {
+            const result = fromBytesCT(bytes);
             if (!result.valid) return error.ValueOutOfRange;
             return result.value;
         }

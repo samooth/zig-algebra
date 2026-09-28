@@ -65,7 +65,39 @@ fn testFieldArithmetic(comptime F: type) !void {
         // Serialization round-trip.
         const bytes = a.toBytes();
         try std.testing.expect(a.eq(try F.fromBytes(&bytes)));
+
+        // The checked entry point rejects the modulus itself, so its success
+        // set is exactly `[0, p)`. `zig-transcript`'s `challengeFieldChecked`
+        // claims exact uniformity on the strength of this, and the claim is
+        // only as good as this assertion -- so it runs for every field rather
+        // than for one representative of them.
+        const modulus_bytes = modulusBytesOf(F);
+        try std.testing.expectError(error.ValueOutOfRange, F.fromBytesChecked(modulus_bytes));
+        try std.testing.expectError(error.ValueOutOfRange, F.fromBytesChecked(@splat(0xFF)));
+        // Exactly one below the modulus still decodes, and to the right value:
+        // the boundary is inclusive-below, not a blanket rejection.
+        //
+        // `below[0]`, not `below[NUM_BYTES - 1]`: the encodings are
+        // little-endian, and every prime modulus here is odd, so subtracting one
+        // is a borrow-free decrement of the **least** significant byte.
+        // Decrementing the most significant one gives a different number that is
+        // still below the modulus, and the test catches that -- which is the only
+        // reason to write the exact value rather than "still decodes".
+        var below = modulus_bytes;
+        below[0] -= 1;
+        try std.testing.expect((try F.fromBytesChecked(below)).eql(F.fromInt(F.MODULUS - 1)));
     }
+}
+
+/// The little-endian encoding of `F.MODULUS`, which no element can hold.
+fn modulusBytesOf(comptime F: type) [F.NUM_BYTES]u8 {
+    var out: [F.NUM_BYTES]u8 = undefined;
+    var n = F.MODULUS;
+    for (&out) |*b| {
+        b.* = @truncate(n);
+        n >>= 8;
+    }
+    return out;
 }
 
 fn testRoots(comptime F: type) !void {

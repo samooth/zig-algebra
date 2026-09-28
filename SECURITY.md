@@ -217,6 +217,62 @@ inherited by anyone who wants exact witnessing. This advisory does not fix that;
 it makes it visible, and the algebra-side advisory has to land first because the
 consumer's cites it.
 
+### An architecture that contradicted itself, and nobody noticed
+
+Worth its own heading because **it was not a bug in either library separately,
+and both sides looked correct on their own.**
+
+`challengeField` promised an exactly uniform challenge. That promise was never
+the transcript's to keep: it held *only* because the field's `fromBytes`
+rejected out-of-range encodings, and **that is a per-library convention**,
+because this repository has two incompatible ones:
+
+```
+libs/field/src/field.zig:200            fromBytes([]const u8) !Self        rejects
+libs/binary-field/src/prime128.zig:311  fromBytes([NUM_BYTES]u8) Self      reduces
+libs/binary-field/src/prime128.zig:318  fromBytesChecked(...) error{NotCanonical}!Self
+```
+
+**The consequence was worse than a bad promise.** `Sumcheck` gates at
+`MIN_SAFE_BITS = 128` (`libs/binary-field/src/sumcheck.zig:41,44`) and
+`Prime128` satisfies it. **`Prime128` could not use the transcript at all:**
+`challengeField` required `fromBytes: ([]const u8) !Self`, and `Prime128`'s
+takes `[NUM_BYTES]u8` and returns `Self`. The intersection was empty -- a STARK
+with a 128-bit sum-check field and challenges from this transcript could not be
+assembled at all, and nothing in the tree ever tried, so the contradiction was
+invisible from both sides.
+
+**A second defect in the same territory, found while writing the test and present
+in no review:** the extension copies of the digest had `hash_val ^= v & 0xFF`
+with `v` a `u512` -- `expected type 'u64', found 'u512'`. Both had been
+sitting unexamined.
+
+The fix is this repository's own fourth instance of the total-plus-checked
+pattern: `challengeField` keeps its contract and promises nothing, and
+`challengeFieldChecked` requires `fromBytesChecked` and promises exact
+uniformity. Six `fromBytesChecked` entry points were added so the name means one
+thing in all three libraries -- and over GF(2^m) it is `error{}!Self`, because
+every bit string is an element and there is nothing to reject. A function that
+cannot fail should say so in its type.
+
+**Neither library was wrong. The architecture was inconsistent and both halves
+read as correct.** That is the failure mode a mutation cannot find, because
+there is no single expression to break.
+
+### An argument for migrating that was already paid for and wired to nothing
+
+The draft's section 8.2 gives a **constant-time** reason to avoid rejection
+sampling, and this repository already has the constant-time path:
+`zig-field`'s `fromBytesCT` (`field.zig:187`, with a `ctSelect` in its error
+path) is exactly the primitive that reason calls for.
+
+**It has no caller.** It is one of the eight public methods in `field.zig` and
+`extension.zig` with no call anywhere in the repository. So the migration
+argument is stronger than "the spec has better provenance": *the alternative we
+would migrate towards is already implemented, already paid for, and connected
+to nothing*, while the path in use is the one the draft says SHOULD NOT be used
+for precisely that reason. Worth weighing before the migration is costed.
+
 ### The route that would close it, and what its provenance actually is
 
 A published specification with published test vectors exists:

@@ -59,6 +59,43 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Added
+
+- **`zig-transcript`: `challengeFieldChecked`,** and the contract statement that
+  goes with it. **This is a change of contract for `challengeField`, not a fix
+  to a broken function: the transcript was never incorrect.** It was exactly
+  uniform *by courtesy of another library's `fromBytes`*, and that courtesy did
+  not extend to this repository's own prime-field fixtures.
+
+  ```
+  libs/field/src/field.zig:200            fromBytes([]const u8) !Self        rejects
+  libs/binary-field/src/prime128.zig:311  fromBytes([NUM_BYTES]u8) Self      reduces
+  ```
+
+  The guarantee moved, named, the way `inv`/`invChecked` and
+  `millerLoop`/`millerLoopPairChecked` already do:
+
+  - `challengeField(F)` — decodes through `F.fromBytes`, **promises no
+    uniformity**; whether that rejects or reduces is a per-field convention
+  - `challengeFieldChecked(F)` — requires `F.fromBytesChecked(bytes:
+    [NUM_BYTES]u8) !F`, **promises exact uniformity on `[0, p)`**
+
+  Six `fromBytesChecked` entry points were added so the name means one thing in
+  all three libraries: two in `zig-field`'s prime field, two in `extension.zig`,
+  and -- over GF(2^m), where every bit string is an element and there is nothing
+  to reject -- `BinaryField` and `TowerField` with an **empty error set**,
+  because a function that cannot fail should say so in its type.
+
+  **The empty intersection is now closed.** `Sumcheck` gates at
+  `MIN_SAFE_BITS = 128` and `Prime128` satisfies it, but `Prime128` could not
+  use the transcript at all: `challengeField` required a signature `Prime128`
+  does not have. A 128-bit sum-check with challenges from this transcript could
+  not be assembled. `libs/fri`'s two call sites now use the `Checked` half.
+
+  A second defect surfaced while writing the test, in territory no review had
+  reached: the extension copies of the digest had a `u512` XORed into a `u64`
+  accumulator. Fixed in `7af963d`.
+
 ### Security
 
 - **ZA-2026-004: `Montgomery` inverses are wrong for any modulus with zero

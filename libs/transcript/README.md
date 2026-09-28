@@ -101,6 +101,7 @@ pub fn main() !void {
 | `challengeU64` | `(self: *Transcript) u64` | little-endian read of 8 squeezed bytes |
 | `challengeField` | `(self: *Transcript, comptime F: type) F` | requires `F.NUM_BYTES` and `F.fromBytes([]const u8) !F`; loops until `fromBytes` succeeds |
 | `challengeFields` | `(self: *Transcript, comptime F: type, comptime n: usize) [n]F` | `n` challenges in order |
+| `challengeFieldChecked` | `(self: *Transcript, comptime F: type) F` | **requires `F.fromBytesChecked(bytes: [NUM_BYTES]u8) !F`**; exactly uniform on `[0, p)`. Use this one for a uniform challenge |
 | `challengeFrom` | `(self: *Transcript, comptime F: type, elems: []const F) F` | absorb all, squeeze one |
 
 `challengeBytes` finalises the sponge, copies the 32-byte digest into `out`,
@@ -133,8 +134,16 @@ sequencing comes from the re-keying step rather than an explicit counter. Use
 - **Re-keying** — after each `challenge*` call the hasher is reset and re-seeded
   with the challenge output, which blocks state extension. `challengeField`'s
   rejection-sampling retries therefore also advance the transcript.
-- **Uniformity** — `challengeField` uses `fromBytes` rejection, so the result is
-  exactly uniform on `[0, p)` rather than `hash mod p`.
+- **Uniformity** — `challengeFieldChecked` draws through `F.fromBytesChecked`
+  and re-keys on rejection, so the result is **exactly** uniform on `[0, p)`.
+  Exact *about what*: the decoder's success set is the field, and rejection
+  sampling over such a decoder has no bias to bound. `challengeField` makes **no
+  uniformity claim** — it decodes through `F.fromBytes`, and whether that
+  rejects or reduces is a per-field convention (`zig-field`'s rejects;
+  `zig-binary-field`'s prime fixtures reduce, on purpose). The property was never
+  the transcript's to promise. New code that needs a uniform challenge should
+  use the `Checked` half. Same split as `inv`/`invChecked` and
+  `millerLoop`/`millerLoopPairChecked`.
 - **Determinism** — same label + same absorb sequence = same challenge stream.
   This is what makes `zig-fri` reproducible.
 - **Not for signatures** — this is a ZK proof transcript, not a message

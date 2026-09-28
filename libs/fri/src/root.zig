@@ -387,7 +387,7 @@ pub fn proveOn(
 
         // Absorb the root, then squeeze the fold challenge.
         transcript.absorbBytes(&roots[r]);
-        alphas[r] = transcript.challengeField(F);
+        alphas[r] = transcript.challengeFieldChecked(F);
 
         // Fold with the antipodal pair (j, j + half): the child lands at
         // position j of the half-size natural domain (x_j^2 = g_{k-1}^j).
@@ -635,7 +635,7 @@ pub fn verifyOn(
             return FriError.InvalidProof;
         }
         transcript.absorbBytes(&proof.layers[r].merkle_root);
-        alphas[r] = transcript.challengeField(F);
+        alphas[r] = transcript.challengeFieldChecked(F);
     }
 
     // ---------- residual: coefficients + evaluations on final domain ----------

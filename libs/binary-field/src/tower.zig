@@ -361,6 +361,13 @@ pub fn TowerField(comptime level: u8) type {
             }
             return fromInt(v);
         }
+
+        /// Rejecting decode over GF(2^m). Cannot fail: every bit string is an
+        /// element, so there is nothing out of range. See the note on
+        /// `BinaryField.fromBytesChecked`.
+        pub fn fromBytesChecked(bytes: [SIZE]u8) error{}!Self {
+            return fromBytes(bytes);
+        }
     };
 }
 

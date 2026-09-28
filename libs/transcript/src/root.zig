@@ -126,8 +126,18 @@ pub const Transcript = struct {
     ///   - `NUM_BYTES`: byte length constant
     ///   - `fromBytes([]const u8) !Self`
     ///
-    /// Uses rejection sampling if the derived bytes exceed the modulus,
-    /// ensuring a uniformly distributed field element.
+    /// **No uniformity is promised**, and this function cannot tell whether the
+    /// field's decoder supports it. It is exact only when `F.fromBytes` *rejects*
+    /// out-of-range encodings, which `zig-field`'s does (`error.ValueOutOfRange`)
+    /// and which `zig-binary-field`'s prime fixtures deliberately do not: theirs
+    /// reduces, so the result is `bytes mod p` and the distribution carries the
+    /// reduction's bias. The two are different field conventions living in one
+    /// repository, and the name of the decoder is the only thing that
+    /// distinguishes them.
+    ///
+    /// New code that needs a uniform challenge should call
+    /// `challengeFieldChecked`, whose success set is `[0, p)` for every field
+    /// that exposes `fromBytesChecked`.
     pub fn challengeField(self: *Transcript, comptime F: type) F {
         const N = F.NUM_BYTES;
         while (true) {
@@ -138,6 +148,32 @@ pub const Transcript = struct {
             } else |_| {
                 // Bytes exceeded modulus; challengeBytes already re-keyed
                 // the hasher so the next attempt produces different bytes.
+            }
+        }
+    }
+
+    /// Decodes a challenge with `F.fromBytesChecked`, re-keying and retrying on
+    /// rejection.
+    ///
+    /// **Uniform on `[0, p)` exactly**, for any field exposing
+    /// `fromBytesChecked(bytes: [NUM_BYTES]u8) !F` whose success set is the
+    /// field: rejection sampling over such a decoder has no bias to bound.
+    /// Compare the alternative in `draft-irtf-cfrg-fiat-shamir` section 4.2.2,
+    /// `LE2IP(Squeeze(Ns + 16)) mod M`, which reduces and therefore carries up
+    /// to 2^-128 and is chosen there for constant time rather than correctness.
+    ///
+    /// Over GF(2^m) (`BinaryField`, `TowerField`) `fromBytesChecked` cannot
+    /// fail, because every bit string is an element, and the loop runs once.
+    pub fn challengeFieldChecked(self: *Transcript, comptime F: type) F {
+        const N = F.NUM_BYTES;
+        while (true) {
+            var buf: [N]u8 = undefined;
+            self.challengeBytes(&buf);
+            if (F.fromBytesChecked(buf)) |val| {
+                return val;
+            } else |_| {
+                // Encoding was out of range. challengeBytes already re-keyed
+                // the hasher, so this retry draws different bytes.
             }
         }
     }
@@ -320,4 +356,58 @@ test "challengeFrom combines multiple elements" {
     const rev = [_]M31{ M31.fromInt(3), M31.fromInt(2), M31.fromInt(1) };
     const c3 = t2.challengeFrom(M31, &rev);
     try testing.expect(!c1.eql(c3));
+}
+
+// A field whose `fromBytes` is total and lossy while its `fromBytesChecked`
+// rejects, which is the shape of `zig-binary-field`'s prime fixtures
+// (`prime128.zig:311` reduces, `:318` refuses) against `zig-field`'s
+// (`field.zig:200`, which rejects and has no checked variant under that name
+// until this change).
+//
+// The constant return is a **deliberate caricature**. The real difference
+// between a reducing and a rejecting decoder is unobservable by sampling: for
+// `Prime128` the chance a draw lands in `[p, 2^128)` is 159/2^128, and for
+// `Prime31` the skew falls on two values out of 2^31, so no counting test can
+// ever see it. A test that cannot fail is the thing this repository keeps
+// refusing to accept, so the witness has to be constructed instead of sampled.
+const ReducingDecoder = struct {
+    pub const NUM_BYTES: u8 = 8;
+    pub const MODULUS: u64 = 0xFFFFFFFFFFFFFFC5; // 2^64 - 59, prime
+    value: u64 = 0,
+
+    /// Total and lossy, like a reducing decoder: no error is possible, so the
+    /// caller cannot tell the value was not a faithful decode. Returns a fixed
+    /// value so the lossiness is observable at all.
+    pub fn fromBytes(bytes: []const u8) !@This() {
+        if (bytes.len != NUM_BYTES) return error.InvalidLength;
+        return .{ .value = 7 };
+    }
+
+    /// Rejecting decoder: success set is exactly `[0, MODULUS)`.
+    pub fn fromBytesChecked(bytes: [NUM_BYTES]u8) error{ValueOutOfRange}!@This() {
+        var v: u64 = 0;
+        for (bytes, 0..) |b, i| v |= @as(u64, b) << @intCast(8 * i);
+        if (v >= MODULUS) return error.ValueOutOfRange;
+        return .{ .value = v };
+    }
+};
+
+test "transcript: challengeFieldChecked uses the rejecting decoder, challengeField does not" {
+    // The reducing path: total, lossy, no uniformity claimed.
+    var t1 = Transcript.init("reducing");
+    for (0..16) |_| {
+        try std.testing.expectEqual(@as(u64, 7), t1.challengeField(ReducingDecoder).value);
+    }
+
+    // The rejecting path: every challenge is a faithful decode in `[0, p)`.
+    var t2 = Transcript.init("checked");
+    var saw_non_lossy: usize = 0;
+    for (0..256) |_| {
+        const c = t2.challengeFieldChecked(ReducingDecoder);
+        try std.testing.expect(c.value < ReducingDecoder.MODULUS);
+        if (c.value != 7) saw_non_lossy += 1;
+    }
+    // 255/256 of the draws land in [0, 2^64) while the modulus is 2^64 - 59, so
+    // the probability of 256 losses by chance is (59/2^64)^256.
+    try std.testing.expect(saw_non_lossy > 0);
 }

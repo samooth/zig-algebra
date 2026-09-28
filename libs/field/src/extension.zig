@@ -10,6 +10,16 @@
 //! `denom = a^3 + n b^3 + n^2 c^3 - 3n abc`.
 
 const std = @import("std");
+
+/// `fromBytesChecked` takes its array by value (to match
+/// `zig-binary-field`), so a slice taken out of a longer buffer has to be
+/// copied rather than coerced.
+fn checkedPart(comptime F: type, bytes: []const u8, comptime off: usize) error{InvalidFieldElement}!F {
+    var arr: [F.NUM_BYTES]u8 = undefined;
+    for (&arr, 0..) |*b, i| b.* = bytes[off + i];
+    return F.fromBytesChecked(arr) catch error.InvalidFieldElement;
+}
+
 const field = @import("field.zig");
 
 /// Quadratic extension of `BaseField` by a non-residue `n`, with `v^2 = n`.
@@ -90,6 +100,17 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
             return .{
                 .c0 = BaseField.fromBytes(bytes[0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
                 .c1 = BaseField.fromBytes(bytes[BaseField.NUM_BYTES..]) catch return error.InvalidFieldElement,
+            };
+        }
+
+        /// Rejecting decode: every coordinate must itself be canonical, so the
+        /// success set is exactly the field. See `fromBytesChecked` on the
+        /// base field. `error.InvalidFieldElement` rather than the base's own
+        /// error, so one signature covers every `BaseField`.
+        pub fn fromBytesChecked(bytes: [NUM_BYTES]u8) error{InvalidFieldElement}!Self {
+            return .{
+                .c0 = try checkedPart(BaseField, &bytes, 0),
+                .c1 = try checkedPart(BaseField, &bytes, BaseField.NUM_BYTES),
             };
         }
 
@@ -438,6 +459,16 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
                 .c0 = BaseField.fromBytes(bytes[0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
                 .c1 = BaseField.fromBytes(bytes[BaseField.NUM_BYTES..][0..BaseField.NUM_BYTES]) catch return error.InvalidFieldElement,
                 .c2 = BaseField.fromBytes(bytes[2 * BaseField.NUM_BYTES ..]) catch return error.InvalidFieldElement,
+            };
+        }
+
+        /// Rejecting decode: all `m` coordinates must be canonical. See
+        /// `fromBytesChecked` on the base field.
+        pub fn fromBytesChecked(bytes: [NUM_BYTES]u8) error{InvalidFieldElement}!Self {
+            return .{
+                .c0 = try checkedPart(BaseField, &bytes, 0),
+                .c1 = try checkedPart(BaseField, &bytes, BaseField.NUM_BYTES),
+                .c2 = try checkedPart(BaseField, &bytes, 2 * BaseField.NUM_BYTES),
             };
         }
 

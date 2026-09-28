@@ -156,6 +156,16 @@ pub fn BinaryField(comptime bits: u8, comptime reduction_constant: u128) type {
             };
             return fromInt(v);
         }
+
+        /// Rejecting decode over GF(2^m). **It cannot fail, and that is the
+        /// point rather than an oversight:** every one of the 2^SIZE bit
+        /// strings is a distinct element, so the success set is already the
+        /// whole field and there is nothing out of range to reject. The empty
+        /// error set says so at the type level. Present so a caller works the
+        /// same against every field in the workspace.
+        pub fn fromBytesChecked(bytes: [SIZE]u8) error{}!@This() {
+            return fromBytes(bytes);
+        }
     };
 }
 
@@ -170,6 +180,20 @@ pub const Gf128 = BinaryField(128, 0x87);
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+test "BinaryField.fromBytesChecked is total: every bit string is an element" {
+    // The claim is that it cannot fail, so it needs a test as much as a
+    // rejecting decoder does. Over GF(2^m) the success set is the whole space
+    // by construction, which is what makes `challengeFieldChecked` uniform in
+    // one draw there.
+    var buf: [Gf128.SIZE]u8 = undefined;
+    var i: usize = 0;
+    while (i < 64) : (i += 1) {
+        for (&buf) |*b| b.* = @truncate(i *% 7 +% 3);
+        const a = try Gf128.fromBytesChecked(buf);
+        try std.testing.expect(Gf128.eq(a, Gf128.fromBytes(buf)));
+    }
+}
 
 test "gf16 add is xor" {
     try std.testing.expectEqual(@as(u128, 0xa), Gf16.fromInt(0x3).add(Gf16.fromInt(0x9)).value);

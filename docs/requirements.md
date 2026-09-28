@@ -113,6 +113,7 @@ was produced by breaking working code on purpose and reading the failure.
 | `linalg` `NotSquare` `!=` → `>` | `linalg` tests | 1 test fails |
 | **G2 subgroup guard removed from `pairingSparseChecked`** | **caught — `bn254_tower: an off-subgroup G2 point is reported by all four checked halves and hidden by all four totals` fails at `bn254_tower.zig:625`** |
 | **`Montgomery` instantiated with a zero-headroom modulus** | **the inverse is wrong and nothing asked: `montgomery: a * a^-1 must be 1, and headroom is what makes it true` reports secp256k1 `0 correct, 16 WRONG` against BN254 `16/16` and BLS12-381 `16/16`** |
+| **`challengeFieldChecked` implemented through the reducing decoder** | **`transcript: challengeFieldChecked uses the rejecting decoder, challengeField does not` fails.** The gate is a *synthetic field* whose `fromBytes` is total and returns a fixed value, which makes the two paths distinguishable **by construction** — a constructed witness, not a sample. That is the whole point: the real difference between a reducing and a rejecting decoder is **unobservable by sampling** (`Prime128`: a draw lands in `[p, 2^128)` with probability 159/2^128; `Prime31`: the skew falls on two values out of 2^31), so a counting test could never have seen it and would have been decoration. The first version of this test argued from "255 of 256 draws land in range" and was itself decorative; it was replaced |
 | **Four public `hash` bodies in `field`/`extension`, and one broken re-export** | **not a mutation finding — a *reachability* one: there was nothing to mutate in code outside the analysis graph.** The gate is the compiler, now reached: `field.zig:663,1368` and `extension.zig:227,644` failed with `no field or member function named 'wrapping_mul' in 'u64'`, and reverting one `*%` brings the error back at the same line. `lib.zig:31` re-exports `predef.BLS12_381_Fp2`, which `predef/bls12_381.zig` does not define |
 | **`kzg` on-curve guard disabled** | **nothing — 6/6 pass, and it is *dead code*** |
 | **`kzg` subgroup guard disabled** | **nothing — 6/6 pass, and it has *no reachable witness*** |
@@ -144,14 +145,14 @@ where a rewrite would buy something and where it would not.
 |---|---|---|---|---|
 | `hash` | 19 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3 | **yes** — 3 mutations | no |
 | `field` | 87 | **unknown** | **yes** — `add` reduction, and `fromBytesChecked` contract per field | no — **and see ZA-2026-004**: `Montgomery` had no test reaching it, and it is wrong for any zero-headroom modulus |
-| `binary-field` | 96 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
+| `binary-field` | 97 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 25 | **unknown** | **yes** — torus generator | no |
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
 | `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
 | `bigint` | 20 | **unknown** | **yes** — negative-modulus guard removed, caught | no |
-| `transcript` | 10 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
