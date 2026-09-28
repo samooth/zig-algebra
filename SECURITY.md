@@ -136,34 +136,150 @@ previously unverified, and it is now witnessed by a constructed point. What
 remains type-level is that the four **totals** still admit no way to signal the
 condition, by design and with the loss written in each doc comment.
 
-## The transcript's challenge derivation is not verifiable today
+## Fiat-Shamir without a specification: `zig-transcript` is a house design, and it is not broken
 
-`libs/transcript` implements a Fiat-Shamir transcript: `std.crypto.hash.Blake3`,
-a caller-supplied domain string, length-prefixed absorbs, and a
-finalise-and-rekey step so each challenge depends on the previous one. **No
-published specification is implemented.** No RFC, no EIP and no reference
-implementation is cited anywhere in the file, and the construction is a house
-design.
+`libs/transcript` has been described in this repository's documentation as a
+Fiat-Shamir transcript for years. **It is a house design. It implements no
+published specification** -- no RFC, no EIP, no reference implementation is
+cited anywhere in the file. The construction is `std.crypto.hash.Blake3`, a
+caller-supplied domain string, length-prefixed absorbs, and a
+finalise-and-rekey step so each challenge depends on the previous one.
 
-That has a consequence worth stating plainly rather than deferring: **there is
-no known-answer vector for this derivation, and there is none to write.** Its
-ten tests are properties — determinism, domain separation, sequentiality, length
-prefix — and every one of them is satisfied by any deterministic function,
-including a counter. A mutation confirms the gap: adding 1 to the first byte of
-the finalised digest changes every challenge, and all ten tests pass.
+### The property that is missing
 
-A `expected` value written in this repository would be the first instance of the
-rule in `docs/requirements.md` with the *appearance* of provenance, which is
-worse than having no vector at all, because a reader would stop looking.
+A Fiat-Shamir transform needs three things, and this transcript has two of them:
 
-So the honest position is a design one, and it matters more than a coverage
-number: **every Fiat-Shamir challenge in every project that uses this transcript
-rests on a construction nobody can check against anything.** For a library that
-other repositories are about to consume, that is a decision for them and for
-whoever owns this one, not a line item in a test plan. Either the construction
-is matched to a published transcript and its vectors adopted, or the
-reproducibility of the challenges is accepted as an assumption to be written
-down.
+1. **The challenge is a deterministic function of the statement.** Holds.
+2. **The prover cannot grind the challenge.** Holds. Re-keying between draws is
+   what guarantees it: a draw cannot be computed without the previous one.
+3. **A third party can derive the same challenges.** Impossible here -- and not
+   through a defect in the code, but through the absence of a specification.
+
+**Point 3 is the difference between a library and a protocol.** An
+implementation in another language cannot verify proofs produced against this
+transcript. It cannot do so badly; it cannot do so at all. There is nothing to
+implement, because there is nothing written down. The word "Fiat-Shamir" in a
+security document promises a property the code cannot sustain, and the promise
+is the problem -- not the code.
+
+### The construction itself is sound
+
+This is not "the hash was wrong", which is what `v0.5.1` was. The
+rejection-sampling in `challengeField` is correct: `challengeBytes` re-keys the
+hasher between attempts, the rejected bytes are not wasted, and the result is
+uniform on `[0, p)` rather than biased by a reduction. That part is real, it is
+tested, and it should be read as working.
+
+### The risk is bounded, and the bound is narrow
+
+What sits underneath is `std.crypto.hash.Blake3`, and **that is externally
+verified** -- not by us, but by an independent implementation, and the
+sibling `zig-hash` is now pinned to it with 45 known-answer vectors. What is not
+verified is **the composition**: the absorb chaining, the length encoding, and
+the re-keying discipline. Those are house decisions with no external witness.
+
+So the honest position is a design fact with an assumed consequence, and it is
+narrow: **every Fiat-Shamir challenge in every project that uses this transcript
+rests on a construction nobody can check against anything.** That is a smaller
+claim than a broken hash, and a different kind of claim. It is not a
+vulnerability, no input triggers it, and nothing in this library misbehaves.
+
+### What this does not do
+
+**It does not close the verification, and it does not claim to.** The
+known-answer vector for this derivation does not exist today and is not written
+here: a hard-coded `expected` generated in this repository would be the first
+instance of the rule in `docs/requirements.md` wearing the *appearance* of a
+vector, which is worse than having none, because a reader would stop looking.
+The ten tests are properties -- determinism, domain separation, sequentiality,
+length prefix -- and every one of them is satisfied by any deterministic
+function, including a counter. A mutation confirms the gap: adding 1 to the
+first byte of the finalised digest changes every challenge and all ten tests
+pass.
+
+What closes it is a design decision, and it is the owner's. The chosen direction
+is to reflect a published transcript -- Plonky3's `MerkleTreeTranscript` -- and
+to take known-answer vectors from an implementation independent of the one
+being reflected, on the reasoning that vectors from the implementation under
+reflection would be a self-generated KAT, which is instance 1 of our own rule.
+**The named vector source for that route is not confirmed in this document**: see
+"Open item" below. Nothing in this section commits to that route, and no code
+was written against it.
+
+### Consumers inherit this
+
+`zig-zk`'s STARKs inherit it, and so does anything built on them. The
+assumption already has a name in the tree: `libs/binary-field/src/prime128.zig:5`
+records that `Prime31` sits below `MIN_SAFE_BITS = 128` because a field small
+enough for an exact native-width oracle tops out at 31 bits, which is why the
+secure `Sumcheck(F)` needs a 128-bit fixture at all. A 31-bit field is
+inherited by anyone who wants exact witnessing. This advisory does not fix that;
+it makes it visible, and the algebra-side advisory has to land first because the
+consumer's cites it.
+
+### The route that would close it, and what its provenance actually is
+
+A published specification with published test vectors exists:
+**`draft-irtf-cfrg-fiat-shamir`** (M. Orrù, CNRS; IRTF CFRG; intended status
+Informational). It specifies the duplex-sponge Fiat-Shamir transformation, the
+codecs, and the NARG serialization, with **39 test vectors in Appendix B** --
+13 codec vectors, 13 for SHAKE128 and 13 for TurboSHAKE128.
+
+That is the strongest rung of the provenance ladder, and the ladder is the point:
+
+```
+specification + published vectors      draft-irtf-cfrg-fiat-shamir   <- available
+a widely-used independent implementation Plonky3, RISC Zero, gnark
+the implementation that produced the value  prohibited                 <- what the BLAKE3 KAT was
+```
+
+**Every part a STARK transcript needs is specified byte-level and has
+vectors** -- absorb without separators (§3.1), the squeeze stream (§3.2.3),
+prefix-free encoding (§4.1, §6.1), field-element challenge decoding (§4.2.2,
+§4.2.3, vectored at B.2.11 for P-256 and B.1.3 for a degree-2 extension),
+session-identifier derivation from an application tag (§5.1, vectored at
+**B.2.10**), and negative cases for malformed prover messages (B.1.12, B.1.13,
+B.2.13). Appendix A is a worked **sumcheck over Mersenne31** and B.2.12 is its
+complete transcript -- `Mersenne31` is this repository's `Prime31`, and
+`Sumcheck(Prime31)` is the protocol already implemented here.
+
+Three things a reader should not have to discover by reading the draft:
+
+- **It is an Internet-Draft, not an RFC**, and it changes. Cite the exact
+  revision: `-03`, 17 August 2026. It is **not** expired -- the datatracker
+  lists expiry at 18 February 2027.
+- **STARK and FRI appear nowhere in it** (zero occurrences of either). The
+  model is a k-round public-coin protocol, which a FRI is expressible in, but
+  there is **no vector for a FRI-shaped transcript**. The gap is a mapping
+  decision -- how many query rounds, which codec per round -- and it is ours to
+  argue, not a hole in the instrument.
+- **The construction differs from the description it is usually given.** The
+  word "overwrite" does not appear in the draft; `Init` takes a **32-byte**
+  session identifier padded with `R - 32` zeros, and the XOF interface is an
+  abstract `Update`/`Copy`/`Finalize`/`Read`. Two suites are defined, SHAKE128
+  and TurboSHAKE128, both at `R = 168` and 128-bit security. §7 recommends the
+  incremental duplex state precisely to avoid a cost quadratic in rounds.
+
+**And one correction to this document's own earlier wording.** The section above
+calls our rejection sampling in `challengeField` correct, and it is. But the
+draft's §4.2.2 *SHOULD NOT* use rejection sampling, for the constant-time
+reasons in §8.2, and specifies reduction instead: `LE2IP(Squeeze(Ns + 16)) mod
+M`, with the 16 extra bytes bounding the statistical distance to 2^-128. Both are
+sound and they are not the same choice. Migrating is a **change of criterion,
+not a bug fix**, and it is written here so nobody later reads the migration as a
+regression and reverts it.
+
+The security assumption is also stronger than plain indifferentiability: the
+XOF must be extraction-friendly and simulation-friendly indifferentiable
+[CO25], with a loss quadratic in the number of random-oracle queries -- which
+for a transcript with many FRI queries is the term to watch. The draft's own
+Mersenne31 example deliberately takes the cheaper `Ns`-byte path with bias
+about 2^-31, which is below this repository's `MIN_SAFE_BITS = 128`; challenge
+bias belongs in the same accounting as witness size.
+
+**None of this is implemented.** No code was written against this route, no
+dependency was added, and the derivation is untouched. The decision to migrate
+is the owner's, and the vectors have not been read into this tree.
 
 ## Scope and non-claims
 

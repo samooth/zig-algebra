@@ -59,6 +59,85 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Security
+
+- **Named in the title, because the name was doing work the code cannot
+  support: `zig-transcript` is a house design, not a Fiat–Shamir
+  implementation.** `SECURITY.md` now says so under "Fiat-Shamir without a
+  specification". Two of the three properties hold — the challenge is a
+  deterministic function of the statement, and re-keying between draws stops
+  the prover grinding it. **The third is unsatisfiable here and not through a
+  defect:** a third party cannot derive the same challenges, because no
+  specification exists to derive them from. The word "Fiat–Shamir" in a security
+  document promised a property the code could not sustain.
+
+  What is *not* claimed: this is not a vulnerability, no input triggers it, and
+  nothing misbehaves. The rejection sampling in `challengeField` is correct —
+  re-keyed between attempts, no wasted bytes, uniform on `[0, p)` — and that is
+  written down too, so the section is not read as "it is broken". The bound is
+  narrow and says where it sits: `std.crypto.hash.Blake3` underneath is
+  externally verified; **the composition** — chaining, length encoding,
+  re-keying discipline — has no external witness.
+
+  **This does not close the verification and does not say it does.** The
+  known-answer vector does not exist today and is not written: a hard-coded
+  `expected` produced here would be instance 1 of our own rule wearing the
+  appearance of a vector. `zig-transcript`'s README carries one line saying the
+  same, without alarm, so nobody leaves the library page with the impression
+  that a third party can reproduce the challenges.
+
+  **The route to closing it is the owner's decision, and it now has a named
+  target on the best rung of the provenance ladder:**
+  `draft-irtf-cfrg-fiat-shamir` (Orrù, IRTF CFRG, Informational; revision
+  `-03`, 17 August 2026) specifies the duplex sponge, the codecs and the NARG
+  serialization with **39 published vectors** in Appendix B — 13 codec, 13
+  SHAKE128, 13 TurboSHAKE128. Every part a STARK transcript needs is specified
+  byte-level and vectored: absorb without separators, the squeeze stream,
+  prefix-free encoding, field-element challenge decoding (B.2.11, plus a
+  degree-2 extension at B.1.3), session-identifier derivation from an
+  application tag (B.2.10), and negative cases. Appendix A is a sumcheck over
+  **Mersenne31** and B.2.12 is its complete transcript — `Mersenne31` is this
+  repository's `Prime31`, and `Sumcheck(Prime31)` is the protocol already here.
+
+  This replaces an earlier recommendation of Plonky3 as the specification
+  target. Plonky3 has a widely-used, well-documented *implementation*; that is
+  the same step below as comparing a hash against its reference
+  implementation — which is what the BLAKE3-against-`std` fix was, and it was
+  worth doing, but it is a rung below a specification with vectors. Plonky3
+  stays useful as a second implementation opinion, not as the spec.
+
+  Three corrections to what the draft is usually described as, written down so
+  nobody has to rediscover them: it is **not expired** (expiry 18 February
+  2027); the word "overwrite" appears **zero** times in it and `Init` takes a
+  **32-byte** session identifier padded to the rate, not a 64-byte IV; and there
+  are **two** suites, SHAKE128 and TurboSHAKE128, both at `R = 168`. **STARK and
+  FRI appear zero times** — the model is a k-round public-coin protocol that a
+  FRI is expressible in, but no FRI-shaped transcript is vectored, so that gap
+  is a mapping argument we owe, not a missing instrument.
+
+  **And a correction to this repository's own wording.** The advisory calls our
+  rejection sampling in `challengeField` correct, and it is — but the draft's
+  §4.2.2 *SHOULD NOT* use rejection sampling, for the constant-time reasons in
+  its §8.2, and specifies `LE2IP(Squeeze(Ns + 16)) mod M` with the 16 extra
+  bytes bounding the bias to 2^-128 instead. Both are sound and they are not the
+  same choice: migrating is a **change of criterion, not a bug fix**, recorded
+  here so it is not later read as a regression and reverted. The draft's
+  assumption is also stronger than plain indifferentiability — extraction- and
+  simulation-friendly [CO25], loss quadratic in random-oracle queries, which is
+  the term to watch for a transcript with many FRI queries.
+
+  **Nothing is implemented.** No code written against this route, no dependency
+  added, derivation untouched. The vectors have not been read into this tree,
+  and the decision to migrate is the owner's.
+
+  Consumers inherit this: `zig-zk`'s STARKs, and the 31-bit-field assumption
+  already recorded at `libs/binary-field/src/prime128.zig:5`. This advisory does
+  not fix it, it makes it visible, and it has to land before the consumer's,
+  which cites it.
+
+- Requirement 14 is no longer a coverage debt waiting to be paid. It now names
+  the outstanding decision.
+
 > **Not yet published.** The tag follows the audit, not the other way round.
 
 ### Fixed

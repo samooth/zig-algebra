@@ -1,8 +1,15 @@
 # zig-transcript
 
-Fiat–Shamir transcript for non-interactive zero-knowledge proofs. A single-field
-Blake3 sponge: absorb prover messages, squeeze verifier challenges, re-key after
-every squeeze.
+Transcript for non-interactive zero-knowledge proofs, in the Fiat–Shamir style:
+a single-field Blake3 sponge that absorbs prover messages, squeezes verifier
+challenges, and re-keys after every squeeze.
+
+> **House design, not a specification.** No published specification is
+> implemented, so a third party cannot derive the same challenges from the same
+> statement — the composition is ours and has no external witness. This is a
+> design fact, not a defect, and it is written up in `SECURITY.md`. The
+> construction's parts are sound and individually tested; what is unverified is
+> that they compose the way a third party would expect.
 
 ## Features
 
