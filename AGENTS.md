@@ -273,7 +273,28 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (421 total vs. 536 summed over all per-library steps).
+tests only (421 total vs. 539 summed over all per-library steps).
+
+> **How the aggregate is derived**, because getting it wrong is how the
+> previous figures drifted: the root step compiles each library's inline
+> `src/` tests only, so it runs `zig-field-tests` (13) and `zig-curve-tests`
+> (54) and **skips their `tests/` roots entirely**. The per-library sum is
+> therefore `root + field's tests/ + curve's tests/`, counted one line per
+> test binary, **including a binary that fails** and **including
+> `ext_quick`**:
+>
+> ```
+> libs/field  extension 10 + ext_quick 2 + field_test 49 + ipa 2 + merkle 4
+>             + simd 7 + inline 13                                  = 87
+> libs/curve  bls12_381 7 + bn254 7 + hash_to_curve 16 + pasta 14
+>             + inline 54                                          = 98
+> aggregate   421 + (87 - 13) + (98 - 54) = 421 + 74 + 44           = 539
+> ```
+>
+> Derive it that way or measure it; **do not carry it forward**, and do not
+> add deltas to a figure you have not re-derived. An earlier pass did
+> exactly that and compounded a stale number twice.
+
 
 ## Code Conventions
 
@@ -363,9 +384,9 @@ caller input can influence.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
 - Counts (Zig 0.16.0, verified): root `zig build test` = 421; per-library
-  `zig build test` totals sum to 536 (field and curve include the `tests/`
+  `zig build test` totals sum to 539 (field and curve include the `tests/`
   roots the root step skips). Per-library totals: algebra-traits 5,
-  bigint 20, binary-field 96, curve 98, field 84, fri 25, hash 19, kzg 6,
+  bigint 20, binary-field 96, curve 98, field 87, fri 25, hash 19, kzg 6,
   linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25,
   serialization 15, transcript 10.
 - Re-derive a count by running the suite and reading the runner's own summary

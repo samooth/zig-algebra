@@ -59,6 +59,38 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+### Security
+
+- **ZA-2026-004: `Montgomery` inverses are wrong for any modulus with zero
+  headroom.** `montgomery.zig:275` implements `x += p` over `[n]u64` and
+  discards the carry, so it computes `(x + p) mod 2^(64n)`. That is wrong
+  exactly when `x + p >= 2^(64n)`, which for a modulus whose bit length equals
+  `64 * n` means `x >= 2^(64n) - p` — and the loop invariant `x1 in [0, p)` does
+  not exclude those values. Measured, first test in this repository that reaches
+  `montgomery.zig` at all:
+
+  ```
+  secp256k1 (256-bit p, headroom 0): 0 correct, 16 WRONG
+  BN254     (254-bit p, headroom 2): 16 correct, 0 wrong
+  BLS12-381 (255-bit p, headroom 1): 16 correct, 0 wrong
+  ```
+
+  `addP` is **byte-for-byte identical since the first commit** `86605a1`, and
+  `git diff 22df684 a22dbd9 -- libs/field/src/montgomery.zig` is empty, so
+  **`v0.5.1` and `v0.5.2` shipped identical code and there is no release in
+  which this was correct.** No patch yet; the advisory states the two candidate
+  fixes without choosing.
+
+  It stayed silent because `Montgomery(` appears nowhere outside `field.zig` and
+  `montgomery.zig` — **no predefined field goes through the type**, and the ones
+  that would be used here have headroom, so 421 green tests could not have found
+  it. Silent by *coverage*, not by behaviour: `a * a^-1 == 1` exposes it
+  immediately, and nobody was asking.
+
+  Cross-referenced against the transcript finding, which is a **design fact, not
+  a broken invariant**, and is easy to bury: see the two-open-findings note in
+  the advisory.
+
 ### Fixed
 
 - **Four public `hash` methods did not compile.** `field.zig:663,1368` and

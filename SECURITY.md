@@ -532,6 +532,127 @@ checked implementations are the only ones.
 4. A `millerLoop` root or an NTT `root` of the wrong order is still not
    validated — only buffer shapes and `log_n` are checked.
 
+## Advisory ZA-2026-004 — `Montgomery` inverses are wrong for any modulus with zero headroom
+
+**Severity: high. Affects every release from the first commit of this
+repository, including `v0.5.1` and `v0.5.2`. No patch exists yet.**
+
+### The finding
+
+`Montgomery(modulus).invMontgomery` returns a value that is **not** the inverse,
+for any modulus whose bit length equals `64 * n` — that is, for any modulus that
+fills its container exactly. `secp256k1` is the obvious case.
+
+The measured result, from the first test in this repository that reaches
+`montgomery.zig` at all:
+
+```
+Montgomery inverse, a * a^-1 == 1:
+  secp256k1 (256-bit p, headroom 0): 0 correct, 16 WRONG
+  BN254     (254-bit p, headroom 2): 16 correct, 0 wrong
+  BLS12-381 (255-bit p, headroom 1): 16 correct, 0 wrong
+```
+
+Not "some inputs are wrong": **every input tried.** The two working moduli are
+working for a structural reason, not by luck, and that reason is the whole
+finding.
+
+### Root cause
+
+`montgomery.zig:275` implements `x += p` as an in-place addition over `[n]u64`
+that computes the carry and then discards it:
+
+```zig
+fn addP(x: *[n]u64) void {
+    var carry: u64 = 0;
+    for (0..n) |i| {
+        const z = @as(u128, x[i]) + @as(u128, MODULUS_LIMBS[i]) + carry;
+        x[i] = @truncate(z);
+        carry = @truncate(z >> 64);
+    }
+}
+```
+
+So the function computes `(x + p) mod 2^(64n)`, not `x + p`. Its four call
+sites (`:308`, `:312`, `:318`, `:324`) are the "divide by 2, add p if odd" step
+of the binary-GCD inverse.
+
+**Whether that is ever wrong is decided by the bit length of the modulus against
+its container, and nothing in the code looks at it.** The addition goes wrong
+exactly when `x + p >= 2^(64n)`, that is when `x >= 2^(64n) - p`. For
+`secp256k1`, `2^256 - p = 2^32 + 977` — so *almost every* value of `x` in the
+loop clears the threshold, because the loop invariant `x1 in [0, p)` does not
+exclude values above `2^32` when `p` is itself 256 bits. For BN254 and
+BLS12-381, `2^256 - p` is about `2^253` and the loop never gets near it, which
+is why they are correct. **Zero headroom is the trigger; it is not a rounding
+detail.**
+
+The discarded carry subtracts `2^256`, and `2^256 mod p = 2^32 + 977 != 0`, so
+the result is off by a fixed, non-zero amount rather than by a rare edge.
+
+### Why it stayed silent, and why that is the worse half
+
+**`montgomery.zig` had no test that reached it.** `Montgomery(` appears nowhere
+in this repository outside `field.zig` and `montgomery.zig` itself. The nine
+predefined fields do not go through the `Montgomery` type at all, and the
+moduli the workspace does use have headroom, so a 421-test suite could not have
+found this however long it ran. This is the same blind spot twice in two days:
+`libs/field/` is the module with the largest public surface and the least
+coverage discipline, and this is the first instance where the gap was a
+whole public type rather than four methods.
+
+**It is also silent by coverage, not by behaviour** — the distinction matters for
+who has to act. The inverse is not merely "different", it is wrong in a way
+`a * a^-1 == 1` exposes immediately. Nobody was asking, because nothing called
+it. A consumer using `Montgomery` with `secp256k1` today has wrong answers and
+no signal.
+
+### Provenance and blast radius
+
+`addP` is **byte-for-byte identical in `86605a1`** — the first commit of this
+repository — and in `6622740`, `1e53043` and `7af963d`. Three commits touched
+`montgomery.zig` for other reasons and none changed it. `git diff 22df684
+a22dbd9 -- libs/field/src/montgomery.zig` is empty, so `v0.5.1` and `v0.5.2`
+shipped identical code. **There is no release in which this was correct.**
+
+### What is not claimed
+
+Not claimed: that anything in this workspace is currently wrong. Every consumer
+here uses a modulus with headroom. Not claimed: that `Montgomery` is
+unsound for a 256-bit prime in general — the type is correct for the moduli it
+has been exercised on, and the defect is that nothing ever checked.
+
+### Fix, when it is written
+
+Two shapes are available, and this advisory does not choose:
+
+- keep `x` in `[0, p)` by construction, so `x + p < 2p` is handled by an
+  explicit compare-and-subtract rather than by a discarded carry; or
+- carry the extra limb, i.e. widen to `n + 1` and reduce at the end.
+
+Either must come with a test that **instantiates a zero-headroom modulus**,
+because that is the case the nine predefs evade by construction. A gate that
+only ever sees headroom cannot see this, and the point of writing that sentence
+here is so the next person does not have to rediscover it.
+
+### Two open findings, neither citing the other
+
+This advisory and the transcript one are separate defects with separate
+severities, and **neither of them references the other**, which is itself a
+defect in this document:
+
+- **ZA-2026-004** (this one) is a *silent wrong answer* from public API in a
+  published release.
+- **[The transcript's challenge derivation is not verifiable
+  today](#the-transcripts-challenge-derivation-is-not-verifiable-today)** is a
+  *design fact*: no published specification, so a third party cannot derive the
+  same challenges. Nothing is broken and no input triggers it.
+
+They differ in kind, not only in severity, and a reader who finds one will not
+find the other by accident. **Cross-referencing them is left as a known gap in
+this document rather than silently merged**, because merging a silent wrong
+answer into a design discussion would bury it.
+
 ## Reporting
 
 Report suspected vulnerabilities privately to the maintainers. Do not disclose

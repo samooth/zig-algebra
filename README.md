@@ -96,7 +96,7 @@ parallel (no deps) · serialization (no deps)
 > **421 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): it
 > compiles each library's inline `src/` tests only, so `field` and `curve` —
 > the two libraries with separate `tests/` roots — contribute 13 and 54 tests
-> there instead of 83 and 98. The per-library steps sum to 535.
+> there instead of 87 and 98. The per-library steps sum to 539.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 4. `kzg`
 > was added in v0.2.2 as the 17th library.
 

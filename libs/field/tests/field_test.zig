@@ -118,6 +118,70 @@ test "public hash() is reachable and is a stable, input-dependent digest" {
     try std.testing.expectEqual(Cb.fromInt(5).hash(), Cb.fromInt(5).hash());
 }
 
+test "montgomery: a * a^-1 must be 1, and headroom is what makes it true" {
+    // The regression test for the reported finding, and **the first test in this
+    // repository that touches `montgomery.zig` at all**. `Montgomery(` appears
+    // nowhere outside `field.zig` and `montgomery.zig` itself, so CIOS
+    // multiplication and the binary-GCD inverse had no test that reached them.
+    //
+    // The diagnosis, stated so the test can be read as a claim rather than a
+    // ritual: `addP` adds `p` in place over `[n]u64` and discards the carry, so
+    // it computes `(x + p) mod 2^256` rather than `x + p`. That is wrong exactly
+    // when `x + p >= 2^256`, i.e. `x >= 2^256 - p`. Whether any `x` in the loop
+    // can be that large is decided by the **bit length of the modulus against
+    // its container**: 256-bit p in four limbs has headroom 0, so `2^256 - p` is
+    // merely `2^32 + 977` and essentially every `x1` clears it; 254-bit p leaves
+    // two bits of slack and the threshold sits at about `2^253`, which the loop
+    // does not reach.
+    //
+    // So the three moduli below are the differential. BN254 and BLS12-381 pass
+    // for a structural reason, not because they are luckier.
+    const Secp = zf.montgomery.Montgomery(0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F);
+    const Bn = zf.montgomery.Montgomery(0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD47);
+    const Bls = zf.montgomery.Montgomery(0x1A0111EA397FE69A4B1BA7B6434BACD764774B84F38512BF6730D2A0F6B0F6241EABFFFEB153FFFFB9FEFFFFFFFFAAAB);
+
+    const Result = struct { ok: usize, bad: usize };
+    const check = struct {
+        fn run(comptime M: type, comptime n: usize) !Result {
+            var ok: usize = 0;
+            var bad: usize = 0;
+            var seed: u64 = 0x243F6A8885A308D3;
+            var i: usize = 0;
+            while (i < 16) : (i += 1) {
+                var a: [n]u64 = [_]u64{0} ** n;
+                for (&a) |*limb| {
+                    seed = seed *% 6364136223846793005 +% 1442695040888963407;
+                    limb.* = seed;
+                }
+                a[n - 1] &= 0x3FFFFFFFFFFFFFFF; // keep it inside the modulus
+                const a_m = M.toMontgomery(a);
+                const inv_m = try M.invMontgomeryChecked(a_m);
+                const product = M.fromMontgomery(M.mul(a_m, inv_m));
+                if (std.mem.eql(u64, &product, &M.CANONICAL_ONE)) ok += 1 else bad += 1;
+            }
+            return .{ .ok = ok, .bad = bad };
+        }
+    }.run;
+
+    const secp = try check(Secp, 4);
+    const bn = try check(Bn, 4);
+    const bls = try check(Bls, 6);
+    std.debug.print(
+        "\n  Montgomery inverse, a * a^-1 == 1:" ++
+            "\n    secp256k1 (256-bit p, headroom 0): {d} correct, {d} WRONG" ++
+            "\n    BN254     (254-bit p, headroom 2): {d} correct, {d} wrong" ++
+            "\n    BLS12-381 (255-bit p, headroom 1): {d} correct, {d} wrong\n",
+        .{ secp.ok, secp.bad, bn.ok, bn.bad, bls.ok, bls.bad },
+    );
+
+    // The two moduli with headroom are correct, and that is now pinned rather
+    // than assumed.
+    try std.testing.expectEqual(@as(usize, 0), bn.bad);
+    try std.testing.expectEqual(@as(usize, 0), bls.bad);
+    // secp256k1 has none. This is the failing assertion, and it is the finding.
+    try std.testing.expectEqual(@as(usize, 0), secp.bad);
+}
+
 test "M31 arithmetic" {
     try testFieldArithmetic(zf.M31);
 }
