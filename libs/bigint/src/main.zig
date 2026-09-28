@@ -31,7 +31,10 @@ pub fn main() !void {
     std.debug.print("large * 2 = {}\n", .{try large.mul(Big.fromU64(2))});
 
     // GCD
-    const g = Gcd.egcd(a, b);
+    const g = Gcd.egcd(a, b) catch |err| {
+        std.debug.print("egcd failed: {s}\n", .{@errorName(err)});
+        return;
+    };
     std.debug.print("\ngcd(a, b) = {}\n", .{g.g});
 
     // Modular inverse

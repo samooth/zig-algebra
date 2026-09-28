@@ -136,6 +136,28 @@ asserts the honest case. The tampered-Sumcheck test in `prime128.zig` falls
 under the reverted fold because its first assertion is that the honest proof
 verifies; a guard that never fails on the honest path is decoration.
 
+## Three ways declared code goes untested
+
+Distinct problems, distinct fixes, and the third one no presence gate can find
+because the gate cannot know which inputs a test walks.
+
+| category | what it is | closed by | finding |
+|---|---|---|---|
+| **not analysed** | nothing compiles it | the gate: `zig build test` runs `libs/*/tests/` | the four `hash` bodies; `Montgomery` had no test reaching it |
+| **not called** | it is compiled, and it is even instantiated, but nothing invokes it | a test that calls it | `Poseidon.hash()` -- `hash2` is called and tested, `hash` is not, and the two share a name |
+| **runs, no input walks the path** | it is compiled, it is executed, and no test input reaches the failing line | a test that passes through that path | `egcd`'s `error.Overflow`; `modExp` above half-width |
+
+The third is the one that survived a green gate, and it is the reason the first
+two are not enough. A presence gate answers "does this run?", never "does any
+input reach the line that breaks?".
+
+**The note that belongs with the third row:** a badly built witness does not show
+that a path is unreachable, it shows that the witness is wrong. Twice this
+session — a `probe_fp2.zig` dropped into `tests/` that was in no test binary, and
+a `BigInt` witness with `len` left at zero — a result was read as "checked" when
+nothing had been checked. The difference between that and a real check is the
+whole distance between an audit and an absence.
+
 ## Which gate opens which files
 
 Because the previous version of this document let a reader infer that 27 test

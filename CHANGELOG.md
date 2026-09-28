@@ -130,6 +130,36 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ### Fixed
 
+- **`ExtendedGcd.egcd` reports `error.Overflow` instead of being undefined
+  behaviour.** `egcd` computed `q * r`, `q * s` and `q * t` over
+  `catch unreachable`. The intermediate needs up to twice the width of the
+  container, `BigInt.mul` returns `error.Overflow` for it
+  (`bigint.zig:325`), and that error became a trap in Debug and **UB in
+  ReleaseFast**. It is reachable: with a modulus whose bit length equals the
+  container's and the top bit set, `modInv(2, m)` hits it on the first
+  iteration, for any `a`.
+
+  **Before this was undefined behaviour; now it is an error, and the error is
+  real.** An input that used to "work" now fails, which looks worse and is
+  better: a failure rather than an undefined behaviour. `egcd` and `modInv`
+  propagate it. `prime.zig`'s `catch unreachable` on `rem` is deliberately left
+  alone and is genuinely unreachable, because the divisor there is a small
+  prime, so no intermediate can exceed the dividend's width -- the difference
+  from this one is that an input exists which reaches it.
+
+  **No release was ever correct.** `libs/bigint/src/gcd.zig` has been touched
+  exactly once in its history, by `86605a1`, the first commit of the monorepo,
+  so **`v0.5.1` and `v0.5.2` ship identical code**. `egcd` returning an error is
+  a **breaking API change** and is not in `v0.5.2`.
+
+  **And there is no width rule to document in place of it.** The proposed
+  boundaries ("container minus one", "container minus two") were both refuted
+  by measurement: on a 256-bit container the widest surviving modulus is 193
+  bits for `a` in 2..13 and **218 bits** for `a = 2^31 - 1`, because the
+  threshold moves with the Euclidean trajectory rather than with `m`. The doc
+  now says to size the `BigInt` with headroom and to treat `error.Overflow` as a
+  real answer.
+
 - **`Montgomery`'s binary-GCD inverse is correct for every modulus, including
   zero-headroom ones.** `addP` computed `x + p` in place over `[n]u64` and
   discarded the carry, so it computed `(x + p) mod 2^(64n)`. **There is no

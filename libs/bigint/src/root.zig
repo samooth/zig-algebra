@@ -156,7 +156,7 @@ test "Extended GCD" {
 
     const a = Big.fromU64(240);
     const b = Big.fromU64(46);
-    const res = G.egcd(a, b);
+    const res = try G.egcd(a, b);
     try std.testing.expect(res.g.eql(Big.fromU64(2)));
 
     // Verify: a*x + b*y = g
@@ -285,4 +285,46 @@ test "modInv rejects a negative modulus and a zero modulus" {
     // And the positive path still works, so the guard is not simply rejecting
     // everything.
     try std.testing.expect((try G.modInv(Big.fromU64(3), Big.fromU64(11))).eql(Big.fromU64(4)));
+}
+
+test "modInv with a full-width modulus returns an error instead of trapping" {
+    // The witness. This used to be undefined behaviour: `egcd`'s `q * r` needs
+    // twice the width of the container, `BigInt.mul` returns `error.Overflow`
+    // for it, and `catch unreachable` turned that into a trap in Debug and UB
+    // in ReleaseFast. Any `a` reaches it on the first iteration.
+    const L: usize = 2;
+    const G = ExtendedGcd(L);
+    const Big = bigint.BigInt(L);
+
+    // bitLength(m) == 64 * max_limbs: the container exactly full, top bit set.
+    const m = Big{ .limbs = .{ 0xFFFF_FFFF_FFFF_FFFF, 0xFFFF_FFFF_FFFF_FFFF }, .len = L, .negative = false };
+    try std.testing.expectEqual(error.Overflow, G.modInv(Big.fromU64(2), m));
+    try std.testing.expectEqual(error.Overflow, G.modInv(Big.fromU64(3), m));
+
+    // `egcd` itself is the thing that could not report, and now does.
+    try std.testing.expectEqual(error.Overflow, G.egcd(Big.fromU64(2), m));
+
+    // **There is no `bitLength(m) <= X` rule that makes this unreachable, and
+    // the doc must not pretend otherwise.** Measured on a 256-bit container:
+    // the widest modulus that survives is 193 bits for `a` in 2..13, and **218
+    // bits** for `a = 2^31 - 1`, so the boundary moves with the *trajectory*,
+    // not with the modulus. A width bound of "container minus one" or "minus
+    // two" is therefore unsafe: both admit inputs that overflow. The honest
+    // rule is the one in the doc -- size the `BigInt` with headroom for the
+    // modulus you intend, and treat `error.Overflow` as a real answer.
+    const L4: usize = 4;
+    const G4 = ExtendedGcd(L4);
+    const B4 = bigint.BigInt(L4);
+    const ofWidth = struct {
+        fn f(w: usize) B4 {
+            var limbs = [_]u64{0xFFFF_FFFF_FFFF_FFFF} ** L4;
+            var i = w;
+            while (i < 256) : (i += 1) limbs[i / 64] &= ~(@as(u64, 1) << @intCast(i % 64));
+            return B4{ .limbs = limbs, .len = (w + 63) / 64, .negative = false };
+        }
+    }.f;
+    // 218 works for this `a`, and 255 -- "container minus one" -- does not, which
+    // is the measurement that rules the bound out rather than asserting it.
+    try std.testing.expect(G4.modInv(B4.fromU64(2_147_483_647), ofWidth(218)) != error.Overflow);
+    try std.testing.expectEqual(error.Overflow, G4.modInv(B4.fromU64(2_147_483_647), ofWidth(255)));
 }
