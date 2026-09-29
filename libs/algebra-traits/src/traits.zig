@@ -1093,15 +1093,18 @@ pub fn evalPolyHorner(comptime F: type, coeffs: []const F, x: F) F {
 /// ```
 ///
 /// # Errors
-/// `error.LengthMismatch` when `xs.len != ys.len`, plus `error.OutOfMemory`.
-/// The length check used to be a `std.debug.assert`, which the compiler drops
-/// in `ReleaseFast`; the loop then indexed `ys` past its end.
-pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, allocator: std.mem.Allocator) error{ LengthMismatch, OutOfMemory }![]F {
+/// `error.LengthMismatch` when `xs.len != ys.len`, `error.DegenerateNodes` when
+/// two `xs` coincide, plus `error.OutOfMemory`. The length check used to be a
+/// `std.debug.assert`, which the compiler drops in `ReleaseFast`; the loop then
+/// indexed `ys` past its end. The degenerate case used to be a silent zero,
+/// because the denominator reached the total legacy `F.inv`.
+pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, allocator: std.mem.Allocator) error{ LengthMismatch, DegenerateNodes, OutOfMemory }![]F {
     FieldTrait(F).assert();
     if (xs.len != ys.len) return error.LengthMismatch;
     const n = xs.len;
 
     var result = try allocator.alloc(F, n);
+    errdefer allocator.free(result);
     @memset(result, F.zero());
 
     for (0..n) |i| {
@@ -1113,20 +1116,29 @@ pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, alloc
         var denom = F.one();
         for (0..n) |j| {
             if (i == j) continue;
-            denom = F.mul(denom, F.sub(xs[i], xs[j]));
+            const delta = F.sub(xs[i], xs[j]);
+            if (delta.isZero()) return error.DegenerateNodes;
+            denom = F.mul(denom, delta);
         }
         const inv_denom = F.inv(denom);
 
         for (0..n) |j| {
             if (i == j) continue;
-            // multiply li by (x - x_j)
+            // Multiply li by (x - x_j): new_li[k] = li[k-1] - x_j * li[k],
+            // with li[-1] = 0. Adding `li[k]` in place of `li[k-1]` here
+            // built the basis as the product of (1 - x_j * x) instead, so the
+            // result was the coefficients of a different polynomial that still
+            // had the right degree: the guard test below only checked that
+            // mismatched xs/ys are refused, and nothing asserted that the
+            // output interpolated anything.
             var new_li = try allocator.alloc(F, n);
             @memset(new_li, F.zero());
             for (0..n) |k| {
-                if (li[k].isZero()) continue;
-                new_li[k] = F.add(new_li[k], li[k]);
-                if (k + 1 < n) {
-                    new_li[k + 1] = F.add(new_li[k + 1], F.mul(li[k], F.neg(xs[j])));
+                if (k > 0 and !li[k - 1].isZero()) {
+                    new_li[k] = F.add(new_li[k], li[k - 1]);
+                }
+                if (!li[k].isZero()) {
+                    new_li[k] = F.add(new_li[k], F.mul(li[k], F.neg(xs[j])));
                 }
             }
             @memcpy(li, new_li);
@@ -1153,20 +1165,28 @@ pub fn lagrangeInterpolate(comptime F: type, xs: []const F, ys: []const F, alloc
 /// `F` must satisfy `FieldTrait`. All `xs` must be distinct.
 ///
 /// # Errors
-/// `error.IndexOutOfBounds` when `i >= xs.len`. The old `std.debug.assert`
-/// vanished in `ReleaseFast`, where `xs[i]` then read out of bounds. The
-/// divisor is only guaranteed to be invertible when the `xs` are distinct;
-/// `F.inv` is the total legacy wrapper, so it yields zero for a degenerate
-/// (duplicated `xs`) configuration.
-pub fn lagrangeCoefficient(comptime F: type, xs: []const F, i: usize, x: F) error{IndexOutOfBounds}!F {
+/// `error.IndexOutOfBounds` when `i >= xs.len` -- the old `std.debug.assert`
+/// vanished in `ReleaseFast`, where `xs[i]` then read out of bounds -- and
+/// `error.DegenerateNodes` when two `xs` coincide. The second error used to be
+/// a silent zero: the denominator reached `F.inv`, the total legacy wrapper,
+/// which returns zero for zero and so produced a plausible-looking
+/// coefficient. `poly.lagrangeInterpolate` has returned
+/// `error.DivisionByZero` for the same input since 0.3.0, so the two paths
+/// disagreed; they agree now. The check is a `delta.isZero()` test rather than
+/// `invChecked` on purpose: `FieldTrait` requires `inv`, not `invChecked`, and
+/// raising the trait's requirements to tighten one function's contract would
+/// break every conforming type that lacks it.
+pub fn lagrangeCoefficient(comptime F: type, xs: []const F, i: usize, x: F) error{ IndexOutOfBounds, DegenerateNodes }!F {
     FieldTrait(F).assert();
     if (i >= xs.len) return error.IndexOutOfBounds;
     var num = F.one();
     var den = F.one();
     for (0..xs.len) |j| {
         if (j == i) continue;
+        const delta = F.sub(xs[i], xs[j]);
+        if (delta.isZero()) return error.DegenerateNodes;
         num = F.mul(num, F.sub(x, xs[j]));
-        den = F.mul(den, F.sub(xs[i], xs[j]));
+        den = F.mul(den, delta);
     }
     return F.mul(num, F.inv(den));
 }

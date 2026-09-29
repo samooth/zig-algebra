@@ -209,7 +209,7 @@ where a rewrite would buy something and where it would not.
 | `ntt` | 16 | **demonstrated** — a DFT computed in Python (`sum_j x[j]*w^(j*k)`) over Goldilocks and BabyBear for log_n 1..4, with each root first verified in Python to be primitive of order 2^log_n, and the inverse of that external transform checked to return the input | **yes** — a guard mutation; and the transform convention itself (w -> w^-1), which the round-trip test cannot see and this one fails | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
 | `kzg` | 6 | **unknown** | **survived** — guard mutated, nothing noticed | no |
-| `algebra-traits` | 5 | **unknown** | **yes** — `invChecked` zero guard removed, caught | no |
+| `algebra-traits` | 8 | **demonstrated** — Python over `F_7` for `lagrangeCoefficient` (6 point sets, including a single point, a set containing zero, and the identity point x ∈ xs), `dotProduct` (3 vectors) and `lagrangeInterpolate` (3 point sets), each interpolation vector also checked by evaluating at the points | **yes** — and the differential found a real bug: the interpolator multiplied the basis by `(1 - x_j * x)` instead of `(x - x_j)`, so it returned a different polynomial of the right degree; reverting that fix turns the differential red, as does removing either degenerate-node guard | no |
 | `parallel` | 2 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 
 ### What the table says
@@ -222,12 +222,12 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the eight libraries below the
-nine, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the seven libraries below the
+ten, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Nine libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Ten libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
 (a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
@@ -241,7 +241,8 @@ both backends -- the u64 small-field path with its Mersenne fast path, and
 Montgomery CIOS over limbs -- in one test) and `ntt` (a Python DFT, which is
 what a round-trip test structurally cannot provide) and `poly` (Python's
 polynomial arithmetic over the same field, which covers the division loop, the
-Horner evaluation and the Lagrange basis). One of the nine is `hash`, which hid a non-BLAKE3 the whole time —
+Horner evaluation and the Lagrange basis) and `algebra-traits` (the same differential, which found
+an interpolator that returned the wrong polynomial). One of the ten is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

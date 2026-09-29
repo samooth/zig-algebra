@@ -78,6 +78,32 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-algebra-traits` (fixed): `lagrangeInterpolate` returned the
+  coefficients of a different polynomial.** Multiplying the Lagrange basis by
+  the linear factor `(x - x_j)` added `li[k]` where it needed `li[k-1]`, so the
+  product came out as `Π (1 - x_j * x)`: a polynomial of the right degree that
+  interpolates nothing. Interpolating `(1,1), (2,3), (3,5)` returned the
+  coefficients of `2 + 6x` instead of `6 + 2x`. Nothing in this repository
+  called the function, and its only test asserted that mismatched `xs`/`ys`
+  are refused — the shape of the output was never checked against anything,
+  which is the "not called" class from the audit, one layer down. The fix is
+  in the basis multiplication, and the known-answer test now pins the
+  coefficients and evaluates the result at the points.
+- **`zig-algebra-traits` (fixed): a repeated node is a typed error, not a
+  silent zero.** `lagrangeCoefficient` and `lagrangeInterpolate` divided by
+  `Π (x_i - x_j)` through the total legacy `F.inv`, which returns zero for a
+  zero denominator, so duplicated `xs` produced a plausible-looking zero
+  coefficient. Both now return `error.DegenerateNodes`, which is what
+  `poly.lagrangeInterpolate` has returned (`error.DivisionByZero`) for the
+  same input since 0.3.0 — same condition, two names, and renaming poly's
+  would break its API, so the disagreement is documented instead. This is an
+  **API change**: the error sets of two public functions grow, and a caller
+  that handled every error before now has one more to handle. The contract is
+  deliberately narrower than "no duplicates anywhere": the denominator of
+  `λ_i` only involves pairs that include `i`, so a unique `x_i` still yields a
+  well-defined coefficient even when some other value is repeated; what such a
+  set is not is a valid Lagrange basis, and that stays the caller's
+  constraint.
 - **`zig-poly` (tested): the polynomial arithmetic is differential-tested
   against Python over the same `F_7`.** Horner evaluation, long division, the
   formal derivative, composition, powers, `lagrangeInterpolate` and
