@@ -125,11 +125,16 @@ was produced by breaking working code on purpose and reading the failure.
 | **`algebra-traits` `inv` guard made vacuous** | `invChecked rejects zero while inv stays total` |
 | **`parallel` chunk `(count+nw-1)/nw` → `(count+nw)/nw`** | **nothing — 2/2 pass** — benign: it changes work *balance*, not results, so a result-equality check cannot see it and should not |
 | `SmallField.add` reduction off by one | fuzz | runner exits non-zero |
+| `SHAKE256` domain byte `0x1F` -> `0x07` | `rng` tests, incl. the `hashlib` differential | 1 test fails |
+| `SmallField.add` reduction removed (small-field path) | `field` tests, incl. the Python differential | `field arithmetic matches Python's integers modulo the same prime` fails |
+| `SmallField.add` Mersenne second reduction removed | `field` tests | **nothing -- it cannot fire: with `a, b < p` the two halves of the sum never reach `p`, so the line is dead code** |
+| `ntt` twiddle `root` -> `root.inv()` | `ntt` tests | the round-trip test stays green, the Python DFT fails |
+| `poly` `divRem` loop bound `degree + 1` -> `degree` | `poly` tests | **nothing -- it hangs.** The remainder never shrinks, so the suite stalls instead of reddening |
+| `algebra-traits` basis multiply `li[k-1]` -> `li[k]` | `algebra-traits` tests, incl. the Python differential | the differential fails; this is the bug that was fixed, so the mutation is the old code |
 | `foldLinear` reverted to `a + t·(a + b)` | fuzz | `Sumcheck: honest 0/80 verified` |
 | the same fold | unit tests | 4 tests fail, including both negatives |
 | torus generator given order `2^(A-1)` instead of `2^A` | fuzz | `error: OrderTooLarge` |
 | the same generator | unit tests | 8 tests fail, including every FRI positive |
-| `?windows.HANDLE` reverted to `windows.HANDLE` | `cross-check` | `expected type '*anyopaque', found '@TypeOf(null)'` |
 
 The negative tests that guard these are only load-bearing because each one first
 asserts the honest case. The tampered-Sumcheck test in `prime128.zig` falls
@@ -209,7 +214,7 @@ where a rewrite would buy something and where it would not.
 | `ntt` | 16 | **demonstrated** — a DFT computed in Python (`sum_j x[j]*w^(j*k)`) over Goldilocks and BabyBear for log_n 1..4, with each root first verified in Python to be primitive of order 2^log_n, and the inverse of that external transform checked to return the input | **yes** — a guard mutation; and the transform convention itself (w -> w^-1), which the round-trip test cannot see and this one fails | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
 | `kzg` | 6 | **unknown** | **survived** — guard mutated, nothing noticed | no |
-| `algebra-traits` | 8 | **demonstrated** — Python over `F_7` for `lagrangeCoefficient` (6 point sets, including a single point, a set containing zero, and the identity point x ∈ xs), `dotProduct` (3 vectors) and `lagrangeInterpolate` (3 point sets), each interpolation vector also checked by evaluating at the points | **yes** — and the differential found a real bug: the interpolator multiplied the basis by `(1 - x_j * x)` instead of `(x - x_j)`, so it returned a different polynomial of the right degree; reverting that fix turns the differential red, as does removing either degenerate-node guard | no |
+| `algebra-traits` | 8 | **demonstrated** — Python over `F_7` for `lagrangeCoefficient` (6 point sets, including a single point, a set containing zero, and the identity point x ∈ xs), `dotProduct` (3 vectors) and `lagrangeInterpolate` (3 point sets), each interpolation vector also checked by evaluating at the points | **yes** — and the differential found a real bug: the interpolator multiplied the basis by `(1 - x_j * x)` instead of `(x - x_j)`, so interpolating `(1,1), (2,3), (3,5)` returned `[1, 0, 0]` — the constant 1; reverting that fix turns the differential red, as does removing either degenerate-node guard | no |
 | `parallel` | 2 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 
 ### What the table says
@@ -222,36 +227,44 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the seven libraries below the
+comparing against something outside. So for the six libraries below the
 ten, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Ten libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
-blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
-CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
-(a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
-`int`, which is where `mod` and `shr` were caught contradicting their own
-docstrings), `merkle` (a Python tree over `hashlib.sha3_256`, which pinned
-the padding rule) and `rng` (RFC 8439 and FIPS 202 via `hashlib`, which found
-that the ChaCha20 CSPRNG was not ChaCha20: three of the four rotations rolled
-the wrong way, a self-consistent permutation that every determinism test
-accepted) and `field` (Python's `int` modulo the same primes, which covers
-both backends -- the u64 small-field path with its Mersenne fast path, and
-Montgomery CIOS over limbs -- in one test) and `ntt` (a Python DFT, which is
-what a round-trip test structurally cannot provide) and `poly` (Python's
-polynomial arithmetic over the same field, which covers the division loop, the
-Horner evaluation and the Lagrange basis) and `algebra-traits` (the same differential, which found
-an interpolator that returned the wrong polynomial). One of the ten is `hash`, which hid a non-BLAKE3 the whole time —
-which is the argument for the requirement being about provenance and not about
-having vectors. The last of those four was a `unknown` two commits before its
-vectors were written, and the answer was not "no": two of the three contracts
-it now demonstrates had been broken the whole time.
+**Ten libraries can demonstrate provenance.** The instrument, per library:
 
-**Seven of the ten unmeasured libraries were measured, and six guards are
-dead code.** A mutation was written for each: change a guard, a comparison, an
-off-by-one. Six of twelve mutations were caught, and the six that survived are
-the finding. They are not subtle:
+| library | instrument |
+|---|---|
+| `hash` | 45 BLAKE3 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; Poseidon against CryptoExperts' Hades and against circomlibjs' IAIK parameters |
+| `pairing` | `py_ecc` (EIP-197) |
+| `binary-field` | a Pocklington certificate plus a `u256` oracle |
+| `bigint` | CPython's `int`: the arithmetic, and three contracts it had broken |
+| `merkle` | a from-scratch Python tree over `hashlib.sha3_256` |
+| `rng` | RFC 8439 and FIPS 202 via `hashlib` |
+| `field` | Python's `int` modulo the same primes, both backends in one test |
+| `ntt` | a Python DFT -- what a round-trip test structurally cannot provide |
+| `poly` | Python's polynomial arithmetic over the same field |
+| `algebra-traits` | the same differential, over the Lagrange basis |
+
+Three of the ten answered with a defect rather than with a clean bill, and all
+three were `unknown` in the table above when this work started -- so "we never
+checked" would have been the wrong summary. The answer was "yes, and it was
+broken":
+
+- `bigint` -- `mod` and `shr` were contradicting their own docstrings, and
+  `fromString` could not read the sign its own `toString` writes.
+- `algebra-traits` -- `lagrangeInterpolate` had never interpolated.
+- `rng` -- the ChaCha20 CSPRNG was not ChaCha20: three of its four rotations
+  rolled the wrong way, and a determinism test cannot see that.
+
+One of the ten is `hash`, which hid a non-BLAKE3 for the whole life of the
+repository. That is the argument for the requirement being about provenance and
+not about having vectors.
+
+**Six of twelve mutations of the first pass were caught, and the six that
+survived are the finding.** A mutation was written for each: change a guard, a
+comparison, an off-by-one. They are not subtle:
 
 - **`kzg` has two consecutive `return false` guards that no test exercises** —
   on-curve and subgroup membership, in a library with six tests. Both are

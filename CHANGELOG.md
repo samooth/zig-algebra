@@ -81,9 +81,9 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 - **`zig-algebra-traits` (fixed): `lagrangeInterpolate` returned the
   coefficients of a different polynomial.** Multiplying the Lagrange basis by
   the linear factor `(x - x_j)` added `li[k]` where it needed `li[k-1]`, so the
-  product came out as `Π (1 - x_j * x)`: a polynomial of the right degree that
-  interpolates nothing. Interpolating `(1,1), (2,3), (3,5)` returned the
-  coefficients of `2 + 6x` instead of `6 + 2x`. Nothing in this repository
+  product came out as `Π (1 - x_j * x)`: a polynomial of the right length
+  that interpolates nothing. Interpolating `(1,1), (2,3), (3,5)` returned
+  `[1, 0, 0]` — the constant `1` — instead of `[6, 2, 0]`. Nothing in this repository
   called the function, and its only test asserted that mismatched `xs`/`ys`
   are refused — the shape of the output was never checked against anything,
   which is the "not called" class from the audit, one layer down. The fix is

@@ -246,7 +246,7 @@ workspace: a `main.zig` assert that 0.5.0 missed, a public precondition in
 `zig-bigint` that no library under test referenced, and an unconnected
 diagnostic in a sibling repo's test file that was already written but never
 wired to `buildTrace` — so the message existed and nothing could ever see it.
-"Un gadget que nadie invoca nunca falla."
+A gadget nobody invokes never fails.
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
