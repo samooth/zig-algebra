@@ -270,6 +270,32 @@ test "Poseidon over F7" {
     try std.testing.expect(h.eql(h2));
 }
 
+test "Poseidon hash padding separates messages from their zero extensions" {
+    // The sponge absorbed partial blocks over a zeroed state, so any message
+    // and its zero extension landed in the same padded stream: [a] and
+    // [a, 0] hashed identically, and so did [a, 0, b] and [a, 0, b, 0] across
+    // the block boundary. A hash that cannot tell a message from the same
+    // message with a zero appended is not a hash.
+    const PoseidonF7 = poseidon.Poseidon(F7, 3, 8, 57, 5);
+    const p = try PoseidonF7.initFromSeed("test");
+    const a = F7.fromInt(5);
+    const b = F7.fromInt(3);
+
+    const eqlPair = struct {
+        fn call(x: [2]F7, y: [2]F7) bool {
+            return x[0].eql(y[0]) and x[1].eql(y[1]);
+        }
+    }.call;
+
+    try std.testing.expect(!eqlPair(p.hash(&.{a}), p.hash(&.{ a, F7.zero() })));
+
+    try std.testing.expect(!eqlPair(p.hash(&.{ a, F7.zero(), b }), p.hash(&.{ a, F7.zero(), b, F7.zero() })));
+
+    const empty = p.hash(&.{});
+    try std.testing.expect(!(empty[0].isZero() and empty[1].isZero()));
+    try std.testing.expect(!eqlPair(empty, p.hash(&.{F7.zero()})));
+}
+
 test "MiMC over F7" {
     const MiMCF7 = mimc.MiMC(F7, 91, 5);
     const m = try MiMCF7.initFromSeed("test");

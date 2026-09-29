@@ -144,7 +144,7 @@ because the gate cannot know which inputs a test walks.
 | category | what it is | closed by | finding |
 |---|---|---|---|
 | **not analysed** | nothing compiles it | the gate: `zig build test` runs `libs/*/tests/` | the four `hash` bodies; `Montgomery` had no test reaching it |
-| **not called** | it is compiled, and it is even instantiated, but nothing invokes it | a test that calls it | `Poseidon.hash()` -- `hash2` is called and tested, `hash` is not, and the two share a name |
+| **not called** | it is compiled, and it is even instantiated, but nothing invokes it | a test that calls it | `Poseidon.hash()` -- `hash2` is called and tested, `hash` was not, and the two share a name; the padding test now calls it and found the missing `pad10*1` |
 | **runs, no input walks the path** | it is compiled, it is executed, and no test input reaches the failing line | a test that passes through that path | `egcd`'s `error.Overflow`; `modExp` above `32 * max_limbs` bits, whose threshold **is** a function of width because the trigger is `b * b` -- one operand twice -- against `egcd`'s `q * r`, which is why that one has no threshold at all |
 
 The third is the one that survived a green gate, and it is the reason the first

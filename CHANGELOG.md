@@ -61,6 +61,16 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **`zig-hash` (behaviour break): `Poseidon.hash()` now pads.** The sponge
+  absorbed partial blocks over a zeroed state, so a message and its zero
+  extension were the same message: `hash([a]) == hash([a, 0])`, and
+  `hash([a, 0, b]) == hash([a, 0, b, 0])` across the block boundary. It now
+  applies `pad10*1` at the field-element level (a `1` delimiter in the first
+  position the message did not occupy, with an extra block when the message
+  fills blocks exactly), so every digest of `hash()` changes. `hash2()` is
+  untouched. Nothing inside this repository consumed `hash()` — it had no test
+  at all, which is how the sponge stayed unpadded — but an external consumer
+  of `hash()` sees different digests for the same input.
 - Build logs: every green run of the full suite carried a `failed command:
   ... --listen=-` block above the `545/545` summary. The build runner prints a
   step's captured stderr "no matter the result", and the command it echoes is

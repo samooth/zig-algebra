@@ -172,25 +172,33 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
             }
         }
 
-        /// Hash a message (sponge construction, simplified).
-        /// For t=3: rate=2, capacity=1 (2 elements absorbed per block).
+        /// Hash a message (sponge construction, pad10*1 at element level).
+        /// The final element of the padded stream is a `1` delimiter placed in
+        /// the first position the message did not occupy, so a message and its
+        /// zero extension never share a stream; a message that fills blocks
+        /// exactly gains one extra block carrying the delimiter. For t=3:
+        /// rate=2, capacity=1 (2 elements absorbed per block).
         pub fn hash(self: Self, msg: []const F) [2]F {
             comptime std.debug.assert(t >= 3);
             const rate = t - 1;
 
             var state: [t]F = std.mem.zeroes([t]F);
 
-            // Absorb
             var i: usize = 0;
-            while (i < msg.len) : (i += rate) {
-                const end = @min(i + rate, msg.len);
-                for (i..end) |j| {
-                    state[j - i] = F.add(state[j - i], msg[j]);
+            while (i + rate <= msg.len) : (i += rate) {
+                for (0..rate) |j| {
+                    state[j] = F.add(state[j], msg[i + j]);
                 }
                 self.permute(&state);
             }
 
-            // Squeeze (2 outputs)
+            const rem = msg.len - i;
+            for (0..rem) |j| {
+                state[j] = F.add(state[j], msg[i + j]);
+            }
+            state[rem] = F.add(state[rem], F.one());
+            self.permute(&state);
+
             return .{ state[0], state[1] };
         }
 
