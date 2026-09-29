@@ -198,13 +198,6 @@ test "montgomery: a * a^-1 must be 1, and headroom is what makes it true" {
     const secp = try check(Secp, 4);
     const bn = try check(Bn, 4);
     const bls = try check(Bls, 6);
-    std.debug.print(
-        "\n  Montgomery inverse, a * a^-1 == 1:" ++
-            "\n    secp256k1 (256-bit p, headroom 0): {d} correct, {d} WRONG" ++
-            "\n    BN254     (254-bit p, headroom 2): {d} correct, {d} wrong" ++
-            "\n    BLS12-381 (255-bit p, headroom 1): {d} correct, {d} wrong\n",
-        .{ secp.ok, secp.bad, bn.ok, bn.bad, bls.ok, bls.bad },
-    );
 
     // The two moduli with headroom are correct, and that is now pinned rather
     // than assumed.

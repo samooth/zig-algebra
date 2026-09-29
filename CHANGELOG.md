@@ -61,6 +61,14 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- Build logs: every green run of the full suite carried a `failed command:
+  ... --listen=-` block above the `545/545` summary. The build runner prints a
+  step's captured stderr "no matter the result", and the command it echoes is
+  the one it spawned — including spawns that succeeded — so the Montgomery
+  test's informational table (a `std.debug.print` in a green test) read as a
+  failure in every CI log. Removed — the same test already pins all three
+  counts with `expectEqual`.
+
 ## [v0.5.3] — 2026-09-29
 
 > **This release fixes ZA-2026-004, the `Montgomery` inverse for any
