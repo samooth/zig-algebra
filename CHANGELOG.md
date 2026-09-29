@@ -78,6 +78,16 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-ntt` (tested): the transform is checked against a DFT computed in
+  Python.** The existing coverage was a round trip -- `ntt` then `intt` equals
+  the input -- which every sign convention and every transposition passes,
+  because a transform and its own inverse stay inverse however both are wrong.
+  A direct DFT (`sum_j x[j] * w^(j*k)`, Python, same prime) is checked for
+  log_n 1..4 over Goldilocks and BabyBear, using this library's own
+  `primitiveRootOfUnity` values after verifying in Python that each is
+  primitive of order 2^log_n, and the inverse of that external transform is
+  checked to return the input. Observed: flipping the convention to `w^-1`
+  leaves the round trip green and turns this red.
 - **`zig-field` (tested): the field arithmetic is differential-tested against
   Python.** One test carries 45 vectors over five predefined fields -- M31,
   BabyBear, Goldilocks, StarkNet_Fp and BLS12_381_Fp -- for `add`, `mul`,

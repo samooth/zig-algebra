@@ -206,7 +206,7 @@ where a rewrite would buy something and where it would not.
 | `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
 | `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
-| `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
+| `ntt` | 16 | **demonstrated** — a DFT computed in Python (`sum_j x[j]*w^(j*k)`) over Goldilocks and BabyBear for log_n 1..4, with each root first verified in Python to be primitive of order 2^log_n, and the inverse of that external transform checked to return the input | **yes** — a guard mutation; and the transform convention itself (w -> w^-1), which the round-trip test cannot see and this one fails | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
 | `kzg` | 6 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `algebra-traits` | 5 | **unknown** | **yes** — `invChecked` zero guard removed, caught | no |
@@ -222,12 +222,12 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the ten libraries below the
-seven, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the nine libraries below the
+eight, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Seven libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Eight libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
 (a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
@@ -238,7 +238,8 @@ that the ChaCha20 CSPRNG was not ChaCha20: three of the four rotations rolled
 the wrong way, a self-consistent permutation that every determinism test
 accepted) and `field` (Python's `int` modulo the same primes, which covers
 both backends -- the u64 small-field path with its Mersenne fast path, and
-Montgomery CIOS over limbs -- in one test). One of the seven is `hash`, which hid a non-BLAKE3 the whole time —
+Montgomery CIOS over limbs -- in one test) and `ntt` (a Python DFT, which is
+what a round-trip test structurally cannot provide). One of the eight is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

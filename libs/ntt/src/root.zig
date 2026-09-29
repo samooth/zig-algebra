@@ -396,6 +396,62 @@ test "ntt/intt round-trip for Goldilocks" {
     }
 }
 
+// The roots are this library's own `primitiveRootOfUnity(log_n)` values, and
+// the expected transforms are a direct DFT -- sum_j x[j] * w^(j*k) -- computed
+// in Python over the same prime, after checking in Python that each root is
+// primitive of order 2^log_n (w^(2^log_n) = 1 and w^(2^(log_n-1)) = -1). The
+// round-trip test above cannot see a sign convention or a transposition,
+// because ntt and intt are inverses of each other in either case.
+test "ntt matches a DFT computed in Python, over Goldilocks and BabyBear" {
+    const zf = @import("zig-field");
+    const Case = struct {
+        log_n: usize,
+        root: u64,
+        input: []const u64,
+        expect: []const u64,
+    };
+    const Run = struct {
+        fn run(comptime F: type, comptime cases: []const Case) !void {
+            for (cases) |c| {
+                const n = @as(usize, 1) << @intCast(c.log_n);
+                try std.testing.expectEqual(n, c.input.len);
+                try std.testing.expectEqual(n, c.expect.len);
+
+                var data = try std.testing.allocator.alloc(F, n);
+                defer std.testing.allocator.free(data);
+                for (0..n) |i| data[i] = F.fromInt(c.input[i]);
+
+                try ntt(F, data, c.log_n, F.fromInt(c.root));
+                for (0..n) |i| {
+                    try std.testing.expect(data[i].eql(F.fromInt(c.expect[i])));
+                }
+
+                // The inverse of the external transform returns the input.
+                try intt(F, data, c.log_n, F.fromInt(c.root));
+                for (0..n) |i| {
+                    try std.testing.expect(data[i].eql(F.fromInt(c.input[i])));
+                }
+            }
+        }
+    };
+
+    const cases = [_]Case{
+        // Goldilocks
+        .{ .log_n = 1, .root = 0xffffffff00000000, .input = &.{ 0x5, 0x12 }, .expect = &.{ 0x17, 0xfffffffefffffff4 } },
+        .{ .log_n = 2, .root = 0x1000000000000, .input = &.{ 0x5, 0x12, 0x1f, 0x2c }, .expect = &.{ 0x62, 0xffe5fffeffffffe7, 0xfffffffeffffffe7, 0x19ffffffffffe6 } },
+        .{ .log_n = 3, .root = 0xfffffffeff000001, .input = &.{ 0x5, 0x12, 0x1f, 0x2c, 0x39, 0x46, 0x53, 0x60 }, .expect = &.{ 0x194, 0xffcc33ff33ffcbcd, 0xffcbfffeffffffcd, 0x34340033ffcbcc, 0xfffffffeffffffcd, 0xffcbcbfecc0033cd, 0x33ffffffffffcc, 0x33cbffcc0033cc } },
+        .{ .log_n = 4, .root = 0xefffffff00000001, .input = &.{ 0x5, 0x12, 0x1f, 0x2c, 0x39, 0x46, 0x53, 0x60, 0x6d, 0x7a, 0x87, 0x94, 0xa1, 0xae, 0xbb, 0xc8 }, .expect = &.{ 0x668, 0x79186e866e791792, 0xff9867ff67ff9799, 0x79e861796e79179f, 0xff97fffeffffff99, 0x791791789e79e79f, 0x68680067ff9798, 0x79e79e859e79e792, 0xfffffffeffffff99, 0x861861796186179f, 0xff9797fe98006799, 0x86e86e8661861792, 0x67ffffffffff98, 0x86179e859186e792, 0x6797ff98006798, 0x86e791789186e79f } },
+        // BabyBear
+        .{ .log_n = 1, .root = 0x78000000, .input = &.{ 0x5, 0x12 }, .expect = &.{ 0x17, 0x77fffff4 } },
+        .{ .log_n = 2, .root = 0x67055c21, .input = &.{ 0x5, 0x12, 0x1f, 0x2c }, .expect = &.{ 0x62, 0x5174a4a3, 0x77ffffe7, 0x268b5b2a } },
+        .{ .log_n = 3, .root = 0x19166b7b, .input = &.{ 0x5, 0x12, 0x1f, 0x2c, 0x39, 0x46, 0x53, 0x60 }, .expect = &.{ 0x194, 0x7294b617, 0x2ae94945, 0x1cc22325, 0x77ffffcd, 0x5b3ddc74, 0x4d16b654, 0x56b4982 } },
+        .{ .log_n = 4, .root = 0x5376917a, .input = &.{ 0x5, 0x12, 0x1f, 0x2c, 0x39, 0x46, 0x53, 0x60, 0x6d, 0x7a, 0x87, 0x94, 0xa1, 0xae, 0xbb, 0xc8 }, .expect = &.{ 0x668, 0x28fdafcc, 0x6d296c2d, 0x586f22f1, 0x55d2928a, 0x5d66958e, 0x3984464a, 0x3eaad6a4, 0x77ffff99, 0x3955288d, 0x3e7bb8e7, 0x1a9969a3, 0x222d6ca7, 0x1f90dc40, 0xad69304, 0x4f024f65 } },
+    };
+
+    try Run.run(zf.Goldilocks, cases[0..4]);
+    try Run.run(zf.BabyBear, cases[4..8]);
+}
+
 test "ntt/intt round-trip for BN254_Fp" {
     const zf = @import("zig-field");
     const BN254_Fp = zf.BN254_Fp;

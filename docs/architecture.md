@@ -378,9 +378,9 @@ zig build test
 zig build test -Doptimize=ReleaseFast
 ```
 
-Counts verified on Zig 0.16.0: the root `zig build test` step runs **557 tests**
+Counts verified on Zig 0.16.0: the root `zig build test` step runs **558 tests**
 in both Debug and ReleaseFast across all 27 test binaries; the per-library
-steps sum to 557, the same as the root total, because that step compiles the
+steps sum to 558, the same as the root total, because that step compiles the
 separate `tests/` roots of `field` (87) and `curve` (98) as well.
 `algebra-traits` had no tests before 0.5.0 and now has 5.
 
