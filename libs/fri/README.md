@@ -241,6 +241,15 @@ cannot be used** for any `log_domain > 1`.
   empty-but-allocated ones; a hand-rolled `Proof` that was not produced by
   `prove` will confuse it.
 - Not constant-time; FRI operates on public data by construction.
+- `Domain.init` over the torus pays for the **maximum** order even when the
+  caller wants a small one. `findGenerator` searches for a generator of the
+  full 2^adicity order, so a `Domain.init(8)` pays for a 2^61 generator
+  (measured on the torus of `QuadraticExtension(M61, -1)`: `torusAdicity` 61,
+  and the first candidate that qualifies is `t = 4` out of 2.3e18, so it
+  terminates almost immediately -- on the torus of `QuadraticExtension(M31,
+  -1)`: `torusAdicity` 31, first `t = 2`). Correct, and the docstring says so;
+  the cost only matters for a field with a large torus adicity and many small
+  domains. Not fixed on purpose: it is an observation, not a defect.
 - `Domain.init` returns `error.DomainTooLarge` when `log_n > F.two_adicity`;
   the old `std.debug.assert` was compiled out in `ReleaseFast`, where
   `two_adicity - log_n` underflowed and `1 << shift` with a shift >= 64 is

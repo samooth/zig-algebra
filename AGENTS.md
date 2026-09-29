@@ -381,11 +381,17 @@ caller input can influence.
   root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 26, hash 22, kzg 6, linalg 11, merkle 20, ntt 16, pairing 58, parallel 2, poly 30, rng 27, serialization 15, transcript 11.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
-- **Every number states what it was measured against.** A well-measured number
-  from the wrong object is worse than no number, because it gets signed: the
-  `legendre` values that located a hang in a quadratic extension were read off
-  the base field, which is why the mechanism went unclaimed for a day. Write
-  "measured over `QuadraticExtension(M61, -1)`", not "measured: 1".
+- **Every number carries its object from the moment it is captured.** A
+  well-measured number from the wrong object is worse than no number, because
+  it gets signed: the `legendre` values that located a hang in a quadratic
+  extension were read off the base field, and the hypothesis that came with
+  them was correct -- measured on the wrong object, so it was retracted with
+  the measurement. The subject belongs in the datum, not in the reader's
+  memory: write "measured over `QuadraticExtension(M61, -1)`, `legendre` of
+  the real axis", never "measured: 1". **Measuring more finely presupposes you
+  know what you are measuring; carrying the object with the number presupposes
+  nothing**, because a number with the wrong label is wrong on its own terms,
+  visible to anyone who reads it out of context.
   The `field 85` / `507` pair above was wrong when written -- the runner
   reported 83 at the very commit that introduced it -- and stayed wrong for
   four releases because nothing re-measured it.
