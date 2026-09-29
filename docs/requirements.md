@@ -202,7 +202,7 @@ where a rewrite would buy something and where it would not.
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 27 | **demonstrated** — RFC 8439's two ChaCha20 vectors (block function §2.3.2, keystream and ciphertext §2.4.2) and CPython's `hashlib.shake_256` for SHAKE256 (empty, `"abc"`, and both sides of the 136-byte rate boundary) | **yes** — `?windows.HANDLE`; the SHAKE domain byte; and, the finding, the ChaCha20 quarter round itself, which rolled right where RFC 8439 rolls left | no |
 | `merkle` | 20 | **demonstrated** — a from-scratch Python tree over `hashlib.sha3_256`: roots, proof paths and the serialized proof bytes for 5 shapes (including the non-power-of-two and single-leaf padding cases), both directions (our proof equals the oracle's bytes; the oracle's proof verifies here) | **yes** — `validPathIndex` off-by-one, caught; the padding rule reverted to zero fill, caught | no |
-| `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
+| `poly` | 30 | **demonstrated** — Python's polynomial arithmetic over the same `F_7` (Horner, long division, formal derivative, composition, powers, the Lagrange basis and the vanishing product): 8 operand-pair cases chosen for shape rather than value (constant operands, interior zero coefficients, a sum that crosses zero, an exact division, a dividend of lower degree, products at the `max_degree` boundary) plus 4 interpolation/vanishing cases, each also checked by the property it is supposed to satisfy | **yes** — quotient indexing, the derivative's degree multiplier, Horner at `-x`, and the zero-denominator guard of `lagrangeInterpolate` (the guard is load-bearing: without it a duplicated `xs` returns zero coefficients silently) | no |
 | `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
 | `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
@@ -222,12 +222,12 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the nine libraries below the
-eight, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the eight libraries below the
+nine, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Eight libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Nine libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
 (a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
@@ -239,7 +239,9 @@ the wrong way, a self-consistent permutation that every determinism test
 accepted) and `field` (Python's `int` modulo the same primes, which covers
 both backends -- the u64 small-field path with its Mersenne fast path, and
 Montgomery CIOS over limbs -- in one test) and `ntt` (a Python DFT, which is
-what a round-trip test structurally cannot provide). One of the eight is `hash`, which hid a non-BLAKE3 the whole time —
+what a round-trip test structurally cannot provide) and `poly` (Python's
+polynomial arithmetic over the same field, which covers the division loop, the
+Horner evaluation and the Lagrange basis). One of the nine is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

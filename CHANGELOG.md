@@ -78,6 +78,21 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-poly` (tested): the polynomial arithmetic is differential-tested
+  against Python over the same `F_7`.** Horner evaluation, long division, the
+  formal derivative, composition, powers, `lagrangeInterpolate` and
+  `vanishingPolynomial`, with the expected values computed from the
+  mathematical definitions rather than transcribed from this code. The eight
+  operand pairs are chosen for shape, not for value: constant operands,
+  interior zero coefficients, a sum that crosses zero, an exact division, a
+  dividend of lower degree than the divisor, and products that sit at the
+  `max_degree` boundary. Each interpolation vector is additionally checked by
+  the property it exists to have -- the polynomial evaluates to `ys[i]` at
+  `xs[i]`, and the vanishing product is zero at every point -- so a vector is
+  not just a transcription. The differential earned its keep before it saw this
+  library: it caught an error in the *oracle* (a composition computed by
+  sampling instead of by Horner in the polynomial ring), which is what a
+  second implementation written from a specification is for.
 - **`zig-ntt` (tested): the transform is checked against a DFT computed in
   Python.** The existing coverage was a round trip -- `ntt` then `intt` equals
   the input -- which every sign convention and every transposition passes,
