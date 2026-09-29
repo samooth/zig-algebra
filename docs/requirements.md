@@ -201,7 +201,7 @@ where a rewrite would buy something and where it would not.
 | `fri` | 26 | **unknown** | **yes** — torus generator | no |
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
-| `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
+| `merkle` | 20 | **demonstrated** — a from-scratch Python tree over `hashlib.sha3_256`: roots, proof paths and the serialized proof bytes for 5 shapes (including the non-power-of-two and single-leaf padding cases), both directions (our proof equals the oracle's bytes; the oracle's proof verifies here) | **yes** — `validPathIndex` off-by-one, caught; the padding rule reverted to zero fill, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
 | `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
 | `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
@@ -222,17 +222,18 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the thirteen libraries below the
-four, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the twelve libraries below the
+five, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Four libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Five libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
-(a Pocklington certificate plus a `u256` oracle) and `bigint` (CPython's
+(a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
 `int`, which is where `mod` and `shr` were caught contradicting their own
-docstrings). One of the four is `hash`, which hid a non-BLAKE3 the whole time —
+docstrings) and `merkle` (a Python tree over `hashlib.sha3_256`, which pinned
+the padding rule). One of the five is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

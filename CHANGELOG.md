@@ -78,6 +78,16 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-merkle` (tested): the tree is differential-tested against a
+  from-scratch Python implementation over `hashlib.sha3_256`.** SHA3-256 is the
+  same standard hash on both sides, so what the test pins is the tree: leaf
+  hashing, the padding rule (an unused leaf is the hash of the empty byte
+  string), internal-node hashing, proof order and the serialized proof
+  layout. Five tree shapes -- four leaves, three, five, a single leaf, and
+  eight -- with 23 proofs in total, checked in both directions: our proof
+  serializes to the oracle's bytes, and the oracle's proof verifies against
+  the oracle's root here, including the padded index whose leaf data is the
+  empty string. Reverting the padding rule to zero fill turns it red.
 - **`zig-bigint` (fixed): three signed-arithmetic contracts the code did not
   keep, all found by a differential against CPython.** The tests for this
   library asserted what the implementation produced, so three defects could

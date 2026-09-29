@@ -46,6 +46,129 @@ test "MerkleTree build and root" {
     try std.testing.expectEqualSlices(u8, &root1, &root2);
 }
 
+// SHA3-256 is the same standard hash `hashlib.sha3_256` computes, so what this
+// test pins is the tree, not the digest: the leaf hashing, the padding rule
+// (an unused leaf is the hash of the empty byte string), the internal-node
+// hashing, the proof order and the serialized proof layout. The oracle below
+// is a from-scratch implementation in Python: it rebuilds every level of the
+// tree and derives each proof by walking that structure.
+const Sha3 = struct {
+    pub fn hashBytes(input: []const u8) [32]u8 {
+        return @import("zig-hash").hashSha3_256(input);
+    }
+};
+
+test "MerkleTree roots, proofs and wire format match a from-scratch Python tree" {
+    const Tree = MerkleTree(Sha3);
+    const allocator = std.testing.allocator;
+
+    const Proof = struct { index: usize, serialized: []const u8 };
+    const Case = struct {
+        leaves: []const []const u8,
+        root: []const u8,
+        proofs: []const Proof,
+    };
+    const cases = [_]Case{
+        .{
+            .leaves = &.{ "a", "b", "c", "d" },
+            .root = "5267fec4a5327f9d287233f95213afa39d3aad2fee1fa1384b032b79fb3441e8",
+            .proofs = &.{
+                .{ .index = 0, .serialized = "02000000b039179a8a4ce2c252aa6f2f25798251c19b75fc1508d9d511a191e0487d64a719a84217e939015aaa26d5da6b9ca673eae0df32877593df597cd3e5157982b10000" },
+                .{ .index = 1, .serialized = "0200000080084bf2fba02475726feb2cab2d8215eab14bc6bdd8bfb2c8151257032ecd8b19a84217e939015aaa26d5da6b9ca673eae0df32877593df597cd3e5157982b10100" },
+                .{ .index = 2, .serialized = "020000004ce8765e720c576f6f5a34ca380b3de5f0912e6e3cc5355542c363891e54594b29df505440ebe180c00857e92b0694c56a33762b08944472492b0cbf6ec607e30001" },
+                .{ .index = 3, .serialized = "02000000263ab762270d3b73d3e2cddf9acc893bb6bd41110347e5d5e4bd1d3c128ea90a29df505440ebe180c00857e92b0694c56a33762b08944472492b0cbf6ec607e30101" },
+            },
+        },
+        .{
+            .leaves = &.{ "x", "y", "z" },
+            .root = "09e82249e463dc8531df6a868dc709f2e01ccfa34bbdacc0d0085720858bfbfb",
+            .proofs = &.{
+                .{ .index = 0, .serialized = "020000009d0f3db671f9fb22104b984763616732d383154a7a0dcdbb9ec17ab647b64961c078ad03345a356291e705d085869fe2541de899d9d584eff7b6674ad013a24b0000" },
+                .{ .index = 1, .serialized = "02000000741efa311f97686956946758e0d95f70f11ff2da4f2feb7c54314f44134ac49fc078ad03345a356291e705d085869fe2541de899d9d584eff7b6674ad013a24b0100" },
+                .{ .index = 2, .serialized = "02000000a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a1236b289e36e7661bd41ab615d73d263bbf4fd44e4625c967c09439e5b89543d0001" },
+                .{ .index = 3, .serialized = "020000003b4aed1c401f71809c93e713f4b86fb6d56c5b668f4ad8b474cb8884756aac461236b289e36e7661bd41ab615d73d263bbf4fd44e4625c967c09439e5b89543d0101" },
+            },
+        },
+        .{
+            .leaves = &.{ "ledger-entry-0", "ledger-entry-1", "ledger-entry-2", "ledger-entry-3", "ledger-entry-4" },
+            .root = "d5e76e1f354b63ad607b846dd84d103ea36820c5feb38a7a9bc7929042b2ac62",
+            .proofs = &.{
+                .{ .index = 0, .serialized = "03000000ec767399029e47c1c806fc89eee0743ceaa04f3c460599be85582cd72811548078ef2a57871b4565e8c2d4b118fdb7308704de8cf07927297ac6bb62d746d51440859d069fe5fee3bafbf606e9c54cf57b279242d8f48fb2ba06c7b6f0394043000000" },
+                .{ .index = 1, .serialized = "030000002d19094749d474b4a74ede1b6d9212a1c285c188b6ceaf3d8ec1d972d9c815b178ef2a57871b4565e8c2d4b118fdb7308704de8cf07927297ac6bb62d746d51440859d069fe5fee3bafbf606e9c54cf57b279242d8f48fb2ba06c7b6f0394043010000" },
+                .{ .index = 2, .serialized = "03000000d0983d4edaf1a3222c720a0c8160daa096b838b400b05bc1dab882a9c4dd8b0e58e0e66b56c5eab27fc3474266dbe1ff377cfb52365dbc1c2858ff25d2c4b7ba40859d069fe5fee3bafbf606e9c54cf57b279242d8f48fb2ba06c7b6f0394043000100" },
+                .{ .index = 3, .serialized = "03000000938cc4900f262dcb6daf587386329ecd2c3f86cf48109a6e1a48f5efe0525c3d58e0e66b56c5eab27fc3474266dbe1ff377cfb52365dbc1c2858ff25d2c4b7ba40859d069fe5fee3bafbf606e9c54cf57b279242d8f48fb2ba06c7b6f0394043010100" },
+                .{ .index = 4, .serialized = "03000000a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a634320e1828ffb11dac51a7adee6a739278fbe7f82879d764433fba0a5f9b25e863f070afc7c703a1ed386ea39aed3f9f50a2901dd464640928287dd34049519000001" },
+                .{ .index = 5, .serialized = "03000000d0445af3f60f4b4bbeb373a24143fd5d229de71fd1905d7a1a18117640e25622634320e1828ffb11dac51a7adee6a739278fbe7f82879d764433fba0a5f9b25e863f070afc7c703a1ed386ea39aed3f9f50a2901dd464640928287dd34049519010001" },
+            },
+        },
+        .{
+            .leaves = &.{"only"},
+            .root = "f700e2a653f95b2ca16ed7b524a2ae831c23d10d8acd24409379c5b49e288df6",
+            .proofs = &.{
+                .{ .index = 0, .serialized = "00000000" },
+            },
+        },
+        .{
+            .leaves = &.{ "leaf-00", "leaf-01", "leaf-02", "leaf-03", "leaf-04", "leaf-05", "leaf-06", "leaf-07" },
+            .root = "a811b3417d88957e5b97288b30ba8b1b0ea5028685155a5409abbd08e419f34c",
+            .proofs = &.{
+                .{ .index = 0, .serialized = "03000000b6d506d650ac7c15df1e0bf9fb5876ceff6b7c57e8d548ccf8e75c5701ba40653f1cf5ae3d40aa612f48fc2543b7d11accfc9b9409bc6437a0e3e3373bfc16bab9be6e247ba6f4650c54e00fc553e689a6dadf647f4d474526f158e0a5b2d56c000000" },
+                .{ .index = 1, .serialized = "030000003842e8232a7b967d085c6443224ee3cd9e9893b5a475a7647e7491732df38ee23f1cf5ae3d40aa612f48fc2543b7d11accfc9b9409bc6437a0e3e3373bfc16bab9be6e247ba6f4650c54e00fc553e689a6dadf647f4d474526f158e0a5b2d56c010000" },
+                .{ .index = 2, .serialized = "03000000e18a51118dcdef04b420961f68f53dcab1a530196b5694cc1038a46963834a516c7cf0cdddf37d0ba114fc645b777b4dde227f880ab042b83832df5e1b263d51b9be6e247ba6f4650c54e00fc553e689a6dadf647f4d474526f158e0a5b2d56c000100" },
+                .{ .index = 3, .serialized = "03000000129d3f6964f76336470d5fb6e572a029ef37b2c3746691491c2255366d8911106c7cf0cdddf37d0ba114fc645b777b4dde227f880ab042b83832df5e1b263d51b9be6e247ba6f4650c54e00fc553e689a6dadf647f4d474526f158e0a5b2d56c010100" },
+                .{ .index = 4, .serialized = "03000000a227534a54d008bfb9d526f7372b2fc5c5d3ab34337b9ac0c8206b7010d626a5b757d73b96f6c9d6dd54b9d2e7417babd4c6ee6210b74a6bd5d0a1c916bb1b6979fa4ec108e02742f0e3ae6dcaedeb71aa56e99dea0a89f9a19c2472c9133835000001" },
+                .{ .index = 5, .serialized = "030000003cd8ebf75157d42c09c3bac2ab5cc3c556b3d4b65321efd1f25800167e850fbcb757d73b96f6c9d6dd54b9d2e7417babd4c6ee6210b74a6bd5d0a1c916bb1b6979fa4ec108e02742f0e3ae6dcaedeb71aa56e99dea0a89f9a19c2472c9133835010001" },
+                .{ .index = 6, .serialized = "03000000e90e8b784bdd555ccb6cead7356fa75322416bffbdb11521ba57f50ae129de24f8d71ee758dc7b182306326763f8da850760699f787a072b8d8dbbb50ed9174a79fa4ec108e02742f0e3ae6dcaedeb71aa56e99dea0a89f9a19c2472c9133835000101" },
+                .{ .index = 7, .serialized = "03000000c2459328bd3abf7deadffb52ec4a3dc5aa6e41bf0c4389c27812ca5970d20ec2f8d71ee758dc7b182306326763f8da850760699f787a072b8d8dbbb50ed9174a79fa4ec108e02742f0e3ae6dcaedeb71aa56e99dea0a89f9a19c2472c9133835010101" },
+            },
+        },
+    };
+
+    for (cases) |c| {
+        var tree = try Tree.init(allocator, c.leaves);
+        defer tree.deinit();
+
+        var expected_root: [32]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&expected_root, c.root);
+        try std.testing.expectEqualSlices(u8, &expected_root, &tree.root());
+
+        for (c.proofs) |p| {
+            const oracle_bytes = try allocator.alloc(u8, p.serialized.len / 2);
+            defer allocator.free(oracle_bytes);
+            _ = try std.fmt.hexToBytes(oracle_bytes, p.serialized);
+
+            // Our proof must serialize to the same bytes the oracle produced.
+            const proof = try tree.prove(p.index, allocator);
+            defer proof.deinit(allocator);
+            const mine = try proof.serialize(allocator);
+            defer allocator.free(mine);
+            try std.testing.expectEqualSlices(u8, oracle_bytes, mine);
+
+            // The oracle's proof must verify here. The leaf data of a padded
+            // index is the empty string, which is what makes the padding rule
+            // part of the pin rather than a silent convention.
+            const leaf: []const u8 = if (p.index < c.leaves.len) c.leaves[p.index] else "";
+            const oracle_proof = try MerkleProof.deserialize(oracle_bytes, allocator);
+            defer oracle_proof.deinit(allocator);
+            try std.testing.expect(Tree.verify(expected_root, p.index, leaf, oracle_proof));
+
+            // And a proof with one flipped byte must not. The single-leaf
+            // tree has an empty proof, so there is no payload byte to flip
+            // there; that case checks the index guard instead.
+            if (oracle_bytes.len > 4) {
+                const tampered = try allocator.dupe(u8, oracle_bytes);
+                defer allocator.free(tampered);
+                tampered[tampered.len - 1] ^= 0x01;
+                const bad = try MerkleProof.deserialize(tampered, allocator);
+                defer bad.deinit(allocator);
+                try std.testing.expect(!Tree.verify(expected_root, p.index, leaf, bad));
+            } else {
+                try std.testing.expect(!Tree.verify(expected_root, p.index + 1, leaf, oracle_proof));
+            }
+        }
+    }
+}
+
 test "MerkleTree prove and verify" {
     const Tree = MerkleTree(Blake3);
     var gpa = std.heap.DebugAllocator(.{}){};
