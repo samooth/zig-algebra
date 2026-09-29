@@ -97,6 +97,17 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   does not have. A 128-bit sum-check with challenges from this transcript could
   not be assembled. `libs/fri`'s two call sites now use the `Checked` half.
 
+  **And the part a consumer needs, because it is invisible in the renamed call
+  site: the challenge sequence is unchanged, so a proof from `v0.5.2` still
+  verifies.** Both halves are rejection sampling over the same acceptance
+  predicate for both fields FRI instantiates (`Goldilocks`, `CM31`), and
+  `Prime128` -- the one field where the halves differ, because its `fromBytes`
+  reduces -- could not compile against `challengeField` at `v0.5.2`, so no
+  proof of that shape exists to invalidate. That compatibility claim is not
+  read off the decoders; it is pinned by `fri: the transcript switch preserved
+  the challenge sequence`, which runs the frozen entry point and the new one
+  side by side over both instantiations and compares bytes.
+
   A second defect surfaced while writing the test, in territory no review had
   reached: the extension copies of the digest had a `u512` XORed into a `u64`
   accumulator. Fixed in `7af963d`.

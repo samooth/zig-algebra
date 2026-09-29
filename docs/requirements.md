@@ -198,7 +198,7 @@ where a rewrite would buy something and where it would not.
 | `hash` | 19 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3 | **yes** — 3 mutations | no |
 | `field` | 87 | **unknown** | **yes** — `add` reduction, and `fromBytesChecked` contract per field | no — **and see ZA-2026-004**: `Montgomery` had no test reaching it, and it is wrong for any zero-headroom modulus |
 | `binary-field` | 97 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
-| `fri` | 25 | **unknown** | **yes** — torus generator | no |
+| `fri` | 26 | **unknown** | **yes** — torus generator | no |
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
 | `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
