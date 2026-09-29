@@ -591,7 +591,14 @@ checked implementations are the only ones.
 ## Advisory ZA-2026-004 — `Montgomery` inverses are wrong for any modulus with zero headroom
 
 **Severity: high. Affects every release from the first commit of this
-repository, including `v0.5.1` and `v0.5.2`. No patch exists yet.**
+repository, including `v0.5.1` and `v0.5.2`.**
+
+**Status: FIXED on `main` (`086234a`), not released.** The fix and the test that
+proves it are in `main`; **no published release contains it**, so every consumer
+of `v0.5.1` or `v0.5.2` still has the defect. This sentence was written before
+the fix and said "no patch exists yet" while the patch sat in `main` — an
+advisory asserting a stale state is the same failure as a requirement that
+renames `unknown` into `unknown`, so it is corrected here rather than left.
 
 ### The finding
 
@@ -678,18 +685,43 @@ here uses a modulus with headroom. Not claimed: that `Montgomery` is
 unsound for a 256-bit prime in general — the type is correct for the moduli it
 has been exercised on, and the defect is that nothing ever checked.
 
-### Fix, when it is written
+### The fix, and which of the two shapes was taken
 
-Two shapes are available, and this advisory does not choose:
+Two shapes were available:
 
-- keep `x` in `[0, p)` by construction, so `x + p < 2p` is handled by an
-  explicit compare-and-subtract rather than by a discarded carry; or
+- keep `x` in `[0, p)` by construction, handled by an explicit
+  compare-and-subtract rather than a discarded carry; or
 - carry the extra limb, i.e. widen to `n + 1` and reduce at the end.
 
-Either must come with a test that **instantiates a zero-headroom modulus**,
-because that is the case the nine predefs evade by construction. A gate that
-only ever sees headroom cannot see this, and the point of writing that sentence
-here is so the next person does not have to rediscover it.
+**Taken: the first, as `halveMod` (`montgomery.zig:302`).** Halving *before*
+adding the modulus removes the overflow **by construction** rather than by
+detection:
+
+    (x + p) / 2  ==  (x >> 1) + (p + 1) / 2     for odd x
+
+`x >> 1` and `(p + 1) / 2` are each below `2^(64n - 1)`, so the sum cannot carry
+out of the container at all, and the identity is exact over the integers. The
+second shape was rejected because widening to `n + 1` limbs would change the
+width of `x1`, `x2`, `ctShr`, `sub` and the comparison helpers — the whole
+binary-GCD loop — to fix a defect local to one step. The step stays
+constant-time: the only condition is a bit of the input, and the addition is the
+existing constant-time `add`.
+
+`addP` is gone from the file. The test is
+`montgomery: a * a^-1 must be 1, and headroom is what makes it true`, which
+instantiates a zero-headroom modulus because that is the case the nine predefs
+evade by construction — a gate that only ever sees headroom cannot see this, and
+the point of writing that sentence was so the next person would not have to
+rediscover it.
+
+Measured, with the two previously-correct moduli as the control:
+
+```
+before   secp256k1 (256-bit p, headroom 0):  0 correct, 16 WRONG
+         BN254     (254-bit p, headroom 2): 16 correct,  0 wrong
+         BLS12-381 (255-bit p, headroom 1): 16 correct,  0 wrong
+after    all three:                          16 correct,  0 wrong
+```
 
 ### Two open findings, neither citing the other
 

@@ -59,6 +59,11 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+> **The fix for ZA-2026-004 is in this `Unreleased` section and therefore in no
+> published release.** `v0.5.1` and `v0.5.2` still ship the wrong inverse for any
+> zero-headroom modulus. Anyone consuming a release needs the fix from `main` or
+> must size their `BigInt`-equivalent container with headroom.
+
 ### Added
 
 - **`zig-transcript`: `challengeFieldChecked`,** and the contract statement that
