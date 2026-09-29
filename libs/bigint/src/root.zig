@@ -126,6 +126,164 @@ test "BigInt modular arithmetic" {
     try std.testing.expect(r.eql(Big.fromU64(2)));
 }
 
+test "mod is in [0, |m|) whatever the signs, as its docstring promises" {
+    // The body added `m` to a negative remainder, so a negative `m` moved the
+    // result further down instead of up: (-7).mod(-3) was -4, and the
+    // docstring said "always non-negative". Cases taken from the CPython
+    // `a % abs(m)` convention.
+    const Big = BigInt(8);
+    try std.testing.expect((try Big.fromI64(-7).mod(Big.fromI64(-3))).eql(Big.fromU64(2)));
+    try std.testing.expect((try Big.fromI64(-7).mod(Big.fromI64(3))).eql(Big.fromU64(2)));
+    try std.testing.expect((try Big.fromI64(7).mod(Big.fromI64(-3))).eql(Big.fromU64(1)));
+    try std.testing.expect((try Big.fromI64(7).mod(Big.fromI64(3))).eql(Big.fromU64(1)));
+    try std.testing.expect((try Big.fromI64(-6).mod(Big.fromI64(3))).eql(Big.zero()));
+    try std.testing.expect((try Big.zero().mod(Big.fromI64(-9))).eql(Big.zero()));
+    try std.testing.expectError(error.DivisionByZero, Big.fromI64(7).mod(Big.zero()));
+}
+
+test "fromString reads back what toString writes, sign included" {
+    // toString emitted '-' for every negative value while fromString
+    // rejected any non-digit, so the round trip failed on exactly the half of
+    // the type that the old round-trip test never produced. Pinned over the
+    // limb boundaries, where a magnitude that parses but does not compare
+    // equal would hide behind a lenient eql.
+    const Big = BigInt(8);
+    const values = [_][]const u8{
+        "0",                     "1",                                       "-1",                                       "7",
+        "-7",                    "123456789",                               "-987654321",                               "18446744073709551615",
+        "-18446744073709551615", "340282366920938463463374607431768211455", "-340282366920938463463374607431768211455",
+    };
+    for (values) |text| {
+        const parsed = try Big.fromString(text);
+        const written = try parsed.toString(std.testing.allocator);
+        defer std.testing.allocator.free(written);
+        try std.testing.expectEqualStrings(text, written);
+        try std.testing.expect((try Big.fromString(written)).eql(parsed));
+    }
+    try std.testing.expectError(error.InvalidDigit, Big.fromString("-"));
+    try std.testing.expectError(error.InvalidDigit, Big.fromString("12-3"));
+    try std.testing.expect((try Big.fromString("-0")).eql(Big.zero()));
+}
+
+test "BigInt core arithmetic matches CPython's arbitrary-precision integers" {
+    // Vectors generated with CPython 3 (`int` is arbitrary precision, and
+    // nothing in this repository produced them) for the contracts `divRem`
+    // and `mod` document: division truncates toward zero with the remainder
+    // taking the dividend's sign, and `mod` lands in [0, |m|). The
+    // magnitudes sit on 64-bit limb boundaries on purpose -- 2^63, 2^64,
+    // 2^128, 2^192, 2^256 -- because a carry bug lives exactly there, and a
+    // vector that never crosses a limb cannot see one.
+    const Big = BigInt(8);
+    const Core = struct {
+        a: []const u8,
+        b: []const u8,
+        sum: []const u8,
+        diff: []const u8,
+        prod: []const u8,
+        quo: []const u8,
+        rem: []const u8,
+        modv: []const u8,
+        cmp: i2,
+    };
+    const vectors = [_]Core{
+        .{ .a = "0", .b = "1", .sum = "1", .diff = "-1", .prod = "0", .quo = "0", .rem = "0", .modv = "0", .cmp = @as(i2, -1) },
+        .{ .a = "1", .b = "1", .sum = "2", .diff = "0", .prod = "1", .quo = "1", .rem = "0", .modv = "0", .cmp = @as(i2, 0) },
+        .{ .a = "9223372036854775808", .b = "9223372036854775807", .sum = "18446744073709551615", .diff = "1", .prod = "85070591730234615856620279821087277056", .quo = "1", .rem = "1", .modv = "1", .cmp = @as(i2, 1) },
+        .{ .a = "18446744073709551615", .b = "18446744073709551616", .sum = "36893488147419103231", .diff = "-1", .prod = "340282366920938463444927863358058659840", .quo = "0", .rem = "18446744073709551615", .modv = "18446744073709551615", .cmp = @as(i2, -1) },
+        .{ .a = "18446744073709551616", .b = "3", .sum = "18446744073709551619", .diff = "18446744073709551613", .prod = "55340232221128654848", .quo = "6148914691236517205", .rem = "1", .modv = "1", .cmp = @as(i2, 1) },
+        .{ .a = "340282366920938463463374607431768211455", .b = "18446744073709551623", .sum = "340282366920938463481821351505477763078", .diff = "340282366920938463444927863358058659832", .prod = "6277101735386680766217765991654235660327530952412702441465", .quo = "18446744073709551609", .rem = "48", .modv = "48", .cmp = @as(i2, 1) },
+        .{ .a = "3618502788666131213697322783095070105623107215331596699973092056135872020481", .b = "6277101735386680763835789423207666416102355444464034512895", .sum = "3618502788666131219974424518481750869458896638539263116075447500599906533376", .diff = "3618502788666131207420221047708389341787317792123930283870736611671837507586", .prod = "22713710134237715999500474335206288307294974223920124070148517819518904977457252755073032060915904500024231202955513217523960298602495", .quo = "576460752303423505", .rem = "576460752303423506", .modv = "576460752303423506", .cmp = @as(i2, 1) },
+        .{ .a = "6277101735386680763835789423207666416102355444464034512896", .b = "6277101735386680763835789423207666416102355444464034512897", .sum = "12554203470773361527671578846415332832204710888928069025793", .diff = "-1", .prod = "39402006196394479212279040100143613805079739270465446667954570505981108452261046400837473921301017996251092024819712", .quo = "0", .rem = "6277101735386680763835789423207666416102355444464034512896", .modv = "6277101735386680763835789423207666416102355444464034512896", .cmp = @as(i2, -1) },
+        .{ .a = "-7", .b = "3", .sum = "-4", .diff = "-10", .prod = "-21", .quo = "-2", .rem = "-1", .modv = "2", .cmp = @as(i2, -1) },
+        .{ .a = "7", .b = "-3", .sum = "4", .diff = "10", .prod = "-21", .quo = "-2", .rem = "1", .modv = "1", .cmp = @as(i2, 1) },
+        .{ .a = "-7", .b = "-3", .sum = "-10", .diff = "-4", .prod = "21", .quo = "2", .rem = "-1", .modv = "2", .cmp = @as(i2, -1) },
+        .{ .a = "-1180591620717411303424", .b = "295147905179352825856", .sum = "-885443715538058477568", .diff = "-1475739525896764129280", .prod = "-348449143727040986586495598010130648530944", .quo = "-4", .rem = "0", .modv = "0", .cmp = @as(i2, -1) },
+        .{ .a = "12345678901234567890123456789", .b = "987654321098765432109876543210", .sum = "999999999999999999999999999999", .diff = "-975308642197530864219753086421", .prod = "12193263113702179522618503273362292333223746380111126352690", .quo = "0", .rem = "12345678901234567890123456789", .modv = "12345678901234567890123456789", .cmp = @as(i2, -1) },
+        .{ .a = "115792089237316195423570985008687907853269984665640564039457584007913129639935", .b = "340282366920938463463374607431768211455", .sum = "115792089237316195423570985008687907853610267032561502502920958615344897851390", .diff = "115792089237316195423570985008687907852929702298719625575994209400481361428480", .prod = "39402006196394479212279040100143613804963947181228130472524722419237033863643600344381704752381994682191283092455425", .quo = "340282366920938463463374607431768211457", .rem = "0", .modv = "0", .cmp = @as(i2, 1) },
+    };
+    for (vectors) |v| {
+        const a = try Big.fromString(v.a);
+        const b = try Big.fromString(v.b);
+        try std.testing.expect((try a.add(b)).eql(try Big.fromString(v.sum)));
+        try std.testing.expect((try a.sub(b)).eql(try Big.fromString(v.diff)));
+        try std.testing.expect((try a.mul(b)).eql(try Big.fromString(v.prod)));
+        const qr = try a.divRem(b);
+        try std.testing.expect(qr.q.eql(try Big.fromString(v.quo)));
+        try std.testing.expect(qr.r.eql(try Big.fromString(v.rem)));
+        try std.testing.expect((try a.mod(b)).eql(try Big.fromString(v.modv)));
+        try std.testing.expectEqual(v.cmp, a.cmp(b));
+    }
+}
+
+test "BigInt bit operations, shifts and gcd match CPython" {
+    // Same generator. `shr` is arithmetic (floor) for negative values, as
+    // its docstring says; the 65-bit shifts cross a whole limb.
+    const Big = BigInt(8);
+    const G = Gcd(8);
+    const Bits = struct {
+        a: []const u8,
+        b: []const u8,
+        g: []const u8,
+        band: []const u8,
+        bor: []const u8,
+        bxor: []const u8,
+        shl7: []const u8,
+        shr7: []const u8,
+        shl65: []const u8,
+        shr65: []const u8,
+    };
+    const vectors = [_]Bits{
+        .{ .a = "0", .b = "0", .g = "0", .band = "0", .bor = "0", .bxor = "0", .shl7 = "0", .shr7 = "0", .shl65 = "0", .shr65 = "0" },
+        .{ .a = "18446744073709551615", .b = "18446744073709551616", .g = "1", .band = "0", .bor = "36893488147419103231", .bxor = "36893488147419103231", .shl7 = "2361183241434822606720", .shr7 = "144115188075855871", .shl65 = "680564733841876926889855726716117319680", .shr65 = "0" },
+        .{ .a = "340282366920938463463374607431768211455", .b = "170141183460469231731687303715884105728", .g = "1", .band = "170141183460469231731687303715884105728", .bor = "340282366920938463463374607431768211455", .bxor = "170141183460469231731687303715884105727", .shl7 = "43556142965880123323311949751266331066240", .shr7 = "2658455991569831745807614120560689151", .shl65 = "12554203470773361527671578846415332832167817400780649922560", .shr65 = "9223372036854775807" },
+        .{ .a = "-1", .b = "255", .g = "1", .band = "255", .bor = "-1", .bxor = "-256", .shl7 = "-128", .shr7 = "-1", .shl65 = "-36893488147419103232", .shr65 = "-1" },
+        .{ .a = "-1180591620717411303424", .b = "295147905179352825856", .g = "295147905179352825856", .band = "0", .bor = "-885443715538058477568", .bxor = "-885443715538058477568", .shl7 = "-151115727451828646838272", .shr7 = "-9223372036854775808", .shl65 = "-43556142965880123323311949751266331066368", .shr65 = "-32" },
+        .{ .a = "9223372036854775808", .b = "4611686018427387904", .g = "4611686018427387904", .band = "0", .bor = "13835058055282163712", .bxor = "13835058055282163712", .shl7 = "1180591620717411303424", .shr7 = "72057594037927936", .shl65 = "340282366920938463463374607431768211456", .shr65 = "0" },
+        .{ .a = "6277101735386680763835789423207666416102355444464034512897", .b = "18446744073709551615", .g = "1", .band = "1", .bor = "6277101735386680763835789423207666416120802188537744064511", .bxor = "6277101735386680763835789423207666416120802188537744064510", .shl7 = "803469022129495137770981046170581301261101496891396417650816", .shr7 = "49039857307708443467467104868809893875799651909875269632", .shl65 = "231584178474632390847141970017375815706539969331281128078952061503973678383104", .shr65 = "170141183460469231731687303715884105728" },
+        .{ .a = "-7", .b = "3", .g = "1", .band = "1", .bor = "-5", .bxor = "-6", .shl7 = "-896", .shr7 = "-1", .shl65 = "-258254417031933722624", .shr65 = "-1" },
+        .{ .a = "57896044618658097711785492504343953926634992332820282019728792003956564819968", .b = "57896044618658097711785492504343953926634992332820282019728792003956564819968", .g = "57896044618658097711785492504343953926634992332820282019728792003956564819968", .band = "57896044618658097711785492504343953926634992332820282019728792003956564819968", .bor = "57896044618658097711785492504343953926634992332820282019728792003956564819968", .bxor = "0", .shl7 = "7410693711188236507108543040556026102609279018600996098525285376506440296955904", .shr7 = "452312848583266388373324160190187140051835877600158453279131187530910662656", .shl65 = "2135987035920910082395021706169552114602704522356652769947041607822219725780640550022962086936576", .shr65 = "1569275433846670190958947355801916604025588861116008628224" },
+        .{ .a = "115792089237316195423570985008687907853269984665640564039457584007913129639935", .b = "18446744073709551615", .g = "18446744073709551615", .band = "18446744073709551615", .bor = "115792089237316195423570985008687907853269984665640564039457584007913129639935", .bxor = "115792089237316195423570985008687907853269984665640564039439137263839420088320", .shl7 = "14821387422376473014217086081112052205218558037201992197050570753012880593911680", .shr7 = "904625697166532776746648320380374280103671755200316906558262375061821325311", .shl65 = "4271974071841820164790043412339104229205409044713305539894083215644439451561244206557776754769920", .shr65 = "3138550867693340381917894711603833208051177722232017256447" },
+    };
+    for (vectors) |v| {
+        const a = try Big.fromString(v.a);
+        const b = try Big.fromString(v.b);
+        try std.testing.expect((try G.egcd(a, b)).g.eql(try Big.fromString(v.g)));
+        try std.testing.expect(a.bitAnd(b).eql(try Big.fromString(v.band)));
+        try std.testing.expect(a.bitOr(b).eql(try Big.fromString(v.bor)));
+        try std.testing.expect(a.bitXor(b).eql(try Big.fromString(v.bxor)));
+        try std.testing.expect((try a.shl(7)).eql(try Big.fromString(v.shl7)));
+        try std.testing.expect(a.shr(7).eql(try Big.fromString(v.shr7)));
+        try std.testing.expect((try a.shl(65)).eql(try Big.fromString(v.shl65)));
+        try std.testing.expect(a.shr(65).eql(try Big.fromString(v.shr65)));
+    }
+}
+
+test "BigInt modular exponentiation matches CPython's pow" {
+    // pow(a, e, m) in CPython, over the fields this ecosystem uses: the
+    // Mersenne 2^61-1, the STARK prime and the BLS12-381 scalar field. Every
+    // modulus stays under the 32*max_limbs width threshold, which is a
+    // separate contract with its own test.
+    const Big = BigInt(8);
+    const ME = ModExp(8);
+    const Exp = struct { a: []const u8, e: []const u8, m: []const u8, r: []const u8 };
+    const vectors = [_]Exp{
+        .{ .a = "2", .e = "10", .m = "1000", .r = "24" },
+        .{ .a = "2", .e = "0", .m = "7", .r = "1" },
+        .{ .a = "5", .e = "1", .m = "3", .r = "2" },
+        .{ .a = "3", .e = "5", .m = "11", .r = "1" },
+        .{ .a = "7", .e = "18446744073709551629", .m = "18446744073709551557", .r = "16790916694802184733" },
+        .{ .a = "1267650600228229401496703205377", .e = "65537", .m = "3618502788666131213697322783095070105623107215331596699973092056135872020481", .r = "32693487889769341272950467266621626850756033291401840963505979986675793854" },
+        .{ .a = "123456789", .e = "1000", .m = "2305843009213693951", .r = "607234073701413367" },
+        .{ .a = "18446744073709551615", .e = "65537", .m = "52435875175126190479447740508185965837690552500527637822603658699938581184513", .r = "3450719233425594202655059376546050658683241833234411947747777383136624358838" },
+    };
+    for (vectors) |v| {
+        const a = try Big.fromString(v.a);
+        const e = try Big.fromString(v.e);
+        const m = try Big.fromString(v.m);
+        try std.testing.expect((try ME.modExp(a, e, m)).eql(try Big.fromString(v.r)));
+    }
+}
+
 test "BigInt shift" {
     const Big = BigInt(8);
 

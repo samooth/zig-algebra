@@ -16,6 +16,35 @@ the limb-array primitives that `zig-field` uses for its Montgomery constants.
 - **Limb-array helpers** — `intToLimbs`, `intToLimbsRuntime`, `limbsToInt`, `cmp`, `add`, `sub`, `shl`, `shr`, `mul`, `bitLength`, `numLimbs`
 - **No heap allocation** in the hot path; only `toString`/`fromString` touch an allocator
 
+### Semantics the tests pin
+
+The signed contracts are not the ones every language picks, and the tests say
+which is which — they are checked against CPython's `int`, not against this
+implementation:
+
+| operation | contract | example |
+|---|---|---|
+| `divRem` / `div` / `rem` | truncates toward zero (C), remainder takes the **dividend's** sign | `-7 / -3 == 2`, `-7 % -3 == -1` |
+| `mod` | result in `[0, |m|)`; the sign of `m` is irrelevant | `(-7).mod(-3) == 2`, `7.mod(-3) == 1` |
+| `shr` | **arithmetic** (floor) for negatives, as `bitXor` already is | `(-7).shr(7) == -1`, `(-1).shr(7) == -1` |
+| `bitAnd`/`bitOr`/`bitXor` | two's complement over the whole integer | `(-1) ^ 255 == -256` |
+| `fromString` | optional leading `-`; `toString` writes one, so the two round-trip | `fromString("-42")`, `fromString("-")` is `error.InvalidDigit` |
+| `eql` / `cmp` | sign-aware: `-0` is `0` | `fromString("-0").eql(zero())` |
+
+`mod` and `shr` both failed these contracts and were fixed: `mod` added a
+negative `m` to a negative remainder (`(-7).mod(-3)` returned `-4`), and `shr`
+truncated toward zero while documenting an arithmetic shift (`(-1).shr(7)`
+returned `0`). The CPython differential is what found them — a test written
+against this implementation would have passed both.
+
+## Testing
+
+The vectors in `src/root.zig` labelled *CPython* were generated with CPython 3
+(`int` is arbitrary precision) for the contracts above, with magnitudes on the
+64-bit limb boundaries (`2^63`, `2^64`, `2^128`, `2^192`, `2^256`) because a
+carry bug lives exactly there. Reverting either fix turns the differential
+red, which was observed before either fix was trusted.
+
 ## Installation
 
 Add to your `build.zig.zon`:

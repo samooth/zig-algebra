@@ -103,22 +103,33 @@ pub fn BigInt(comptime max_limbs: usize) type {
             return r;
         }
 
-        /// Parse from a decimal ASCII string.
+        /// Parse from a decimal ASCII string, with an optional leading `-`.
         ///
-        /// Returns `error.InvalidDigit` if the string contains non-digit characters.
+        /// Returns `error.InvalidDigit` if the string contains any character
+        /// other than an optional leading sign and decimal digits, and for a
+        /// bare `-`. The sign is accepted because `toString` emits one: the
+        /// type is signed, its own serializer wrote the minus, and a parser
+        /// that refused to read it back made `fromString(toString(x))` fail
+        /// for every negative `x` while looking correct on every positive
+        /// one. `-0` is zero, and the empty string is still zero.
         ///
         /// # Example
         /// ```zig
         /// const a = try Big.fromString("123456789012345678901234567890");
+        /// const b = try Big.fromString("-42");
         /// ```
         pub fn fromString(s: []const u8) !Self {
+            const negative = s.len > 0 and s[0] == '-';
+            const digits = if (negative) s[1..] else s;
+            if (negative and digits.len == 0) return error.InvalidDigit;
             var r = Self.zero();
-            for (s) |c| {
+            for (digits) |c| {
                 if (c < '0' or c > '9') return error.InvalidDigit;
                 const digit = c - '0';
                 r = try r.mulU64(10);
                 r = try r.addU64(digit);
             }
+            if (negative and !r.isZero()) r.negative = true;
             return r;
         }
 
@@ -461,10 +472,20 @@ pub fn BigInt(comptime max_limbs: usize) type {
         }
 
         /// Modular reduction: `self mod m`, always non-negative.
+        ///
+        /// The sign of `m` is irrelevant: the result is in `[0, |m|)`. The
+        /// previous `r.add(m)` did not deliver that when both `self` and
+        /// `m` were negative -- `(-7).mod(-3)` returned `-4` -- and the
+        /// docstring's "always non-negative" was a claim the body did not
+        /// keep.
+        ///
+        /// # Errors
+        /// `error.DivisionByZero` if `m` is zero.
         pub fn mod(self: Self, m: Self) !Self {
-            var r = try self.rem(m);
+            const pos = m.abs();
+            var r = try self.rem(pos);
             if (r.isNegative()) {
-                r = try r.add(m);
+                r = try r.add(pos);
             }
             return r;
         }
@@ -503,13 +524,42 @@ pub fn BigInt(comptime max_limbs: usize) type {
             return r;
         }
 
-        /// Right shift by `shift` bits (arithmetic for negative numbers).
+        /// Right shift by `shift` bits, arithmetic (floor) for negative
+        /// numbers, as an arithmetic shift of a two's complement value is and
+        /// as the bitwise operations above already are: `-1 >> 7 == -1` and
+        /// `(-7) >> 7 == -1`, not `0`. The previous body shifted the
+        /// magnitude and re-applied the sign, which truncated toward zero and
+        /// disagreed with this docstring on every negative whose low bits were
+        /// not zero -- `shr(7)` of `-1` and of `-7` both returned `0`.
+        ///
+        /// The discarded-bit round-up cannot overflow: for `shift >= 1` the
+        /// magnitude loses at least one bit, so the incremented result is
+        /// strictly below `2^(len * LimbBits)`.
         pub fn shr(self: Self, shift: usize) Self {
             if (self.isZero() or shift == 0) return self;
             const limb_shift = shift / limb.LimbBits;
             const bit_shift = @as(usize, shift % limb.LimbBits);
 
-            if (limb_shift >= self.len) return Self.zero();
+            if (limb_shift >= self.len) {
+                // Everything is shifted out. A negative saturates at -1 under
+                // floor semantics; a positive reaches 0.
+                return if (self.negative) Self.fromI64(-1) else Self.zero();
+            }
+
+            // Bits leaving the low end decide whether a negative has to round
+            // its magnitude up, so they are read before the shift, not after
+            // normalize() has possibly cleared the sign of a zero.
+            var discarded = false;
+            for (0..limb_shift) |k| {
+                if (self.limbs[k] != 0) {
+                    discarded = true;
+                    break;
+                }
+            }
+            if (!discarded and bit_shift != 0) {
+                const low_mask: Limb = (@as(Limb, 1) << @intCast(bit_shift)) - 1;
+                discarded = (self.limbs[limb_shift] & low_mask) != 0;
+            }
 
             var r = Self{};
             var borrow: Limb = 0;
@@ -521,6 +571,21 @@ pub fn BigInt(comptime max_limbs: usize) type {
                 borrow = if (bit_shift == 0) 0 else val << @intCast(limb.LimbBits - bit_shift);
             }
             r.len = self.len - limb_shift;
+
+            if (self.negative and discarded) {
+                // Magnitude + 1, and it cannot overflow the buffer: `shift` is
+                // at least 1 here, so the magnitude lost at least one bit.
+                if (r.len == 0) {
+                    r.limbs[0] = 1;
+                    r.len = 1;
+                } else {
+                    var k: usize = 0;
+                    while (k < r.len) : (k += 1) {
+                        r.limbs[k] +%= 1;
+                        if (r.limbs[k] != 0) break;
+                    }
+                }
+            }
             r.negative = self.negative;
             r.normalize();
             return r;

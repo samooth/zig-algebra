@@ -78,6 +78,39 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-bigint` (fixed): three signed-arithmetic contracts the code did not
+  keep, all found by a differential against CPython.** The tests for this
+  library asserted what the implementation produced, so three defects could
+  sit behind their own docstrings: `mod` documented "always non-negative" and
+  added `m` to a negative remainder, so `(-7).mod(-3)` returned `-4` instead
+  of `2` whenever the dividend *and* the modulus were negative; `shr`
+  documented an arithmetic (floor) shift and truncated toward zero, so
+  `(-1).shr(7)` and `(-7).shr(7)` returned `0` where the bitwise operations
+  — already two's complement, and already agreeing with CPython on the same
+  values — imply `-1`; and `fromString` rejected every non-digit while
+  `toString` writes a leading `-` for negatives, so `fromString(toString(x))`
+  failed for every negative `x` and passed for every positive one, which is
+  the exact shape of a round-trip test that only ever ran one side. `mod` and
+  `shr` now follow their documentation and `fromString` accepts the sign its
+  own serializer emits. `divRem`/`rem` keep C semantics (truncation, the
+  remainder takes the dividend's sign); `fromString("")` is still zero and a
+  bare `-` is still `error.InvalidDigit`. External consumers: `mod` and `shr`
+  on negative arguments see different values — and the values they now
+  produce are the ones the docstrings promised.
+- **`zig-bigint` (behaviour addition): `fromString` reads a leading `-`.**
+  See the fix above; the parse of positive decimal strings is unchanged, so
+  this only widens what is accepted.
+- **`zig-bigint` (tested): the arithmetic is differential-tested against
+  CPython.** Three tests carry vectors generated with CPython 3 (`int` is
+  arbitrary precision, and nothing in this repository produced them) for the
+  contracts the docstrings state: 14 core cases across the 64-bit limb
+  boundaries (add, sub, mul, divRem, mod, cmp), 10 bitwise/shift/gcd cases
+  including the negative ones where the two defects above lived, and 8
+  modular-exponentiation cases over the Mersenne 2^61-1, the STARK prime and
+  the BLS12-381 scalar field. Reverting either fix turns the differential
+  red — observed before the fixes were trusted. This is the library's first
+  answer to "where did the vectors come from?"; see
+  `docs/requirements.md`.
 - **`zig-hash` (added): `Poseidon(...).initSpec()` generates the reference
   parameter set.** It is the IAIK `generate_parameters_grain.sage` Grain LFSR
   behind circomlibjs's `poseidon_constants.json` — header

@@ -203,7 +203,7 @@ where a rewrite would buy something and where it would not.
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
 | `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
-| `bigint` | 23 | **unknown** | **yes** — negative-modulus guard removed, caught | no |
+| `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
 | `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
@@ -222,17 +222,21 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the fourteen libraries below the
-three, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the thirteen libraries below the
+four, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Three libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
-blake2b/blake2s/sha3 re-checked against `hashlib`), `pairing` (`py_ecc`,
-EIP-197) and `binary-field` (a Pocklington certificate plus a `u256` oracle).
-One of the three is `hash`, which hid a non-BLAKE3 the whole time — which is the
-argument for the requirement being about provenance and not about having
-vectors.
+**Four libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
+CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
+(a Pocklington certificate plus a `u256` oracle) and `bigint` (CPython's
+`int`, which is where `mod` and `shr` were caught contradicting their own
+docstrings). One of the four is `hash`, which hid a non-BLAKE3 the whole time —
+which is the argument for the requirement being about provenance and not about
+having vectors. The last of those four was a `unknown` two commits before its
+vectors were written, and the answer was not "no": two of the three contracts
+it now demonstrates had been broken the whole time.
 
 **Seven of the ten unmeasured libraries were measured, and six guards are
 dead code.** A mutation was written for each: change a guard, a comparison, an
