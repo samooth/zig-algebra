@@ -591,14 +591,16 @@ checked implementations are the only ones.
 ## Advisory ZA-2026-004 — `Montgomery` inverses are wrong for any modulus with zero headroom
 
 **Severity: high. Affects every release from the first commit of this
-repository, including `v0.5.1` and `v0.5.2`.**
+repository through `v0.5.2` inclusive; fixed in `v0.5.3`.**
 
-**Status: FIXED on `main` (`086234a`), not released.** The fix and the test that
-proves it are in `main`; **no published release contains it**, so every consumer
-of `v0.5.1` or `v0.5.2` still has the defect. This sentence was written before
-the fix and said "no patch exists yet" while the patch sat in `main` — an
-advisory asserting a stale state is the same failure as a requirement that
-renames `unknown` into `unknown`, so it is corrected here rather than left.
+**Status: FIXED, and the sequence is the honest form.** The fix and the test
+that proves it landed on `main` in `086234a` and **ship with the `v0.5.3`
+release section** prepared in `CHANGELOG.md` — while `v0.5.1` and `v0.5.2`
+still carry the defect, because a fix on `main` is not a fix for a consumer
+until a tag contains it. This status line originally said "no patch exists
+yet" while the patch already sat in `main`; an advisory asserting a stale
+state is the same failure as a requirement that renames `unknown` into
+`unknown`, so it was corrected before the release rather than after it.
 
 ### The finding
 

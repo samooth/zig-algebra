@@ -8,11 +8,13 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 > point.**
 >
 > - `v0.4.0` and `v0.5.0` were created as local tags, and **never left this
->   repository**. As of 2026-09-27 the published tags are `v0.1.0` …
->   `v0.3.2` plus `v0.5.1`; there is no `v0.4.0` and no `v0.5.0` on the remote,
+>   repository**. As of 2026-09-29 the published tags are `v0.1.0` …
+>   `v0.3.2` plus `v0.5.1` and `v0.5.2`; there is no `v0.4.0` and no
+>   `v0.5.0` on the remote,
 >   and there never was. Both remain signed and un-moved locally, because
 >   deleting them would lose the order; their content is contained in
->   `v0.5.1`.
+>   `v0.5.1`. (`v0.5.3` is the section below: prepared on `main`, not a
+>   published tag until it is pushed — a local tag is an intention.)
 > - `v0.5.1` was re-pointed locally, more than once, while it was still
 >   unpublished — once to carry the torus work, once to carry the Windows
 >   compile fix — and was then **published on 2026-09-27** at `22df684`.
@@ -59,10 +61,15 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
-> **The fix for ZA-2026-004 is in this `Unreleased` section and therefore in no
-> published release.** `v0.5.1` and `v0.5.2` still ship the wrong inverse for any
-> zero-headroom modulus. Anyone consuming a release needs the fix from `main` or
-> must size their `BigInt`-equivalent container with headroom.
+## [v0.5.3] — 2026-09-29
+
+> **This release fixes ZA-2026-004, the `Montgomery` inverse for any
+> zero-headroom modulus — and the direction of that matters: `v0.5.1` and
+> `v0.5.2` still ship the defect, so a consumer of those releases either moves
+> to `v0.5.3` or sizes the container with headroom.** The patch reached `main`
+> in `086234a`, several commits before this one; the advisory's stale status
+> line ("no patch exists yet", written while the patch already sat in `main`)
+> and its correction are both in `SECURITY.md`.
 
 ### Added
 
@@ -336,8 +343,6 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 - Requirement 14 is no longer a coverage debt waiting to be paid. It now names
   the outstanding decision.
 
-> **Not yet published.** The tag follows the audit, not the other way round.
-
 ### Fixed
 
 - **`libs/hash` used a hand-rolled field instead of the one in `zig-field`.**
@@ -454,15 +459,48 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   the first build of `hash`'s example is what surfaced the field fork above —
   so the gate paid for itself before it was finished.
 
+### Versioning
+
+- Root `build.zig.zon` is now **`0.5.3`** (was `0.5.2`); every library keeps
+  its own independent semver. Manifests bumped for this release:
+
+  | library | was -> now | why |
+  |---|---|---|
+  | `bigint` | 0.3.0 -> **0.4.0** | **breaking**: `egcd` returns an error union instead of being undefined behaviour; `modExp` names `error.InvalidModulusWidth` |
+  | `binary-field` | 0.4.1 -> **0.5.0** | new public `fromBytesChecked` on `BinaryField`/`TowerField` |
+  | `pairing` | 0.4.0 -> **0.5.0** | the four checked entry points |
+  | `transcript` | 0.1.0 -> **0.2.0** | `challengeFieldChecked` |
+  | `field` | 0.4.0 -> **0.4.1** | ZA-2026-004, and the four `hash` bodies that did not compile |
+  | `fri` | 0.3.0 -> **0.3.1** | challenge entry point switched; **sequence unchanged**, pinned by the v0.5.2 KAT |
+  | `hash` | 0.4.0 -> **0.4.1** | now depends on `zig-field`; digests unchanged |
+
+  `algebra-traits` and `merkle` carry tests only; `curve`, `kzg`, `linalg`,
+  `ntt`, `parallel`, `poly`, `rng` and `serialization` are untouched. The
+  range stays `0.1.3` (`merkle`) to `0.5.0` (`binary-field`, `curve`,
+  `pairing`).
+
+- **Test counts, measured at both ends rather than carried forward.** At the
+  `v0.5.2` tag the root step ran **417 tests in 17 binaries** and the
+  packages summed to **533** — a 116-test region (the `field` and `curve`
+  `tests/` roots) that no root gate had ever opened. `086234a` wired those
+  roots into the step; at `v0.5.3` the root runs **545 tests in 27
+  binaries**, which equals the per-library sum, in both Debug and
+  ReleaseFast. The four tests since (`bigint` +3, `fri` +1) sit on top of
+  that closure.
+
 ## [v0.5.2] — 2026-09-27
 
-> **Not yet published; the tag follows the audit, not the other way round.**
-> `v0.5.1` is published and frozen at `22df684` and is **not** re-pointed, so
-> this fix cannot go into it — the mechanism is in the header. A soundness fix
-> on a patch number is worth naming rather than hiding: the APIs are unchanged
-> and no wire format moved, but the digests do not carry forward. `v0.6.0`
-> would be equally defensible; 0.5.2 keeps the patch distance from the tag that
-> carries the stale paragraph, which is itself evidence.
+> **This note used to open "Not yet published; the tag follows the audit."
+> Written before the tag, and a state assertion therefore expired the moment
+> the state moved: `v0.5.2` was published on 2026-09-27, the remote tag
+> `13ceafd` peeling to `a22dbd9`.** What the note was arguing for matters more
+> than its expiry: `v0.5.1` is published and frozen at `22df684` and is **not**
+> re-pointed, so this fix could not go into it — the mechanism is in the
+> header. A soundness fix on a patch number is worth naming rather than
+> hiding: the APIs are unchanged and no wire format moved, but the digests do
+> not carry forward. `v0.6.0` would be equally defensible; 0.5.2 keeps the
+> patch distance from the tag that carries the stale paragraph, which is
+> itself evidence.
 
 ### Security: `zig-hash`'s Blake3 was not BLAKE3, in every release
 
