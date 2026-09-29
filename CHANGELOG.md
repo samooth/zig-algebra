@@ -96,9 +96,15 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   coefficient. Both now return `error.DegenerateNodes`, which is what
   `poly.lagrangeInterpolate` has returned (`error.DivisionByZero`) for the
   same input since 0.3.0 — same condition, two names, and renaming poly's
-  would break its API, so the disagreement is documented instead. This is an
-  **API change**: the error sets of two public functions grow, and a caller
-  that handled every error before now has one more to handle. The contract is
+  would break its API, so the disagreement is documented instead. **The
+  mechanism is worth naming so this is not read as a refactor later: a silent
+  `inv` became an explicit `isZero` test, and it is deliberately not
+  `invChecked`** — `FieldTrait` requires `inv` and not `invChecked`, so
+  calling the latter would break every conforming type that lacks it in order
+  to catch a degree-two bug. The check is on the delta, which is the value the
+  denominator actually inverts. This is an **API change**: the error sets of two
+  public functions grow, and a caller that handled every error before now has
+  one more to handle. The contract is
   deliberately narrower than "no duplicates anywhere": the denominator of
   `λ_i` only involves pairs that include `i`, so a unique `x_i` still yields a
   well-defined coefficient even when some other value is repeated; what such a
