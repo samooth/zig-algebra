@@ -195,7 +195,7 @@ where a rewrite would buy something and where it would not.
 
 | library | tests | #1 vector provenance | #2 mutation seen failing | #3 forked and diverged |
 |---|---|---|---|---|
-| `hash` | 19 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3 | **yes** — 3 mutations | no |
+| `hash` | 22 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3; Poseidon pinned to two external parameter sets: CryptoExperts' Hades (the StarkNet constants, via poseidon-py) and the IAIK/circomlibjs Grain generator (`initSpec`, all 195 constants + MDS + permutation states) | **yes** — 5 mutations | no |
 | `field` | 87 | **unknown** | **yes** — `add` reduction, and `fromBytesChecked` contract per field | no — **and see ZA-2026-004**: `Montgomery` had no test reaching it, and it is wrong for any zero-headroom modulus |
 | `binary-field` | 97 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 26 | **unknown** | **yes** — torus generator | no |

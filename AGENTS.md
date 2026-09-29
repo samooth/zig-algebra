@@ -257,8 +257,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (546 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 546 tests, seconds
+zig build test        # Run all library tests (548 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 548 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -273,7 +273,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests only (546 total, and the per-library sum is 546: **the root step now runs the `tests/` roots too**).
+tests (548 total across all 27 test binaries, and the per-library sum is 548: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -376,9 +376,9 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 546; per-library
-  `zig build test` totals sum to 546, which now **equals** the root total because the
-  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 5, bigint 23, binary-field 97, curve 98, field 87, fri 26, hash 20, kzg 6, linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25, serialization 15, transcript 11.
+- Counts (Zig 0.16.0, verified): root `zig build test` = 548; per-library
+  `zig build test` totals sum to 548, which now **equals** the root total because the
+  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 5, bigint 23, binary-field 97, curve 98, field 87, fri 26, hash 22, kzg 6, linalg 11, merkle 19, ntt 15, pairing 58, parallel 2, poly 28, rng 25, serialization 15, transcript 11.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
   The `field 85` / `507` pair above was wrong when written -- the runner
@@ -468,6 +468,9 @@ version for ecosystem-level releases, and record both in `CHANGELOG.md`.
   timing inline in shared code.
 - No `std.io.getStdOut()`; use `std.debug.print` for output.
 - Blake3 is at `std.crypto.hash.Blake3`, not `std.crypto.hash.blake3`.
+- Shift amounts must be narrow enough to be a valid shift count: shifting a
+  `u64`/`usize` by a `usize` amount is `expected type 'u6', found 'usize'`.
+  Cast the amount (`const k: u6 = @intCast(...)`) instead of widening the value.
 - ArrayList needs explicit allocator at method calls, not construction.
 - Struct fields need trailing commas.
 - Error unions: `error{X}!T` syntax (not `T!X`).

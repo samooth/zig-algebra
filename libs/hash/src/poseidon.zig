@@ -115,6 +115,103 @@ pub fn PoseidonVariant(comptime F: type, comptime t: usize, comptime full_rounds
             return init(rc, mds);
         }
 
+        /// Generate round constants and the MDS matrix with the reference
+        /// parameter generator: the IAIK `generate_parameters_grain.sage`
+        /// Grain LFSR behind circomlibjs's `poseidon_constants.json`.
+        ///
+        /// The 80-bit header is (FIELD=1, SBOX=0, n, t, RF, RP) followed by
+        /// 30 ones; n-bit samples are drawn MSB-first, rejected when `>= p`
+        /// for round constants, and reduced modulo p for the Cauchy MDS
+        /// candidate (2t distinct samples, every `x_i + y_j != 0` in F).
+        ///
+        /// `SBOX=0` records the family `x^alpha`: the exponent does not
+        /// enter the header, so alpha = 3 and alpha = 5 with the same
+        /// `(n, t, RF, RP)` generate the same parameters. The sage script's
+        /// `algorithm_1/2/3` sieve that pre-validates MDS candidates is not
+        /// ported; the known-answer test over circomlib's published `M[1]`
+        /// pins that the first candidate is accepted for this parameter set.
+        ///
+        /// # Errors
+        /// `error.NoValidRoundConstant` when 256 consecutive n-bit candidates
+        /// for one constant land `>= p` (each draw has probability > 1/2 of
+        /// being `< p`, so this is a bounded safety net, not an expected
+        /// outcome), `error.NoValidMdsEntry` when 256 draws fail the
+        /// distinctness or non-zero-sum conditions, or when an MDS entry
+        /// inverts to zero despite the non-zero-sum check.
+        pub fn initSpec() error{ NoValidRoundConstant, NoValidMdsEntry }!Self {
+            if (@hasDecl(F, "EXT_NON_RESIDUE")) @compileError("initSpec: F must be a prime field, not an extension field");
+            if (!@hasDecl(F, "MODULUS")) @compileError("initSpec: F must declare MODULUS");
+            if (!@hasDecl(F, "BITS")) @compileError("initSpec: F must declare BITS");
+            if (!@hasDecl(F, "invChecked")) @compileError("initSpec: F must provide invChecked");
+            if (F.BITS > 512) @compileError("initSpec: F.BITS must be <= 512 (the Grain sampler yields u512)");
+            if (t >= 1 << 12) @compileError("initSpec: t must be < 4096 (12-bit Grain header field)");
+            if (full_rounds >= 1 << 10) @compileError("initSpec: full_rounds must be < 1024 (10-bit Grain header field)");
+            if (partial_rounds >= 1 << 10) @compileError("initSpec: partial_rounds must be < 1024 (10-bit Grain header field)");
+
+            const n: usize = F.BITS;
+            const p: u512 = F.MODULUS;
+            var grain = Grain.init(n, t, full_rounds, partial_rounds);
+
+            var round_constants: [total_rounds][t]F = undefined;
+            for (&round_constants) |*row| {
+                for (row) |*cell| {
+                    var attempts: usize = 0;
+                    while (true) : (attempts += 1) {
+                        if (attempts == 256) return error.NoValidRoundConstant;
+                        const candidate = grain.sample(n);
+                        if (candidate < p) {
+                            cell.* = F.fromInt(candidate);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            var attempts: usize = 0;
+            while (attempts < 256) : (attempts += 1) {
+                // 2t samples reduced modulo p, redrawn as a whole while any
+                // two coincide -- the reference draws all 2t before checking.
+                var samples: [2 * t]u512 = undefined;
+                var draws: usize = 0;
+                while (draws < 256) : (draws += 1) {
+                    for (&samples) |*s| s.* = grain.sample(n) % p;
+                    var duplicate = false;
+                    for (0..2 * t) |i| {
+                        for (0..i) |j| {
+                            if (samples[i] == samples[j]) duplicate = true;
+                        }
+                    }
+                    if (!duplicate) break;
+                }
+                if (draws == 256) return error.NoValidMdsEntry;
+
+                // Every x_i + y_j must be nonzero in F. Both samples are
+                // reduced, so the sum mod p is zero exactly when the other
+                // sample is the additive complement -- computed without
+                // ever forming a < 2p sum that could exceed u512.
+                var zero_sum = false;
+                for (0..t) |i| {
+                    for (0..t) |j| {
+                        if (samples[t + j] == (p - samples[i]) % p) zero_sum = true;
+                    }
+                }
+                if (zero_sum) continue;
+
+                var mds: [t][t]F = undefined;
+                for (0..t) |i| {
+                    for (0..t) |j| {
+                        const a = samples[i];
+                        const b = samples[t + j];
+                        const sum: u512 = if (a >= p - b) a - (p - b) else a + b;
+                        const s = if (sum >= p) sum - p else sum;
+                        mds[i][j] = F.invChecked(F.fromInt(s)) catch return error.NoValidMdsEntry;
+                    }
+                }
+                return init(round_constants, mds);
+            }
+            return error.NoValidMdsEntry;
+        }
+
         /// S-box: x^alpha
         fn sbox(x: F) F {
             return F.pow(x, alpha);
@@ -242,3 +339,62 @@ fn fieldFromCounter(comptime F: type, seed: []const u8, counter: u64) F {
     for (digest) |byte| value = (value << 8) | byte;
     return F.fromInt(value);
 }
+
+/// The 80-bit Grain LFSR of the IAIK `generate_parameters_grain.sage`
+/// reference parameter generator: one bit per `u1` slot, taps at
+/// 62/51/38/23/13/0, shift toward index 0 with the feedback bit last.
+const Grain = struct {
+    state: [80]u1,
+
+    /// Header (MSB-first within each field): FIELD=1 (GF(p)) as 2 bits,
+    /// SBOX=0 (the `x^alpha` family) as 4 bits, then n, t, full_rounds and
+    /// partial_rounds as 12/12/10/10 bits, then 30 ones. The burn-in
+    /// discards the first 160 steps before any output is used.
+    fn init(n: usize, t: usize, full_rounds: usize, partial_rounds: usize) Grain {
+        var s: [80]u1 = [_]u1{0} ** 80;
+        s[1] = 1; // FIELD = 1 -> bits "01"; SBOX = 0 leaves bits 2..6 zero
+        setBits(&s, 6, n, 12);
+        setBits(&s, 18, t, 12);
+        setBits(&s, 30, full_rounds, 10);
+        setBits(&s, 40, partial_rounds, 10);
+        for (50..80) |i| s[i] = 1;
+        var g = Grain{ .state = s };
+        for (0..160) |_| _ = g.step();
+        return g;
+    }
+
+    fn setBits(s: *[80]u1, comptime offset: usize, value: usize, comptime width: usize) void {
+        for (0..width) |i| {
+            // The shift amount must itself be a valid shift count (u6 for a
+            // 64-bit value), so it is cast rather than left as `usize`.
+            const shift: u6 = @intCast(width - 1 - @as(usize, i));
+            s[offset + i] = @intCast((value >> shift) & 1);
+        }
+    }
+
+    fn step(self: *Grain) u1 {
+        const b = self.state[62] ^ self.state[51] ^ self.state[38] ^
+            self.state[23] ^ self.state[13] ^ self.state[0];
+        std.mem.copyForwards(u1, self.state[0..79], self.state[1..80]);
+        self.state[79] = b;
+        return b;
+    }
+
+    /// Next generator bit: one step, then while it is zero step twice per
+    /// iteration, then one final step whose bit is the output.
+    fn nextBit(self: *Grain) u1 {
+        var b = self.step();
+        while (b == 0) {
+            _ = self.step();
+            b = self.step();
+        }
+        return self.step();
+    }
+
+    /// `width` output bits MSB-first as a u512.
+    fn sample(self: *Grain, width: usize) u512 {
+        var v: u512 = 0;
+        for (0..width) |_| v = (v << 1) | self.nextBit();
+        return v;
+    }
+};

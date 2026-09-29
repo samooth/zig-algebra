@@ -94,7 +94,9 @@ derived.finalize(&dout);
 
 `Poseidon` and `MiMC` are **type factories**, not functions you call
 directly. Instantiate the type with its parameters, then build an instance
-from a seed (or from explicit round constants and an MDS matrix).
+from the reference parameter set (`initSpec`, Poseidon), from a seed
+(`initFromSeed`, ad-hoc), or from explicit round constants and an MDS
+matrix (`init`).
 
 ```zig
 const std = @import("std");
@@ -109,6 +111,12 @@ const input = [_]F{ F.fromInt(1), F.fromInt(2), F.fromInt(3) };
 // Poseidon(F, t, full_rounds, partial_rounds, alpha)
 const PoseidonF = zh.Poseidon(F, 3, 8, 60, 5);
 const poseidon = try PoseidonF.initFromSeed("demo");
+
+// Parameters from the IAIK Grain reference generator -- what circomlibjs
+// and other Poseidon implementations use. `initSpec` needs the field to
+// expose MODULUS and BITS (a zig-field prime field).
+const spec = try PoseidonF.initSpec();
+_ = spec;
 
 const out2 = poseidon.hash(&input); // [2]F  (sponge, rate = t - 1)
 const ab = poseidon.hash2(input[0], input[1]); // single F
@@ -150,6 +158,9 @@ try std.testing.expectError(error.SeedTooLong, MiMCF.initFromSeed(too_long));
 > instances deterministic and reproducible, but it is *not* a standard
 > Poseidon/MiMC parameter set and no differential/random-oracle analysis has
 > been done. Do not use these instances in production signatures or proofs.
+> For anything that has to interoperate, `initSpec` generates the published
+> reference parameters instead — the ones circomlibjs and the IAIK scripts
+> use, pinned here against that published set.
 
 ## Hash Functions
 
@@ -169,7 +180,7 @@ try std.testing.expectError(error.SeedTooLong, MiMCF.initFromSeed(too_long));
 # From the monorepo root
 zig build test
 
-# Just this library (18 tests, all inline in src/root.zig)
+# Just this library (22 tests, all inline in src/root.zig)
 cd libs/hash && zig build test
 ```
 
@@ -198,6 +209,21 @@ cd libs/hash && zig build test
   search for a valid MDS entry finds nothing. That guard used to be a
   `std.debug.assert`, compiled out in `ReleaseFast`, where the failed search
   left `y[j]` undefined and produced a singular MDS matrix
+- `Poseidon(...).initSpec` is the **reference parameter set**: the IAIK
+  `generate_parameters_grain.sage` Grain LFSR behind circomlibjs's
+  `poseidon_constants.json` (header `FIELD=1, SBOX=0, n, t, RF, RP`, n-bit
+  samples MSB-first, candidates `>= p` rejected; then a Cauchy MDS from 2t
+  distinct reduced samples with every `x_i + y_j != 0`). `SBOX=0` names the
+  family `x^alpha`, so `alpha` does not enter the generator: alpha = 3 and
+  alpha = 5 over the same `(n, t, RF, RP)` produce identical constants. The
+  sage script's `algorithm_1/2/3` sieve is not ported, which a known-answer
+  test against circomlib's published `M[1]` pins to the first candidate for
+  that parameter set. It returns `error.NoValidRoundConstant` /
+  `error.NoValidMdsEntry` from its 256-draw bounds, and compile-errors on a
+  field that is not a prime field with `MODULUS`, `BITS` and `invChecked`,
+  on `BITS > 512`, or on `t >= 4096` / `RF >= 1024` / `RP >= 1024` (the Grain
+  header widths). Use it when you need to interoperate; use `initFromSeed`
+  only for ad-hoc instances
 - Custom `format` methods need the `{f}` specifier in Zig 0.16; `{}` prints the
   default struct form
 

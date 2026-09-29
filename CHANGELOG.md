@@ -78,6 +78,34 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-hash` (added): `Poseidon(...).initSpec()` generates the reference
+  parameter set.** It is the IAIK `generate_parameters_grain.sage` Grain LFSR
+  behind circomlibjs's `poseidon_constants.json` — header
+  `FIELD=1, SBOX=0, n, t, RF, RP`, n-bit samples drawn MSB-first with
+  candidates `>= p` rejected, then a Cauchy MDS built from 2t distinct reduced
+  samples with every `x_i + y_j != 0`. So a caller who needs to interoperate
+  no longer has to copy constants out of a JSON file or generate them from a
+  seed. `SBOX=0` names the family `x^alpha`: the exponent does not enter the
+  generator, so alpha = 3 and alpha = 5 over the same `(n, t, RF, RP)` produce
+  identical constants. The sage script's `algorithm_1/2/3` sieve is not
+  ported, and the known-answer test pins the published `M[1]` to the first
+  candidate. `initFromSeed` is unchanged and still available for ad-hoc
+  instances; `initSpec` compile-errors on anything the generator does not
+  describe (a non-prime field, `BITS > 512`, a width outside the Grain
+  header's 12/12/10/10 bits) and returns `NoValidRoundConstant` /
+  `NoValidMdsEntry` from its 256-draw bounds.
+- **`zig-hash` (tested): Poseidon is now pinned to two external parameter
+  sets.** The permutation had no answer to check against — its tests asserted
+  determinism and self-consistency, which any permutation passes. One
+  known-answer test now fixes the CryptoExperts Hades parameters StarkNet
+  uses (t=3, RF=8, RP=83, alpha=3, partial-round S-box on the last cell; the
+  107 constants taken from poseidon-py's `CONST_RC_MONTGOMERY_P3`), exposed
+  for that purpose as `PoseidonVariant(F, t, RF, RP, alpha, partial_sbox_index)`
+  with `Poseidon(...)` keeping cell 0. The other pins `initSpec` itself:
+  all 195 round constants and the 3x3 MDS of circomlibjs's `C[1]`/`M[1]`,
+  plus three permutation states from its `poseidon_reference.js`, over the
+  BN254 scalar field. Both are external vectors; neither was produced by
+  this code.
 
 ## [v0.5.3] — 2026-09-29
 
