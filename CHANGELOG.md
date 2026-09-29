@@ -78,6 +78,31 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-field` (P0, fixed): `QuadraticExtension.primitiveRootOfUnity` never
+  returned for any order above the base field's two-adicity.** The
+  quadratic-non-residue search walked the real axis -- `z = 2; z += 1`, so
+  every candidate had `c1 = 0` -- and that is a search in a place where the
+  answer cannot exist. For any non-zero `a` in the base field,
+  `a^((p^2-1)/2) = (a^(p-1))^((p+1)/2) = 1` by Fermat, so **every base-field
+  element is a square in `F_{p^2}`** and `legendre` can only answer `1` along
+  that axis. Measured on `QuadraticExtension(M61, -1)`: two-adicity 1 for M61
+  and 62 for the extension; `legendre == 1` for every real-axis value 2..8;
+  `legendre == -1` for `5+3i`. So `primitiveRootOfUnity(62)` compiled and
+  never returned -- 2^61 candidates, each a 121-bit exponentiation. The public
+  API was reachable with a legal argument; nothing inside this repository
+  reached it, because the only test of this function stopped on the cheap
+  `log_size <= BaseField.two_adicity` path, and *that limitation was written
+  down* in `libs/field/CHANGELOG.md` and `libs/field/TODO.md` with a reason
+  that turned out to be false -- the extension binary runs in 59 ms with this
+  case in it. Documented is not covered. The search now varies both components,
+  which reaches a non-residue in a handful of tries (half of `F_{p^2}^*` is
+  one), and it is bounded: a failed search returns `error.NoNonResidue` instead
+  of running forever, which is also what makes the regression test possible --
+  reverting the search to the real axis makes that test **fail** with
+  `error.NoNonResidue` rather than hang. The root formula was already correct
+  and is unchanged: `z^((p^2-1)/2^log_size)` has exact order `2^log_size` for a
+  non-residue `z`, which the new test checks against the field rather than
+  against the helper that built it.
 - **`zig-algebra-traits` (fixed): `lagrangeInterpolate` returned the
   coefficients of a different polynomial.** Multiplying the Lagrange basis by
   the linear factor `(x - x_j)` added `li[k]` where it needed `li[k-1]`, so the

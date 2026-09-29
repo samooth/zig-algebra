@@ -22,6 +22,14 @@ fn checkedPart(comptime F: type, bytes: []const u8, comptime off: usize) error{I
 
 const field = @import("field.zig");
 
+/// Upper bound on the quadratic-non-residue search in
+/// `QuadraticExtension.primitiveRootOfUnity`. Half of `F_{p^2}^*` is a
+/// non-residue, so a search over both components succeeds in about two tries;
+/// this bound only decides what a *failed* search does, and a failed search
+/// must be an error rather than an unbounded loop. It is large enough to cover
+/// the whole plane for every field with `p <= 32`.
+const MAX_NON_RESIDUE_SEARCH: usize = 1024;
+
 /// Quadratic extension of `BaseField` by a non-residue `n`, with `v^2 = n`.
 pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseField) type {
     const base_bits = comptime @bitSizeOf(@TypeOf(BaseField.MODULUS));
@@ -361,19 +369,40 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         /// which has exact order `2^log_size`.
         ///
         /// # Errors
-        /// `error.OrderTooLarge` when `log_size > two_adicity`. The old
+        /// `error.OrderTooLarge` when `log_size > two_adicity` (the old
         /// `std.debug.assert` is compiled out in `ReleaseFast`, where
-        /// `orderExponent(log_size)` then shifted past the exponent width.
-        pub fn primitiveRootOfUnity(log_size: usize) error{OrderTooLarge}!Self {
+        /// `orderExponent(log_size)` then shifted past the exponent width),
+        /// and `error.NoNonResidue` when the bounded search below finds none.
+        ///
+        /// **The search has to leave the real axis, and that is arithmetic
+        /// rather than an implementation detail.** For every non-zero `a` in
+        /// the base field, `a^((p^2-1)/2) = (a^(p-1))^((p+1)/2) = 1`, so every
+        /// base-field element is a square in `F_{p^2}` and `legendre` can only
+        /// return `1` along that axis. The previous body walked `2, 3, 4, ...`
+        /// with `Self.one()` -- the real axis and nothing else -- so on
+        /// `QuadraticExtension(M61, -1)` the call `primitiveRootOfUnity(62)`
+        /// compiled and never returned: 2^61 candidates, each one a
+        /// 121-bit exponentiation. Both components vary now, which reaches a
+        /// non-residue in a handful of tries (half of `F_{p^2}^*` is one), and
+        /// the attempt count is bounded so a caller is never left waiting: an
+        /// exhaustive search is what the old loop was, and an unbounded one is
+        /// not a contract.
+        pub fn primitiveRootOfUnity(log_size: usize) error{ OrderTooLarge, NoNonResidue }!Self {
             if (log_size > two_adicity) return error.OrderTooLarge;
 
             if (log_size <= BaseField.two_adicity) {
                 return Self.fromBase(try BaseField.primitiveRootOfUnity(log_size));
             }
 
-            var z = Self.fromInt(2);
-            while (z.legendre() != -1) z = z.add(Self.one());
-            return z.pow(orderExponent(log_size));
+            var k: usize = 0;
+            while (k < MAX_NON_RESIDUE_SEARCH) : (k += 1) {
+                const z = Self.new(
+                    BaseField.fromInt(k + 2),
+                    BaseField.fromInt(k + 1),
+                );
+                if (z.legendre() == -1) return z.pow(orderExponent(log_size));
+            }
+            return error.NoNonResidue;
         }
 
         /// `order`-th root of unity (`order` a power of two).

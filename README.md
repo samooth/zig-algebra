@@ -79,7 +79,7 @@ parallel (no deps) · serialization (no deps)
 | [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 11 |
 | [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 26 |
 | [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 27 |
-| [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 88 |
+| [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 89 |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 97 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 98 |
 | [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 58 |
@@ -93,10 +93,10 @@ parallel (no deps) · serialization (no deps)
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **563 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
+> **564 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
 > step compiles **all 27 test binaries** — every library's inline `src/` tests
-> plus the separate `tests/` roots of `field` (6 files, 88 tests) and `curve`
-> (4 files, 98 tests). The per-library steps sum to **563, the same number**.
+> plus the separate `tests/` roots of `field` (6 files, 89 tests) and `curve`
+> (4 files, 98 tests). The per-library steps sum to **564, the same number**.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 5. `kzg`
 > was added in v0.2.2 as the 17th library.
 
@@ -202,7 +202,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 563 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 564 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |

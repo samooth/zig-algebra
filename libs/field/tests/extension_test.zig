@@ -186,3 +186,43 @@ test "BigField batchAdd/batchSub/batchMul" {
         try std.testing.expect(out[i].eq(a[i].mul(b[i])));
     }
 }
+
+// The P0 this pins: `primitiveRootOfUnity` on a quadratic extension hung for
+// every `log_size` above the base field's two-adicity, because the
+// non-residue search walked the real axis -- where nothing can be a
+// non-residue. Every number below is measured against the extension, not
+// against the base field it embeds.
+test "quadratic extension: a root of order above the base two-adicity, off the real axis" {
+    const M61 = zf.M61;
+    const E = zf.extension.QuadraticExtension(M61, M61.one().neg());
+
+    // The premise, written down where the bug was: for a in F_p^*,
+    // a^((p^2-1)/2) = (a^(p-1))^((p+1)/2) = 1, so the real axis is all
+    // residues. Measured: legendre == 1 for every one of these.
+    for (2..9) |a| {
+        try std.testing.expectEqual(@as(i8, 1), E.fromInt(a).legendre());
+    }
+    // And a non-residue does exist off it, which is what the search has to
+    // reach. Measured on this field: 5+3i.
+    try std.testing.expectEqual(@as(i8, -1), E.new(M61.fromInt(5), M61.fromInt(3)).legendre());
+
+    // The P0 input itself: 62 > 1, so this used to compile and never return.
+    try std.testing.expect(E.two_adicity > M61.two_adicity);
+    const log_size = E.two_adicity;
+    const w = try E.primitiveRootOfUnity(log_size);
+
+    // The contract, checked against the field and not against the helper that
+    // built it: exact order 2^log_size.
+    const two_pow = @as(u128, 1) << @intCast(log_size);
+    try std.testing.expect(w.pow(two_pow).isOne());
+    try std.testing.expect(!w.pow(two_pow / 2).isOne());
+
+    // Same path, cheap field, so the search is exercised on every run rather
+    // than only here: CM31 has base two-adicity 1 and extension two-adicity 32.
+    const CM = zf.CM31;
+    try std.testing.expect(CM.two_adicity > 1);
+    const wc = try CM.primitiveRootOfUnity(CM.two_adicity);
+    const two_pow_c = @as(u128, 1) << @intCast(CM.two_adicity);
+    try std.testing.expect(wc.pow(two_pow_c).isOne());
+    try std.testing.expect(!wc.pow(two_pow_c / 2).isOne());
+}

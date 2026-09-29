@@ -149,10 +149,16 @@ Ordered roughly by value per unit of effort.
       Mersenne with `BITS == 31`, so the Vec8 helpers cannot be reused for
       Goldilocks or the big fields. Either generalise the lane type or make the
       `void` case a compile error instead of a silently uncallable stub.
-- [ ] **More extension tests.** `extension_test.zig` has 10 tests;
-      `ext_quick.zig` has 2. The `primitiveRootOfUnity` test is limited to the
-      fast path because Debug mode is too slow at high two-adicity, so extension
-      roots of unity are under-covered.
+- [ ] **More extension tests.** `extension_test.zig` has 11 tests;
+      `ext_quick.zig` has 2. The `primitiveRootOfUnity` gap this item used to
+      name is closed: the slow path -- `log_size` above the base field's
+      two-adicity, which needs a non-residue *inside* the extension -- is now
+      covered at two-adicity 62 over `QuadraticExtension(M61, -1)`, and the
+      stated reason for skipping it ("Debug is too slow at high two-adicity")
+      was wrong. What is still missing is coverage of the *bounded search's*
+      failure path: `error.NoNonResidue` is unreachable in practice, so nothing
+      asserts it, and raising the bound is the one edit that would turn a
+      regression into a stalled suite rather than a red one.
 - [ ] **BigField coverage in the property tests.** `tests/fuzz.zig` exists but
       the big-field paths are exercised on fewer predefined fields than the
       small-field ones.

@@ -181,8 +181,12 @@ Checked variants of every entry point whose precondition used to be a
   appropriate for public STARK values, not secrets.
 - BigField `neg`/`sqrt` tests are no longer gated on `NUM_LIMBS == 1`; the
   `BigField neg debug` scratch test was removed from `montgomery.zig`.
-- The extension `primitiveRootOfUnity` test is limited to the fast path because
-  Debug mode is too slow at high two-adicity.
+- The extension `primitiveRootOfUnity` test covers the slow path too. This
+  line used to say the opposite -- that the test was limited to the fast path
+  "because Debug mode is too slow at high two-adicity" -- and the recorded
+  reason was false: the whole extension binary runs in 59 ms with a
+  `QuadraticExtension(M61, -1)` case at two-adicity 62 in it. The limitation
+  was what let a hang survive, so "documented" was not "covered".
 - Edge-case tests cover `pow(x, 0)`, `pow(x, 1)`, `inv(1)`, `sqrt(0)`, `sqrt(1)`
   and "sqrt of a non-residue returns `null`" — for `SmallField`. `inv(0)` is
   now covered too: an earlier revision of this file said there was **no**
