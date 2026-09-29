@@ -10,20 +10,32 @@
 const std = @import("std");
 const traits = @import("zig-algebra-traits");
 
+pub const MAX_SEED_LEN: usize = 1 << 20;
+
 /// Poseidon permutation over a field F.
 ///
 /// `t`: width (number of field elements per state, typically 3 or 5)
 /// `full_rounds`: total full S-box rounds (RF = Rf)
 /// `partial_rounds`: partial S-box rounds (RP = Rp)
 /// `alpha`: S-box exponent (typically 5 for prime fields where gcd(5, p-1)=1)
-pub const MAX_SEED_LEN: usize = 1 << 20;
-
+///
+/// The partial-round S-box touches cell 0; for the variants that use another
+/// cell, see `PoseidonVariant`.
 pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize, comptime partial_rounds: usize, comptime alpha: u64) type {
+    return PoseidonVariant(F, t, full_rounds, partial_rounds, alpha, 0);
+}
+
+/// Poseidon with an explicit cell for the partial-round S-box. The reference
+/// Hades implementations vary: most of the literature and `Poseidon` above use
+/// cell 0; CryptoExperts' f251 library (the StarkNet parameters) uses the last
+/// cell and `alpha = 3`.
+pub fn PoseidonVariant(comptime F: type, comptime t: usize, comptime full_rounds: usize, comptime partial_rounds: usize, comptime alpha: u64, comptime partial_sbox_index: usize) type {
     traits.assertField(F);
     // The sponge needs a rate of at least two (`rate = t - 1`) and a non-empty
     // capacity. This used to be a `std.debug.assert(t >= 3)` inside `hash`,
     // which is compiled out in ReleaseFast and then indexed a `[0]` state.
     if (t < 3) @compileError("Poseidon: width t must be >= 3");
+    if (partial_sbox_index >= t) @compileError("Poseidon: partial_sbox_index must be < t");
 
     const total_rounds = full_rounds + partial_rounds;
 
@@ -115,9 +127,9 @@ pub fn Poseidon(comptime F: type, comptime t: usize, comptime full_rounds: usize
             }
         }
 
-        /// Apply S-box to first element only (partial round).
+        /// Apply S-box to the configured cell only (partial round).
         fn partialSbox(state: *[t]F) void {
-            state[0] = sbox(state[0]);
+            state[partial_sbox_index] = sbox(state[partial_sbox_index]);
         }
 
         /// Add round constants.
