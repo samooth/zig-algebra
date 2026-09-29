@@ -203,7 +203,7 @@ where a rewrite would buy something and where it would not.
 | `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
 | `merkle` | 19 | **unknown** | **yes** — `validPathIndex` off-by-one, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
-| `bigint` | 20 | **unknown** | **yes** — negative-modulus guard removed, caught | no |
+| `bigint` | 23 | **unknown** | **yes** — negative-modulus guard removed, caught | no |
 | `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `ntt` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
