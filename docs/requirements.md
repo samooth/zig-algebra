@@ -120,7 +120,7 @@ was produced by breaking working code on purpose and reading the failure.
 | **`kzg` on-curve guard disabled** | **nothing — 6/6 pass, and it is *dead code*** |
 | **`kzg` subgroup guard disabled** | **nothing — 6/6 pass, and it has *no reachable witness*** |
 | **`merkle` `validPathIndex` `<` → `<=`** | `merkle: a path index at or past the leaf count is rejected` |
-| **`transcript` `digest[0] += 1` after the final** | **nothing — 10/10 pass, and there is no vector to write** |
+| **`transcript` `digest[0] += 1` after the final** | **`transcript bytes match a Python mirror of the protocol` fails.** This row used to read "nothing — 10/10 pass, and there is no vector to write", which was true: there was no vector. The vector arrived with the mirror |
 | **`bigint` negative-modulus guard removed** | `modInv rejects a negative modulus and a zero modulus` |
 | **`algebra-traits` `inv` guard made vacuous** | `invChecked rejects zero while inv stays total` |
 | **`parallel` chunk `(count+nw-1)/nw` → `(count+nw)/nw`** | **nothing — 2/2 pass** — benign: it changes work *balance*, not results, so a result-equality check cannot see it and should not |
@@ -132,6 +132,8 @@ was produced by breaking working code on purpose and reading the failure.
 | `poly` `divRem` loop bound `degree + 1` -> `degree` | `poly` tests | **nothing -- it hangs.** The remainder never shrinks, so the suite stalls instead of reddening |
 | `algebra-traits` basis multiply `li[k-1]` -> `li[k]` | `algebra-traits` tests, incl. the Python differential | the differential fails; this is the bug that was fixed, so the mutation is the old code |
 | `QuadraticExtension` non-residue search back to the real axis, bound intact | `field` tests | `error.NoNonResidue` -- it **fails instead of hanging**, which is the reason the search is bounded rather than exhaustive |
+| `transcript` extension hashing the output so far instead of the block | `transcript` tests | **nothing at 64 bytes** -- the two expressions coincide for the first extension; the 128-byte vector fails |
+| `transcript` re-keying with the first digest instead of the emitted block | `transcript` tests | **nothing on the wide challenge itself** -- same 128 bytes; the challenge *after* it fails |
 | `foldLinear` reverted to `a + t·(a + b)` | fuzz | `Sumcheck: honest 0/80 verified` |
 | the same fold | unit tests | 4 tests fail, including both negatives |
 | torus generator given order `2^(A-1)` instead of `2^A` | fuzz | `error: OrderTooLarge` |
@@ -210,7 +212,7 @@ where a rewrite would buy something and where it would not.
 | `merkle` | 20 | **demonstrated** — a from-scratch Python tree over `hashlib.sha3_256`: roots, proof paths and the serialized proof bytes for 5 shapes (including the non-power-of-two and single-leaf padding cases), both directions (our proof equals the oracle's bytes; the oracle's proof verifies here) | **yes** — `validPathIndex` off-by-one, caught; the padding rule reverted to zero fill, caught | no |
 | `poly` | 30 | **demonstrated** — Python's polynomial arithmetic over the same `F_7` (Horner, long division, formal derivative, composition, powers, the Lagrange basis and the vanishing product): 8 operand-pair cases chosen for shape rather than value (constant operands, interior zero coefficients, a sum that crosses zero, an exact division, a dividend of lower degree, products at the `max_degree` boundary) plus 4 interpolation/vanishing cases, each also checked by the property it is supposed to satisfy | **yes** — quotient indexing, the derivative's degree multiplier, Horner at `-x`, and the zero-denominator guard of `lagrangeInterpolate` (the guard is load-bearing: without it a duplicated `xs` returns zero coefficients silently) | no |
 | `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
-| `transcript` | 11 | **unknown** | **survived** — guard mutated, nothing noticed | no |
+| `transcript` | 13 | **demonstrated** — a Python mirror of the protocol as the docstrings state it, over the reference BLAKE3 binding: 32-, 64- and 128-byte challenges, the challenge *after* a wide one, `challengeU64`, and `challengeField` on both sides of its rejection loop (labels chosen in the same mirror for taking one and three draws) | **yes** — five mutations, and the one the log recorded as `survived` is now caught. Three of the five needed a better instrument before they could bite: the extension rule is only distinguishable at 128 bytes, the re-key seed only in the challenge that *follows* a wide one, and `challengeField` only through a label that takes two rejections | no |
 | `serialization` | 15 | **unknown** | **yes** — a guard mutation, caught | no |
 | `ntt` | 16 | **demonstrated** — a DFT computed in Python (`sum_j x[j]*w^(j*k)`) over Goldilocks and BabyBear for log_n 1..4, with each root first verified in Python to be primitive of order 2^log_n, and the inverse of that external transform checked to return the input | **yes** — a guard mutation; and the transform convention itself (w -> w^-1), which the round-trip test cannot see and this one fails | no |
 | `linalg` | 11 | **unknown** | **yes** — a guard mutation, caught | no |
@@ -228,12 +230,12 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the six libraries below the
-ten, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the five libraries below the
+eleven, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Ten libraries can demonstrate provenance.** The instrument, per library:
+**Eleven libraries can demonstrate provenance.** The instrument, per library:
 
 | library | instrument |
 |---|---|
@@ -247,8 +249,9 @@ nothing" are different claims, and only one of them is true.
 | `ntt` | a Python DFT -- what a round-trip test structurally cannot provide |
 | `poly` | Python's polynomial arithmetic over the same field |
 | `algebra-traits` | the same differential, over the Lagrange basis |
+| `transcript` | a Python mirror of the protocol, over the reference BLAKE3 binding |
 
-Three of the ten answered with a defect rather than with a clean bill, and all
+Three of the eleven answered with a defect rather than with a clean bill, and all
 three were `unknown` in the table above when this work started -- so "we never
 checked" would have been the wrong summary. The answer was "yes, and it was
 broken":
@@ -259,7 +262,7 @@ broken":
 - `rng` -- the ChaCha20 CSPRNG was not ChaCha20: three of its four rotations
   rolled the wrong way, and a determinism test cannot see that.
 
-One of the ten is `hash`, which hid a non-BLAKE3 for the whole life of the
+One of the eleven is `hash`, which hid a non-BLAKE3 for the whole life of the
 repository. That is the argument for the requirement being about provenance and
 not about having vectors.
 

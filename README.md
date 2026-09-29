@@ -76,7 +76,7 @@ parallel (no deps) · serialization (no deps)
 | [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | 8 |
 | [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 28 |
 | [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 22 |
-| [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 11 |
+| [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 13 |
 | [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 26 |
 | [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 27 |
 | [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 89 |
@@ -93,10 +93,10 @@ parallel (no deps) · serialization (no deps)
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **564 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
+> **566 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
 > step compiles **all 27 test binaries** — every library's inline `src/` tests
 > plus the separate `tests/` roots of `field` (6 files, 89 tests) and `curve`
-> (4 files, 98 tests). The per-library steps sum to **564, the same number**.
+> (4 files, 98 tests). The per-library steps sum to **566, the same number**.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 5. `kzg`
 > was added in v0.2.2 as the 17th library.
 
@@ -202,7 +202,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 564 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 566 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |

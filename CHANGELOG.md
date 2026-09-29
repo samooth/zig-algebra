@@ -78,6 +78,23 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-transcript` (tested): the challenge bytes are pinned to a Python
+  mirror of the protocol.** The library's tests checked the transcript against
+  itself -- that challenges are sequential, that a length prefix prevents
+  ambiguity, that a domain label separates -- which any re-keying scheme
+  satisfies; the only mutation in the log for this library survived, and the
+  log said why: "there is no vector to write". There is now. A Python mirror
+  of the protocol as the docstrings state it, over the reference BLAKE3
+  binding, supplies 32-, 64- and 128-byte challenges, the challenge that
+  *follows* a wide one, `challengeU64`, and `challengeField` on both sides of
+  its rejection loop -- the labels for those two were chosen in the same mirror
+  for taking one draw and three, so the retry path is exercised rather than
+  hoped for. That mutation, `digest[0] += 1` after the final, is now caught.
+  Two more mutations needed the instrument to grow before they could bite: the
+  extension rule is indistinguishable at 64 bytes (one extension, where "hash
+  the emitted block" and "hash the output so far" are the same expression), and
+  the re-key seed is invisible unless the challenge *after* a wide one is
+  compared. Both are in the log now, with the instrument that sees them.
 - **`zig-field` (P0, fixed): `QuadraticExtension.primitiveRootOfUnity` never
   returned for any order above the base field's two-adicity.** The
   quadratic-non-residue search walked the real axis -- `z = 2; z += 1`, so

@@ -17,6 +17,13 @@ challenges, and re-keys after every squeeze.
 - **Blake3 from the standard library** — no internal dependencies at all
 - **Field-aware challenges** — `challengeField(F)` returns a uniform element via
   rejection sampling, not a reduction
+- **The bytes are pinned to an outside implementation** — a Python mirror of
+  the protocol (length-prefixed absorbs, a challenge that finalises, extends by
+  re-hashing, and re-keys with the block it emitted) over the reference BLAKE3
+  binding, for 32-, 64- and 128-byte challenges, for the challenge *after* a
+  wide one, and for both sides of `challengeField`'s rejection loop. The
+  in-repo tests check the same properties against the transcript itself, which
+  any re-keying scheme satisfies.
 - **Re-keying** — after each squeeze the hasher is reset and re-seeded with the
   challenge bytes, so a challenge depends on every previous challenge
 - **Length-prefixed absorb** — prevents concatenation ambiguity

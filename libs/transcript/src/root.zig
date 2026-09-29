@@ -411,3 +411,123 @@ test "transcript: challengeFieldChecked uses the rejecting decoder, challengeFie
     // the probability of 256 losses by chance is (59/2^64)^256.
     try std.testing.expect(saw_non_lossy > 0);
 }
+
+// The expected bytes come from a Python mirror of the protocol as the
+// docstrings state it -- length-prefixed absorbs into BLAKE3, a challenge that
+// finalises, extends by re-hashing when more than 32 bytes are asked for, and
+// re-keys with the block it emitted -- using the reference BLAKE3 binding. The
+// re-key seed is the block it *emitted*, which for a wide challenge is the
+// extended one rather than the first digest; the 64-byte vector is what pins
+// that distinction.
+//
+// The existing tests in this file check the same properties against the
+// transcript itself -- that challenges are sequential, that a length prefix
+// prevents ambiguity -- which any re-keying scheme satisfies. These pin the
+// bytes.
+test "transcript bytes match a Python mirror of the protocol" {
+    const Case = struct {
+        label: []const u8,
+        first: []const u8,
+        second: []const u8,
+    };
+    const cases = [_]Case{
+        .{
+            .label = "proof-system-A",
+            .first = "984dbc87f1a2cae3b89c425bb0539d63847367da007a976dcd0020250e3d55a5",
+            .second = "91e71c8c96c7ca08eb6d85ff0d102d3cfded9d4a0aa1b369ea87a546abeb66f7",
+        },
+        .{
+            // Same absorbs, different domain label. The separation is the
+            // claim, so it is a vector and not a comment.
+            .label = "proof-system-B",
+            .first = "b1c0c8e907b8e78412f1f310634b40dc58230649a9963238290bc0ed7eca53ae",
+            .second = "16f9583e217add32be370019dfa1cb2313db197d95b2d3ca7fab09d6668d9f1f",
+        },
+    };
+
+    for (cases) |c| {
+        var t = Transcript.init(c.label);
+        t.absorbBytes("commitment-1");
+        t.absorbU64(3);
+
+        var out: [32]u8 = undefined;
+        t.challengeBytes(&out);
+        var want: [32]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&want, c.first);
+        try testing.expectEqualSlices(u8, &want, &out);
+
+        // The second challenge chains: the hasher was re-keyed with the bytes
+        // the first one emitted, so it is not the first draw again.
+        var out2: [32]u8 = undefined;
+        t.challengeBytes(&out2);
+        var want2: [32]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&want2, c.second);
+        try testing.expectEqualSlices(u8, &want2, &out2);
+    }
+
+    // Two blocks or more: the extension rule, and with it which block the
+    // re-key uses. 128 bytes means two extensions, and the *second* one is
+    // where "hash the emitted block" and "hash the output so far" first differ
+    // -- with only 64 bytes the two are the same expression, which is why the
+    // 64-byte vector alone could not see a mutation of the extension rule.
+    var wide = Transcript.init("wide");
+    var buf: [64]u8 = undefined;
+    wide.challengeBytes(&buf);
+    var want_wide: [64]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&want_wide, "ec2ce8d2f620f033717893681ca8964427aa7b7e43dbdfa104efaaa85fb815f037271a3680e3b88947bd2a883524e8f4f7dae6a72e513e26ce24ede9a824a911");
+    try testing.expectEqualSlices(u8, &want_wide, &buf);
+
+    var very_wide = Transcript.init("verywide");
+    var buf128: [128]u8 = undefined;
+    very_wide.challengeBytes(&buf128);
+    var want_128: [128]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&want_128, "e4a6500f285fe7026a0fc144cc16c5cfd35b50647a02fa16bc9928e9af6a3ae81a711dadbbe8205cc8e3f4b9435210aed176e9b584fd9e04d340de64620b16756611dc40db52627f05847fe8f89c9ac176e70c7c945777cc82473fd627e6dbd735b419281708b83ef8134ae0787d6ada05f4a550b34b4425c9d807e565b093be");
+    try testing.expectEqualSlices(u8, &want_128, &buf128);
+
+    // And the state *after* a wide challenge, which is where the re-key seed
+    // lives: "re-key with the first digest" and "re-key with the block that
+    // was emitted" produce the same 128 bytes above and different bytes here.
+    // A test that only reads the emitted challenge cannot tell them apart.
+    var after: [32]u8 = undefined;
+    very_wide.challengeBytes(&after);
+    var want_after: [32]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&want_after, "d122b229e2a194e58ef5d94a33fe45eff06a34cd6f72e123a473f367e5455437");
+    try testing.expectEqualSlices(u8, &want_after, &after);
+
+    // `challengeU64` is eight little-endian bytes of the same stream.
+    var u64t = Transcript.init("u64path");
+    u64t.absorbU64(0xdeadbeefcafebabe);
+    try testing.expectEqual(@as(u64, 17686321996644773787), u64t.challengeU64());
+
+    // `absorbU64(v)` is documented as the length-prefixed 8-byte encoding, so
+    // it has to be the same transcript as `absorbBytes(&le(v))`. A caller who
+    // mixes the two relies on that, and it is a property rather than a value.
+    var via_u64 = Transcript.init("u64path");
+    via_u64.absorbU64(0xdeadbeefcafebabe);
+    var via_bytes = Transcript.init("u64path");
+    var le: [8]u8 = undefined;
+    std.mem.writeInt(u64, &le, 0xdeadbeefcafebabe, .little);
+    via_bytes.absorbBytes(&le);
+    try testing.expectEqual(via_u64.challengeU64(), via_bytes.challengeU64());
+}
+
+// The field path, on both sides of the rejection loop. The local M31's
+// `fromBytes` *rejects* out-of-range encodings, so a draw at or above 2^31-1
+// sends the transcript round again, and the re-key inside the loop is what
+// makes the retry draw something else. The two labels were chosen in the same
+// Python mirror for how many draws they take: one and three. Those counts are
+// not asserted directly -- nothing observes them -- the values are, and a retry
+// that reused the same bytes could not produce them.
+test "challengeField matches the Python mirror on both sides of the rejection loop" {
+    const Field = struct { label: []const u8, want: u32 };
+    const fields = [_]Field{
+        .{ .label = "field-1d-2", .want = 1953590413 }, // first draw in range
+        .{ .label = "field-1d-24", .want = 2054947002 }, // third draw: two rejections
+    };
+    for (fields) |c| {
+        var t = Transcript.init(c.label);
+        t.absorbBytes("x");
+        const got = t.challengeField(M31);
+        try testing.expectEqual(c.want, got.value);
+    }
+}
