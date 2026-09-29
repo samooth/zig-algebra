@@ -200,7 +200,7 @@ where a rewrite would buy something and where it would not.
 | `binary-field` | 97 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 26 | **unknown** | **yes** — torus generator | no |
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
-| `rng` | 25 | **unknown** | **yes** — `?windows.HANDLE` | no |
+| `rng` | 27 | **demonstrated** — RFC 8439's two ChaCha20 vectors (block function §2.3.2, keystream and ciphertext §2.4.2) and CPython's `hashlib.shake_256` for SHAKE256 (empty, `"abc"`, and both sides of the 136-byte rate boundary) | **yes** — `?windows.HANDLE`; the SHAKE domain byte; and, the finding, the ChaCha20 quarter round itself, which rolled right where RFC 8439 rolls left | no |
 | `merkle` | 20 | **demonstrated** — a from-scratch Python tree over `hashlib.sha3_256`: roots, proof paths and the serialized proof bytes for 5 shapes (including the non-power-of-two and single-leaf padding cases), both directions (our proof equals the oracle's bytes; the oracle's proof verifies here) | **yes** — `validPathIndex` off-by-one, caught; the padding rule reverted to zero fill, caught | no |
 | `poly` | 28 | **unknown** | **yes** — a guard mutation, caught | no |
 | `bigint` | 28 | **demonstrated** — CPython 3's arbitrary-precision `int`: 14 core cases across the 64-bit limb boundaries (add/sub/mul/divRem/mod/cmp), 10 bitwise/shift/gcd cases including negatives, 8 `pow(a,e,m)` cases over 2^61-1, the STARK prime and the BLS12-381 scalar field | **yes** — negative-modulus guard, plus the `mod` and `shr` docstring contracts reverted (both caught by the differential) | no |
@@ -222,18 +222,21 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the twelve libraries below the
-five, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the eleven libraries below the
+six, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Five libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Six libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
 (a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
 `int`, which is where `mod` and `shr` were caught contradicting their own
-docstrings) and `merkle` (a Python tree over `hashlib.sha3_256`, which pinned
-the padding rule). One of the five is `hash`, which hid a non-BLAKE3 the whole time —
+docstrings), `merkle` (a Python tree over `hashlib.sha3_256`, which pinned
+the padding rule) and `rng` (RFC 8439 and FIPS 202 via `hashlib`, which found
+that the ChaCha20 CSPRNG was not ChaCha20: three of the four rotations rolled
+the wrong way, a self-consistent permutation that every determinism test
+accepted). One of the six is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

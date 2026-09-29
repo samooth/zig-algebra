@@ -8,6 +8,15 @@ lives in the root `build.zig.zon`.
 ## Features
 
 - **ChaCha20Rng** — stream-cipher CSPRNG (RFC 8439), deterministic from a 32-byte key
+- **Both generators are pinned to their specifications.** `ChaCha20Rng` is
+  checked against the two RFC 8439 test vectors (Section 2.3.2's block function
+  and Section 2.4.2's keystream and ciphertext); `Shake256Rng` against
+  CPython's `hashlib.shake_256`, at the empty seed, at `"abc"`, and at the
+  1088-bit rate boundary (136 and 137 bytes) where a sponge goes wrong. Neither
+  vector set was produced by this code. The ChaCha20 one earned its place: the
+  quarter round rolled three of its four values to the right instead of to the
+  left, which is a self-consistent permutation that every determinism test
+  accepts, and it was in the tree until the RFC vectors were written.
 - **Shake256Rng** — XOF-based generator (Keccak-f[1600], rate 136 bytes), extendable output
 - **Process-wide CSPRNG** (`csprng`) — seeded once from OS entropy, spinlock-guarded, with a host-injection hook for freestanding/WASM (`setEntropy`, `setEntropyChecked`, `entropyAvailable`)
 - **Unbiased sampling** — rejection sampling for field elements and bounded integers, with a bounded attempt count

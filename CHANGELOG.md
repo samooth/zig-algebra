@@ -78,6 +78,34 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-rng` (fixed, important): the ChaCha20 CSPRNG was not ChaCha20.**
+  The quarter round rolled three of its four values to the *right* where RFC
+  8439 rolls them to the left (`<<< 12`, `<<< 8`, `<<< 7`; only the 16 is its
+  own complement, which is why it looked plausible). The result is a
+  self-consistent permutation of the state: deterministic, seed-sensitive,
+  32 bytes per block — and not the algorithm the file, the README and the type
+  name all claim. The existing tests could not see it, because determinism and
+  "different seeds differ" are exactly what a wrong permutation also
+  satisfies. Nothing else in this repository consumed the stream, so no other
+  library's output changes; an external consumer gets different bytes from the
+  same seed, and any use that needed real ChaCha20 (an interoperable KDF, an
+  AEAD key, a published test vector) was getting something else. The rotations
+  now follow the RFC, and the known-answer test in `libs/rng` pins both of its
+  vectors.
+- **`zig-rng` (tested): both generators are pinned to their specifications.**
+  `ChaCha20Rng` against RFC 8439 §2.3.2 (block function) and §2.4.2 (keystream,
+  and the plaintext XOR keystream that has to reproduce the published
+  ciphertext); `Shake256Rng` against CPython's `hashlib.shake_256` at the
+  empty seed, at `"abc"` and on both sides of the 1088-bit rate boundary
+  (136 and 137 bytes), which is where a sponge goes wrong. SHAKE256 turned out
+  to be correct FIPS 202 — the domain byte is `0x1F` and the rate is 136 — and
+  the SHAKE vectors were observed failing when that byte is changed to `0x07`.
+- **`zig-rng` (tested): a test that pinned the broken keystream.**
+  `randomU64Bounded edge cases` asserted `randomU64Bounded(_, 2) == 0`. For
+  `max = 2` both 0 and 1 are correct answers, so the literal was a property of
+  the wrong generator, and it passed until the quarter round was fixed. It now
+  asserts the range. A test written against the implementation pins the
+  implementation; this one pinned a bug.
 - **`zig-merkle` (tested): the tree is differential-tested against a
   from-scratch Python implementation over `hashlib.sha3_256`.** SHA3-256 is the
   same standard hash on both sides, so what the test pins is the tree: leaf

@@ -21,15 +21,26 @@ const MAX_REJECTION_ATTEMPTS: usize = 1024;
 /// Layout: [constant; constant; key(8); counter(1); nonce(3)]
 const State = [16]u32;
 
+/// The ChaCha quarter round (RFC 8439, Section 2.1).
+///
+///     a += b; d ^= a; d <<<= 16;
+///     c += d; b ^= c; b <<<= 12;
+///     a += b; d ^= a; d <<<= 8;
+///     c += d; b ^= c; b <<<= 7;
+///
+/// The `<<<` is a left roll, and only the 16 is its own complement: the other
+/// three were written as right rolls, which produced a self-consistent but
+/// wrong permutation that every determinism test accepted. The RFC 8439
+/// known-answer test in `root.zig` is what caught it.
 inline fn quarterRound(a: *u32, b: *u32, c: *u32, d: *u32) void {
     a.* +%= b.*;
-    d.* = std.math.rotr(u32, d.* ^ a.*, 16);
+    d.* = std.math.rotl(u32, d.* ^ a.*, 16);
     c.* +%= d.*;
-    b.* = std.math.rotr(u32, b.* ^ c.*, 12);
+    b.* = std.math.rotl(u32, b.* ^ c.*, 12);
     a.* +%= b.*;
-    d.* = std.math.rotr(u32, d.* ^ a.*, 8);
+    d.* = std.math.rotl(u32, d.* ^ a.*, 8);
     c.* +%= d.*;
-    b.* = std.math.rotr(u32, b.* ^ c.*, 7);
+    b.* = std.math.rotl(u32, b.* ^ c.*, 7);
 }
 
 fn blockFunction(state: *const State, output: *[64]u8) void {
