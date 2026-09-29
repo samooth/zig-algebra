@@ -196,7 +196,7 @@ where a rewrite would buy something and where it would not.
 | library | tests | #1 vector provenance | #2 mutation seen failing | #3 forked and diverged |
 |---|---|---|---|---|
 | `hash` | 22 | **demonstrated** — BLAKE3 45 vectors from an independent implementation; blake2b/blake2s/sha3 re-checked against `hashlib`; keccak shown distinct from sha3; Poseidon pinned to two external parameter sets: CryptoExperts' Hades (the StarkNet constants, via poseidon-py) and the IAIK/circomlibjs Grain generator (`initSpec`, all 195 constants + MDS + permutation states) | **yes** — 5 mutations | no |
-| `field` | 87 | **unknown** | **yes** — `add` reduction, and `fromBytesChecked` contract per field | no — **and see ZA-2026-004**: `Montgomery` had no test reaching it, and it is wrong for any zero-headroom modulus |
+| `field` | 88 | **demonstrated** — Python's `int` modulo the same prime: 45 vectors (9 per field over M31, BabyBear, Goldilocks, StarkNet_Fp, BLS12_381_Fp) for `add`/`mul`/`invChecked`/`neg`, six of the nine per field pinned at the wraparound boundary (`p-1`, `p-2`) because a random pair never reaches it | **yes** — the small-field `add` reduction, caught; and one that *survived*, which turned out to be dead code: M31's second Mersenne reduction cannot fire, since with `a, b < p` the two halves of the sum never reach `p` | no. ZA-2026-004 (Montgomery with no test reaching it, wrong at headroom 0) was **closed** by `libs/field/tests/field_test.zig:153`, which runs `a * a^-1 == 1` over a 256-bit prime in 4 limbs and asserts `secp.bad == 0`; the earlier wording in this row described a state that has since moved |
 | `binary-field` | 97 | **demonstrated** — Pocklington certificate, plus a `u256` oracle for `Prime128` | **yes** — sum-check fold, torus generator | **yes** — extracted from `zig-zk/libs/stark/binius/`, diverged three releases, Merkle leaf double-hash invisible from both sides |
 | `fri` | 26 | **unknown** | **yes** — torus generator | no |
 | `pairing` | 58 | **demonstrated** — `py_ecc` (EIP-197) | **yes** — `cyclotomicSqr`, caught | no |
@@ -222,12 +222,12 @@ from a real one from the inside.
 
 And that has an uncomfortable consequence for the audit itself: **provenance
 cannot be audited from inside the repository.** Demonstrating it means
-comparing against something outside. So for the eleven libraries below the
-six, the honest answer is not "no" — it is **unknown**, and an unknown is a
+comparing against something outside. So for the ten libraries below the
+seven, the honest answer is not "no" — it is **unknown**, and an unknown is a
 finding rather than an absence. "We never checked" and "we checked and there is
 nothing" are different claims, and only one of them is true.
 
-**Six libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
+**Seven libraries can demonstrate provenance.** `hash` (BLAKE3 45 vectors,
 blake2b/blake2s/sha3 re-checked against `hashlib`, Poseidon against
 CryptoExperts and circomlibjs), `pairing` (`py_ecc`, EIP-197), `binary-field`
 (a Pocklington certificate plus a `u256` oracle), `bigint` (CPython's
@@ -236,7 +236,9 @@ docstrings), `merkle` (a Python tree over `hashlib.sha3_256`, which pinned
 the padding rule) and `rng` (RFC 8439 and FIPS 202 via `hashlib`, which found
 that the ChaCha20 CSPRNG was not ChaCha20: three of the four rotations rolled
 the wrong way, a self-consistent permutation that every determinism test
-accepted). One of the six is `hash`, which hid a non-BLAKE3 the whole time —
+accepted) and `field` (Python's `int` modulo the same primes, which covers
+both backends -- the u64 small-field path with its Mersenne fast path, and
+Montgomery CIOS over limbs -- in one test). One of the seven is `hash`, which hid a non-BLAKE3 the whole time —
 which is the argument for the requirement being about provenance and not about
 having vectors. The last of those four was a `unknown` two commits before its
 vectors were written, and the answer was not "no": two of the three contracts

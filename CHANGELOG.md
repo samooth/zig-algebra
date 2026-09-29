@@ -78,6 +78,19 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   test's informational table (a `std.debug.print` in a green test) read as a
   failure in every CI log. Removed — the same test already pins all three
   counts with `expectEqual`.
+- **`zig-field` (tested): the field arithmetic is differential-tested against
+  Python.** One test carries 45 vectors over five predefined fields -- M31,
+  BabyBear, Goldilocks, StarkNet_Fp and BLS12_381_Fp -- for `add`, `mul`,
+  `invChecked` and `neg`, computed in Python as `int` arithmetic modulo the same
+  prime, so both backends are covered at once: the u64 small-field path (with
+  its Mersenne fast path) and Montgomery CIOS over u64 limbs. Six of the nine
+  vectors per field sit at the wraparound boundary (`p-1 + 1`, `p-1 + p-2`,
+  ...), because random values do not reach it: removing the small-field `add`
+  reduction is caught, and the first version of this fixture -- random pairs
+  only -- caught nothing. One mutation survived and the reason is a fact about
+  the code, not a gap in the test: M31's second Mersenne reduction cannot fire,
+  since with `a, b < p` the two halves of the sum never add up to `p`. It is
+  dead code in the hot path, and left in place rather than removed here.
 - **`zig-rng` (fixed, important): the ChaCha20 CSPRNG was not ChaCha20.**
   The quarter round rolled three of its four values to the *right* where RFC
   8439 rolls them to the left (`<<< 12`, `<<< 8`, `<<< 7`; only the 16 is its

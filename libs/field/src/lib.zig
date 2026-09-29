@@ -351,6 +351,98 @@ test "property: BLS12_381_Fp axioms" {
     try checkFieldAxioms(predef.BLS12_381_Fp, 5, 0xDEAD);
 }
 
+// Vectors generated in Python: `a+b`, `a*b`, `pow(a, -1, p)` and `-b` mod p
+// over five predefined fields, from a fixed LCG, so the inputs are
+// reproducible and obviously not chosen to suit the implementation. Nothing in
+// this repository produced them, and one test covers both backends: M31,
+// BabyBear and Goldilocks take the small-field path (u64, with a Mersenne
+// fast path for the first two), StarkNet_Fp and BLS12_381_Fp the Montgomery
+// CIOS path over u64 limbs.
+test "field arithmetic matches Python's integers modulo the same prime" {
+    const Vec = struct {
+        a: comptime_int,
+        b: comptime_int,
+        sum: comptime_int,
+        prod: comptime_int,
+        inv_a: comptime_int,
+        neg_b: comptime_int,
+    };
+    const vectors = [_]Vec{
+        // M31 (31 bits)
+        .{ .a = 0x7ffffffe, .b = 0x1, .sum = 0x0, .prod = 0x7ffffffe, .inv_a = 0x7ffffffe, .neg_b = 0x7ffffffe },
+        .{ .a = 0x7ffffffe, .b = 0x2, .sum = 0x1, .prod = 0x7ffffffd, .inv_a = 0x7ffffffe, .neg_b = 0x7ffffffd },
+        .{ .a = 0x7ffffffd, .b = 0x3, .sum = 0x1, .prod = 0x7ffffff9, .inv_a = 0x3fffffff, .neg_b = 0x7ffffffc },
+        .{ .a = 0x7ffffffe, .b = 0x7ffffffe, .sum = 0x7ffffffd, .prod = 0x1, .inv_a = 0x7ffffffe, .neg_b = 0x1 },
+        .{ .a = 0x7ffffffe, .b = 0x7ffffffd, .sum = 0x7ffffffc, .prod = 0x2, .inv_a = 0x7ffffffe, .neg_b = 0x2 },
+        .{ .a = 0x7ffffffe, .b = 0x3fffffff, .sum = 0x3ffffffe, .prod = 0x40000000, .inv_a = 0x7ffffffe, .neg_b = 0x40000000 },
+        .{ .a = 0x191c9844, .b = 0x6f1b77eb, .sum = 0x8381030, .prod = 0x78ff9205, .inv_a = 0x69540e33, .neg_b = 0x10e48814 },
+        .{ .a = 0x54b0a9c9, .b = 0x6f580ba0, .sum = 0x4408b56a, .prod = 0x53793502, .inv_a = 0x50f3f840, .neg_b = 0x10a7f45f },
+        .{ .a = 0x5951755f, .b = 0x34a2c9b2, .sum = 0xdf43f12, .prod = 0x46a3e293, .inv_a = 0x733df0cc, .neg_b = 0x4b5d364d },
+        // BabyBear (31 bits)
+        .{ .a = 0x78000000, .b = 0x1, .sum = 0x0, .prod = 0x78000000, .inv_a = 0x78000000, .neg_b = 0x78000000 },
+        .{ .a = 0x78000000, .b = 0x2, .sum = 0x1, .prod = 0x77ffffff, .inv_a = 0x78000000, .neg_b = 0x77ffffff },
+        .{ .a = 0x77ffffff, .b = 0x3, .sum = 0x1, .prod = 0x77fffffb, .inv_a = 0x3c000000, .neg_b = 0x77fffffe },
+        .{ .a = 0x78000000, .b = 0x78000000, .sum = 0x77ffffff, .prod = 0x1, .inv_a = 0x78000000, .neg_b = 0x1 },
+        .{ .a = 0x78000000, .b = 0x77ffffff, .sum = 0x77fffffe, .prod = 0x2, .inv_a = 0x78000000, .neg_b = 0x2 },
+        .{ .a = 0x78000000, .b = 0x3c000000, .sum = 0x3bffffff, .prod = 0x3c000001, .inv_a = 0x78000000, .neg_b = 0x3c000001 },
+        .{ .a = 0x7773aeed, .b = 0x5e5dd759, .sum = 0x5dd18645, .prod = 0x634a5bf5, .inv_a = 0x748c4416, .neg_b = 0x19a228a8 },
+        .{ .a = 0x5da65564, .b = 0xc91a1e4, .sum = 0x6a37f748, .prod = 0x27acdacc, .inv_a = 0x4ff81e57, .neg_b = 0x6b6e5e1d },
+        .{ .a = 0x23fef3ee, .b = 0x53d04d2b, .sum = 0x77cf4119, .prod = 0x356d6643, .inv_a = 0x4f08d3bf, .neg_b = 0x242fb2d6 },
+        // Goldilocks (64 bits)
+        .{ .a = 0xffffffff00000000, .b = 0x1, .sum = 0x0, .prod = 0xffffffff00000000, .inv_a = 0xffffffff00000000, .neg_b = 0xffffffff00000000 },
+        .{ .a = 0xffffffff00000000, .b = 0x2, .sum = 0x1, .prod = 0xfffffffeffffffff, .inv_a = 0xffffffff00000000, .neg_b = 0xfffffffeffffffff },
+        .{ .a = 0xfffffffeffffffff, .b = 0x3, .sum = 0x1, .prod = 0xfffffffefffffffb, .inv_a = 0x7fffffff80000000, .neg_b = 0xfffffffefffffffe },
+        .{ .a = 0xffffffff00000000, .b = 0xffffffff00000000, .sum = 0xfffffffeffffffff, .prod = 0x1, .inv_a = 0xffffffff00000000, .neg_b = 0x1 },
+        .{ .a = 0xffffffff00000000, .b = 0xfffffffeffffffff, .sum = 0xfffffffefffffffe, .prod = 0x2, .inv_a = 0xffffffff00000000, .neg_b = 0x2 },
+        .{ .a = 0xffffffff00000000, .b = 0x80000000, .sum = 0x7fffffff, .prod = 0xfffffffe80000001, .inv_a = 0xffffffff00000000, .neg_b = 0xfffffffe80000001 },
+        .{ .a = 0x2ceaee21bf46bc00, .b = 0xaa80754d1a1a8d4f, .sum = 0xd76b636ed961494f, .prod = 0x1aad68a9967d4a33, .inv_a = 0xe9ff10367cf72671, .neg_b = 0x557f8ab1e5e572b2 },
+        .{ .a = 0xb3c4904a6d278932, .b = 0xbc69cf4276846d19, .sum = 0x702e5f8de3abf64a, .prod = 0x8137de25507d40de, .inv_a = 0x2512512fe7c16db8, .neg_b = 0x439630bc897b92e8 },
+        .{ .a = 0x377b2fd56a5b15b4, .b = 0x64d815deeaf29df3, .sum = 0x9c5345b4554db3a7, .prod = 0xf927285da2c98df8, .inv_a = 0x7e02144ec7aea3a5, .neg_b = 0x9b27ea20150d620e },
+        // StarkNet_Fp (252 bits)
+        .{ .a = 0x800000000000011000000000000000000000000000000000000000000000000, .b = 0x1, .sum = 0x0, .prod = 0x800000000000011000000000000000000000000000000000000000000000000, .inv_a = 0x800000000000011000000000000000000000000000000000000000000000000, .neg_b = 0x800000000000011000000000000000000000000000000000000000000000000 },
+        .{ .a = 0x800000000000011000000000000000000000000000000000000000000000000, .b = 0x2, .sum = 0x1, .prod = 0x800000000000010ffffffffffffffffffffffffffffffffffffffffffffffff, .inv_a = 0x800000000000011000000000000000000000000000000000000000000000000, .neg_b = 0x800000000000010ffffffffffffffffffffffffffffffffffffffffffffffff },
+        .{ .a = 0x800000000000010ffffffffffffffffffffffffffffffffffffffffffffffff, .b = 0x3, .sum = 0x1, .prod = 0x800000000000010fffffffffffffffffffffffffffffffffffffffffffffffb, .inv_a = 0x400000000000008800000000000000000000000000000000000000000000000, .neg_b = 0x800000000000010fffffffffffffffffffffffffffffffffffffffffffffffe },
+        .{ .a = 0x800000000000011000000000000000000000000000000000000000000000000, .b = 0x800000000000011000000000000000000000000000000000000000000000000, .sum = 0x800000000000010ffffffffffffffffffffffffffffffffffffffffffffffff, .prod = 0x1, .inv_a = 0x800000000000011000000000000000000000000000000000000000000000000, .neg_b = 0x1 },
+        .{ .a = 0x800000000000011000000000000000000000000000000000000000000000000, .b = 0x800000000000010ffffffffffffffffffffffffffffffffffffffffffffffff, .sum = 0x800000000000010fffffffffffffffffffffffffffffffffffffffffffffffe, .prod = 0x2, .inv_a = 0x800000000000011000000000000000000000000000000000000000000000000, .neg_b = 0x2 },
+        .{ .a = 0x800000000000011000000000000000000000000000000000000000000000000, .b = 0x80000000, .sum = 0x7fffffff, .prod = 0x800000000000010ffffffffffffffffffffffffffffffffffffffff80000001, .inv_a = 0x800000000000011000000000000000000000000000000000000000000000000, .neg_b = 0x800000000000010ffffffffffffffffffffffffffffffffffffffff80000001 },
+        .{ .a = 0x2ceaee21bf46bc00, .b = 0xaa80754d1a1a8d4f, .sum = 0xd76b636ed961494f, .prod = 0x1dea8c2e5ff82d9ebab53b0b14600400, .inv_a = 0x1d2bd0b65546f5f06ef3fd4e052f43e6cf086cac9571b6fabd505c4564575d8, .neg_b = 0x800000000000010ffffffffffffffffffffffffffffffff557f8ab2e5e572b2 },
+        .{ .a = 0xb3c4904a6d278932, .b = 0xbc69cf4276846d19, .sum = 0x1702e5f8ce3abf64b, .prod = 0x844ea7207342c7e40df51642480eafe2, .inv_a = 0x5cec8ad4b40783eb2e9c3bc6ba87ca275123d9993b9aa26e2019e30904c40bf, .neg_b = 0x800000000000010ffffffffffffffffffffffffffffffff439630bd897b92e8 },
+        .{ .a = 0x377b2fd56a5b15b4, .b = 0x64d815deeaf29df3, .sum = 0x9c5345b4554db3a7, .prod = 0x15daf35d24487c87d4deabd6dcecfddc, .inv_a = 0x3269b813e839e8a8e3674084af41861986dbff208011bf26c05abef6e525f1b, .neg_b = 0x800000000000010ffffffffffffffffffffffffffffffff9b27ea21150d620e },
+        // BLS12_381_Fp (381 bits)
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .b = 0x1, .sum = 0x0, .prod = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .inv_a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa },
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .b = 0x2, .sum = 0x1, .prod = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa9, .inv_a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa9 },
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa9, .b = 0x3, .sum = 0x1, .prod = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa5, .inv_a = 0xd0088f51cbff34d258dd3db21a5d66bb23ba5c279c2895fb39869507b587b120f55ffff58a9ffffdcff7fffffffd555, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa8 },
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .sum = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa9, .prod = 0x1, .inv_a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .neg_b = 0x1 },
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa9, .sum = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaa8, .prod = 0x2, .inv_a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .neg_b = 0x2 },
+        .{ .a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .b = 0x80000000, .sum = 0x7fffffff, .prod = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffff7fffaaab, .inv_a = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaaa, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffff7fffaaab },
+        .{ .a = 0x2ceaee21bf46bc00, .b = 0xaa80754d1a1a8d4f, .sum = 0xd76b636ed961494f, .prod = 0x1dea8c2e5ff82d9ebab53b0b14600400, .inv_a = 0x1d219de41da12f6edefa6feceb7267223d704161e45067a757b3fbbb460515b5b08156320cf74f86e534c23f4ae1391, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffff0f7e8ab2e5e51d5c },
+        .{ .a = 0xb3c4904a6d278932, .b = 0xbc69cf4276846d19, .sum = 0x1702e5f8ce3abf64b, .prod = 0x844ea7207342c7e40df51642480eafe2, .inv_a = 0xffc292a89be4ba04c4f20a825c1949df935f96bf7b423711c20d518d441201bce7764166ebfb4fd005c614deb58f33b, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153fffefd9530bd897b3d92 },
+        .{ .a = 0x377b2fd56a5b15b4, .b = 0x64d815deeaf29df3, .sum = 0x9c5345b4554db3a7, .prod = 0x15daf35d24487c87d4deabd6dcecfddc, .inv_a = 0x4cc7ad643e7c5e328cf5b3bc3e563133b20cd2bebffcfa47f4f2958cb6f7b653f59096fcbf98a85679e5456e49c394, .neg_b = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffff5526ea21150d0cb8 },
+    };
+
+    const Check = struct {
+        fn run(comptime F: type, comptime from: usize, comptime to: usize) !void {
+            comptime var k: usize = from;
+            inline while (k < to) : (k += 1) {
+                const v = vectors[k];
+                const a = F.fromInt(v.a);
+                const b = F.fromInt(v.b);
+                try testing.expect(a.add(b).eql(F.fromInt(v.sum)));
+                try testing.expect(a.mul(b).eql(F.fromInt(v.prod)));
+                try testing.expect((try a.invChecked()).eql(F.fromInt(v.inv_a)));
+                try testing.expect(b.neg().eql(F.fromInt(v.neg_b)));
+            }
+        }
+    };
+
+    // Comptime bounds, so the grouping cannot drift from the fixture.
+    try Check.run(predef.M31, 0, 9);
+    try Check.run(predef.BabyBear, 9, 18);
+    try Check.run(predef.Goldilocks, 18, 27);
+    try Check.run(predef.StarkNet_Fp, 27, 36);
+    try Check.run(predef.BLS12_381_Fp, 36, 45);
+}
+
 test "M31 canonical arithmetic and encoding vectors" {
     const three = predef.M31.fromInt(3);
     try testing.expectEqual(@as(u64, 1431655765), three.inv().toU64());
