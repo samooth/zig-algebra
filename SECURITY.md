@@ -791,6 +791,65 @@ Same module, opposite shapes, and conflating them would misstate both:
 One was undefined behaviour, the other was a wrong error name. The fix in each
 is to say what is true, and that is the only thing they share.
 
+## Advisory ZA-2026-006 — `ChaCha20Rng` was not ChaCha20
+
+**Affected:** every release from `v0.5.0` to `v0.5.3`, of which `v0.5.1`,
+`v0.5.2` and `v0.5.3` are published and signed on the remote. Measured by
+reading the tagged file rather than by following a commit: all four tags carry
+four `std.math.rotr` quarter-round rotations and no `rotl`.
+
+**Status:** fixed in the working tree and not yet released. The fix and the
+RFC 8439 known-answer test are in `libs/rng`; both are in the unreleased
+commits. The tag `v0.5.3` is immutable and keeps the wrong code.
+
+**Impact:** `ChaCha20Rng` produced a different stream than RFC 8439 specifies,
+differing in most bytes of every block. Anything that used it where the
+algorithm's name is the contract — an interoperable key-derivation step, an
+AEAD key, a published test vector, a protocol that expects another
+implementation to reproduce the same stream — was getting a different answer
+from every conforming ChaCha20. Nothing inside this repository depended on it:
+the only importers are the four files of `libs/rng` itself, so no other
+library's output changed. The defect is in the generator's output, not in any
+verifier, so nothing accepted that it should not have.
+
+## Root cause
+
+RFC 8439's ChaCha20 quarter round rotates **left**:
+
+```zig
+d.* = std.math.rotl(u32, d.* ^ a.*, 16);
+b.* = std.math.rotl(u32, b.* ^ c.*, 12);
+d.* = std.math.rotl(u32, d.* ^ a.*, 8);
+b.* = std.math.rotl(u32, b.* ^ c.*, 7);
+```
+
+The released code rotated **right** on the same four constants. Three of the
+four are wrong; the 16 is its own complement, so `rotr(x, 16) == rotl(x, 16)`
+and that line was correct by accident — which is why the permutation was
+plausible enough to ship three times. It was a self-consistent permutation of
+the state: deterministic, seed-sensitive, 32 bytes per block, and not the
+algorithm the file, the README and the type name all claim.
+
+The reason no test caught it is the shape this repository already has a name
+for. The tests asserted **determinism** and that **different seeds differ**,
+which is exactly what a wrong permutation also satisfies. A primitive named
+after a specification is not tested until there is a known-answer test from
+that specification; self-consistency is not correctness, it is the error being
+consistent. The KAT now pins both of RFC 8439's vectors — the block function
+(§2.3.2) and the keystream (§2.4.2) — and reverting to `rotr` turns it red.
+
+## Why it went unnoticed for three releases
+
+`zig-rng` is wired into this repository's build at four places
+(`build.zig:36,158,230,374`) and **no `.zig` outside `libs/rng` imports it.**
+A module declared in the build with no consumer is a module nobody audits: it
+compiles, it is listed, and there is no call site whose output would change if
+it were wrong. The same shape was true in `zig-zk`, where the dependency was
+also wired and also unused, and was removed there. That is the part worth
+carrying forward: **the wiring is not the consumer**, and a PRNG with no
+consumer is a PRNG that no test, review or downstream integration will ever
+look at, however correct it looks in isolation.
+
 ## Reporting
 
 Report suspected vulnerabilities privately to the maintainers. Do not disclose

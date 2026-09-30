@@ -482,6 +482,60 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   the first time one was found by a test written to check the contract from the
   other side rather than by reading the two next to each other.
 
+## [v0.6.0] — 2026-09-30
+
+MINOR under 0.x, and it carries two breaking changes: new values in two error
+unions, which breaks a consumer with an exhaustive `switch`. Calling it a
+patch would misdescribe the contract, so it is a MINOR. Three defects are
+fixed, two of which shipped in a published tag.
+
+### Fixed
+
+- **`zig-rng` (behaviour break, shipped): `ChaCha20Rng` was not ChaCha20.**
+  The quarter round rotated right on three of its four constants where RFC
+  8439 rotates left; the fourth, 16, is its own complement, which is why the
+  line read correctly and the permutation looked plausible. Measured per tag:
+  `v0.5.0`, `v0.5.1`, `v0.5.2` and `v0.5.3` each carry four `rotr` and no
+  `rotl`, and `v0.5.1`, `v0.5.2`, `v0.5.3` are published and signed. Every
+  consumer that used the name as the contract — an interoperable KDF, an AEAD
+  key, a published vector — got a different stream from every conforming
+  ChaCha20. Measured scope: the only importers are the four files of
+  `libs/rng`, so no other library's output changed, and this changes no
+  verifier's decision. Both of RFC 8439's vectors are now pinned and reverting
+  to `rotr` turns the test red. Advisory `ZA-2026-006`.
+- **`zig-field` (breaking, new error value): `QuadraticExtension`'s
+  `primitiveRootOfUnity` never returned on the real axis.** The non-residue
+  search read the Legendre symbol of the *base* field where the subject was
+  the extension, so no candidate ever satisfied it and `comptime` evaluation
+  produced a result that did not hold. The search is now diagonal
+  (`(k+2, k+1)`), bounded at 1024 candidates, and returns the new
+  `error.NoNonResidue` instead of walking off. A consumer with an exhaustive
+  `switch` on this error set is the breaking part.
+- **`zig-fri` (breaking, new error value): the torus generator search had no
+  usable bound.** It walked `t` to `p`, and its order test is
+  `x^(2^(A-1)) == -1` with `A = v2(p + 1)`; with `v2(p - 1)` instead, every
+  candidate fails and the loop walks `2^31` candidates for M31 and `2^61` for
+  M61. What a gate sees there is a **timeout, not a failure** — the run
+  produces no output, which is the worst of the three outcomes. It now stops
+  at the named bound `torus.max_candidates` and returns the new
+  `error.TorusGeneratorNotFound`; the same mutation is red in seconds, and a
+  test proves the bound is load-bearing by pinning that a limit of 3 gives the
+  error and a limit of 4 gives the generator.
+
+### Why the PRNG went three releases without a look
+
+`zig-rng` was wired into the build at four places and imported by no `.zig`
+outside `libs/rng`. **The wiring is not the consumer**: a module listed in the
+build with no call site compiles, looks maintained, and no test or integration
+can see it being wrong. That is the generalisable finding of this release, and
+it is the reason the advisory exists rather than a one-line changelog entry.
+
+### Versioning
+
+Workspace `0.6.0`. `zig-rng` `0.4.0` → `0.5.0` (output changes),
+`zig-field` `0.4.1` → `0.5.0` (new error value), `zig-fri` `0.3.1` → `0.4.0`
+(new error value and a new public constant).
+
 ## [v0.5.3] — 2026-09-29
 
 > **This release fixes ZA-2026-004, the `Montgomery` inverse for any
