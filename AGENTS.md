@@ -124,6 +124,26 @@ rhetorical. A rule with no instances behind it is an intention — the two rows 
 that table marked as intentions exist because they were written before the
 instrument did.
 
+**A check that does not observe the consequence does not measure the
+consequence.** This is the third failure mode, and it is not the same as either
+of the two above: a check can be reachable, can run, and can even fail, and
+still be looking somewhere the difference cannot reach. The two instances, both
+from `zig-transcript`'s differential against a Python mirror:
+
+- *"Hash the output so far" instead of "hash the emitted block" survives a
+  64-byte challenge.* With one extension the two expressions are identical; the
+  case cannot fail because the domain is too small for the difference to exist.
+  A case whose two sides coincide by arithmetic is a case that cannot measure.
+- *"Re-key with the first digest instead of the block that was emitted" also
+  survives.* It produces the same wide challenge — and is only visible in the
+  challenge *after* it. The test read the emitted bytes and nothing else, so
+  the consequence was never on the table.
+
+The rule that follows is not "be thorough" but this: **after the value you
+assert, assert the state you left behind.** The same shape appears in the round
+trip that cannot see a sign convention, and in the field vectors that never
+reached the wraparound window.
+
 **A check that produces no output is not a check that passed -- it is a check
 that did not run.** This is a *different* failure mode from the one above, and
 both rules are needed. A check that always passes is caught by breaking it and
