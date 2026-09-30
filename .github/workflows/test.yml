@@ -57,6 +57,20 @@ jobs:
           version: 0.16.0
       - run: zig build audit-check
 
+  changelog-ledger:
+    # CHANGELOG.md is read before a consumer bumps, so its release headers are
+    # checked: unique versions, descending order, non-empty bodies. Row 14 of
+    # AUDIT.md until 2026-09-30, and the day it was written it found v0.5.1
+    # filed 104 lines below v0.5.0 in a published changelog.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build changelog-check
+
   test:
     strategy:
       matrix:

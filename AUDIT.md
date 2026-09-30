@@ -37,12 +37,13 @@ noticed for a week. This is the finding, not the defect:
 105 items      99 closed before the rewrite    13 open at that point
 ```
 
-Six of the thirteen were closed afterwards. Five are open, one is a decision
-that belongs to a named owner, and the rest are closed. **The counts below are
+Six of the thirteen were closed afterwards, and a fourteenth row was added in 2026-09-30
+for a gap this register had been describing in prose. Four are open, one is a decision
+that belongs to a named owner, and nine are closed. **The counts below are
 declared in the machine-readable comment and checked against the rows**, so a row
 cannot be added, closed or deleted without the number moving with it.
 
-<!-- audit:total=14 open=5 decision=1 closed=8 -->
+<!-- audit:total=14 open=4 decision=1 closed=9 -->
 
 ---
 
@@ -60,10 +61,10 @@ cannot be added, closed or deleted without the number moving with it.
 | 8 | No critical security item lacks a regression test | **open** | every security-relevant TODO in `libs/*/src` is either gone or named by a regression test | two found on 2026-09-30 and neither is closed: a public pairing function with no caller and no test whose own source says its tests are missing, and a comment citing a section of a document that does not exist |
 | 9 | No test can hang on rejection sampling | **closed** | every satisfaction-loop's acceptance probability is bounded below by a constant | all five in `field` and `transcript` accept with probability at least one half by construction; the big-field bounded draw masks to `bitlength(limit-1)`, so `2^bits >= limit`. This row said `open` until 2026-09-30. Residual: 4 of 19 counter-bounded loops were read individually, the other 15 classified by their head |
 | 10 | No asserts removed in ReleaseFast that leave out-of-range paths | **open** | an instrument exists that can observe a removal | it does not, and that is the finding rather than the excuse. The assert ledger counts asserts that are present; this asks about ones that were removed. Row 11 changed how this file is written for the same reason |
-| 11 | External points validate on-curve, subgroup and encoding | **decision** | owner: **the repository owner**, deciding whether the trust boundary for an externally supplied point is this library's job or the caller's | measured on 2026-09-30: the string `subgroup` does not occur anywhere in `libs/curve/src/`, while `libs/pairing` and the WASM layer do check it. On-curve *is* enforced, in `AffinePoint.fromBytes` with `error.NotOnCurve`, and in the group-operation tests on points the library chose itself. The type's fields are `pub`, so a struct literal bypasses every constructor and there is no choke point; the subgroup check is `n*P == O`, a full scalar multiplication. A typed `error.NotInSubgroup` follows the existing `fromBytes` shape, but it is opt-in and opt-in does not close this |
+| 11 | External points validate on-curve, subgroup and encoding | **decision** | owner: **thomas**, deciding whether the trust boundary for an externally supplied point is this library's job or the caller's | measured on 2026-09-30: the string `subgroup` does not occur anywhere in `libs/curve/src/`, while `libs/pairing` and the WASM layer do check it. On-curve *is* enforced, in `AffinePoint.fromBytes` with `error.NotOnCurve`, and in the group-operation tests on points the library chose itself. The type's fields are `pub`, so a struct literal bypasses every constructor and there is no choke point; the subgroup check is `n*P == O`, a full scalar multiplication. A typed `error.NotInSubgroup` follows the existing `fromBytes` shape, but it is opt-in and opt-in does not close this |
 | 12 | Serialisers have resource limits and free on every error path | **open** | a test named for a resource limit exists | none is. Boundedness is currently argued in a comment, and the `FailingAllocator` tests show nothing reaches the allocator, which is not the same claim |
 | 13 | Constant-time claims are backed by tests or an assembly audit | **open** | each claim names the test that holds it, or an assembly audit exists | neither. The test named "Constant-time primitives" asserts that a selector returns the value asked for, not that it takes constant time, so it passes against an implementation that is not constant-time. There is deliberately no timing test, and `SECURITY.md` states that no independent audit exists |
-| 14 | Changelog headers are checked for uniqueness, ordering and body | **open** | a checker exists and fails on a duplicate header | it does not exist. An earlier version of this file named `check_docs` as the tool that does it; there is no `check_docs` anywhere in the tree, and a search over every file type returns zero occurrences. The claim was removed rather than the tool being invented retroactively, and the gap is now row 14 so that it fails the gate instead of sitting in prose |
+| 14 | Changelog headers are checked for uniqueness, ordering and body | **closed** | `zig build changelog-check` fails on a duplicate version, an out-of-order release, an empty body, or `[Unreleased]` below a release | it does, and the day it was written it found `v0.5.1` filed 104 lines below `v0.5.0` in a published changelog, which nothing had noticed. An earlier version of this file named `check_docs` as the tool that does this; no `check_docs` exists in this tree, and a check of the other repository found no changelog-header checker there either — the rule was described in two repositories' prose and implemented in neither, which is why it was a fact travelling without its subject |
 
 Row 14 is a row because the thing it describes is the same shape as the other
 findings of this week: an instrument described in prose with nothing behind it. A

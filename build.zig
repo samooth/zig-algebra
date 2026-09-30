@@ -300,6 +300,21 @@ pub fn build(b: *std.Build) void {
         audit_ledger.dependOn(&verify.step);
     }
 
+    // CHANGELOG.md is the artefact a consumer reads before bumping, so its
+    // release headers are checked rather than trusted: unique versions,
+    // descending order, and a non-empty body under every section. This was
+    // AUDIT.md row 14 for a week — described in prose in two repositories and
+    // implemented in neither. The day it was written it found v0.5.1 filed
+    // 104 lines below v0.5.0.
+    const changelog = b.step("changelog-check", "Verify CHANGELOG.md release headers are unique and ordered");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/changelog_verify.py"));
+        verify.addArgs(&.{ "--changelog", "CHANGELOG.md" });
+        verify.has_side_effects = true;
+        changelog.dependOn(&verify.step);
+    }
+
     // algebra-traits (no deps)
     const traits_mod = lib(
         b,

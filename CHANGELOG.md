@@ -1043,110 +1043,6 @@ stored data does not carry forward), `merkle` 0.1.2 → 0.1.3, `binary-field`
   propagate again. The current figures (root 421, per-library 535) are in
   AGENTS.md.
 
-## [v0.5.0] — 2026-09-27
-
-> **Created as a local tag and never pushed; as of 2026-09-27 there is no
-> `v0.5.0` on the remote.** Nothing below reached a consumer, which is why the
-> broken `zig build bench` documented in the header costs nobody anything. Kept
-> un-moved and signed as a record of the order; its content is also in
-> `v0.5.1`, published the same day.
-
-### Security (P0 class, second sweep — advisory ZA-2026-003)
-
-The 0.4.0 sweep (ZA-2026-002) covered six libraries. A second, exhaustive sweep
-of every `std.debug.assert`, `catch unreachable` and `@panic` in the tree found
-the same defect class in **ten more**. Each one was a real bounds or
-arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
-
-- **algebra-traits** (0.2.0 -> **0.3.0**): `dotProduct` and
-  `lagrangeCoefficient` return `error.LengthMismatch` / `error.IndexOutOfBounds`
-  (the `for (a, b)` loop read past the shorter slice), and
-  `lagrangeInterpolate` returns `error.LengthMismatch` instead of indexing `ys`
-  out of bounds. The in-file `F7` gained `invChecked` / `divChecked`; `inv` and
-  `div` are total. **BREAKING:** all three are error unions now.
-- **poly** (0.1.1 -> **0.2.0**): the fixed `[max_degree + 1]F` coefficient array
-  was written past its end on an over-long `fromCoeffs` or an over-degree `mul`.
-  `fromCoeffs`, `mul`, `compose` and `pow` return `error.DegreeTooLarge`;
-  `divRem` / `div` / `rem` return `error.DivisionByZero` (a zero divisor made
-  the long-division loop non-terminating); `lagrangeInterpolate` returns
-  `error.LengthMismatch` / `error.EmptyInput` / `error.DegreeTooLarge` /
-  `error.DivisionByZero`; `vanishingPolynomial` returns `error.DegreeTooLarge`;
-  `vector.inner` / `vecAdd` / `vecSub` / `hadamard` return
-  `error.LengthMismatch`. `fromArray` keeps a comptime array literal and
-  `@compileError`s on an oversized one. **BREAKING:** all of the above are error
-  unions. Two previously declared-but-broken functions now work:
-  `p.derivative()` (an `@intCast` with no result type) and `p.toString(buf)`
-  (returned `!usize` from a `![]u8`).
-- **linalg** (0.1.1 -> **0.2.0**): `identity`, `trace`, `determinant`, `lu` and
-  `solve` return `error.NotSquare`. `identity` on a non-square `Matrix(F, r, c)`
-  wrote `m.data[i][i]` past the end of the shorter rows. **BREAKING:** error
-  unions; `solve` is now `error{NotSquare}!?Vector`.
-- **fri** (0.1.1 -> **0.2.0**): `Domain.init` returns `error.DomainTooLarge`
-  (the `two_adicity - log_n` shift underflowed, and `1 << shift` with a shift
-  >= 64 is undefined behaviour), `Domain.fill` returns
-  `error.LengthMismatch`, and `FriError` gained `DomainTooLarge` and
-  `OrderTooLarge`. **`verify` was also missing a check:** it compared
-  `log_domain` against `F.two_adicity` but not `log_final`, and `log_final`
-  comes from the proof, so a config whose `log_final` exceeded the two-adicity
-  underflowed the shift inside `Domain.init`. `verify` now returns `false` in
-  that case. **BREAKING:** error unions.
-- **curve** (0.4.0 -> **0.5.0**): `msm` returns `error.LengthMismatch` (the
-  scalar snapshot loop read past `scalars`). `ByteScalar.add` / `sub` / `mul` /
-  `inv` / `neg` / `fromBytes` return `error.NotCanonical` — they
-  `catch unreachable`d the stdlib non-canonical rejection, so a wire scalar >=
-  the group order aborted the process; `reduce` remains the total entry point.
-  `group_ops.scalarMul` and `group_poly.evalGroupPoly` / `evalGroupPolyVerify`
-  return `error.NonCanonicalScalar` for a stdlib pcurve point and a
-  non-canonical byte scalar. **BREAKING:** error unions.
-- **ntt** (0.1.1 -> **0.2.0**): `bitReverse` returns `error.InvalidLength`
-  (`@ctz(0)` on an empty slice is undefined), `ntt` / `intt` return
-  `error.LengthMismatch`, `nttWithTwiddles` / `inttWithTwiddles` add
-  `error.InvalidTwiddles` for a wrong table or stage length, and all of them
-  plus `precomputeTwiddles` return `error.LogTooLarge` because `2^log_n` was
-  computed with `std.math.pow(usize, 2, log_n)`, which overflows for
-  `log_n >= @bitSizeOf(usize)`. **BREAKING:** error unions.
-- **field** (0.3.0 -> **0.4.0**): `batchAdd` / `batchSub` / `batchMul` and
-  `multiExp` return `error.LengthMismatch` on both backends;
-  `Ipa.innerProduct` and `Ipa.commit` return `error.LengthMismatch`;
-  `primitiveRootOfUnity` returns `error.OrderTooLarge` and `rootOfUnity` adds
-  `error.NotPowerOfTwo` (`std.math.log2(0)` is undefined), on both base-field
-  backends and on `QuadraticExtension` / `CubicExtension`. Added
-  `toU64Checked` (`error.Overflow`); `toU64` keeps truncating. Removed
-  `src/ntt.zig` and `src/merkle.zig`, unreferenced duplicates of `zig-ntt` and
-  of `MerkleTree` in `lib.zig` (the field README already said the generic
-  transform lives in `zig-ntt`). **BREAKING:** error unions.
-- **rng** (0.3.0 -> **0.4.0**): `Shake256Rng.absorbSeed` and `finalize` return
-  `error.AlreadyFinalized`; absorbing or re-finalizing after the sponge was
-  squeezed corrupted its state in `ReleaseFast`. `squeezeInto` is an error union
-  for the same reason. The `byte_len` guard in `randomFieldElement` is now a
-  `@compileError` (it is comptime-known either way). **BREAKING:** error unions.
-- **hash** (0.2.0 -> **0.3.0**): `Poseidon(...).initFromSeed` returns
-  `error.NoValidMdsEntry`; the `assert(attempt < 256)` on the MDS search was
-  compiled out in `ReleaseFast`, where a failed search left `y[j]` undefined
-  and produced a singular MDS matrix. The `t >= 3` sponge requirement moved to
-  a `@compileError` in the `Poseidon` factory. **BREAKING:** new error in the
-  set.
-- **pairing** (0.3.0 -> **0.4.0**): `inv` is total (`inv(0) == zero()`) on the
-  cubic extension, both Fp6 towers and `Fp12Direct`, each with an `invChecked`
-  sibling; the closed-form inversions used to divide by a zero norm. Added
-  `millerLoopChecked` (bn254), `millerLoopPairChecked` (bn254 direct and tower),
-  all returning `error.PointAtInfinity`; the unchecked `millerLoop` /
-  `millerLoopPair` fall back to the identity element instead of producing a
-  garbage Fp12. `Fp12Direct` gained `invChecked`.
-
-### Fixed (not a P0 defect)
-
-- **`format` methods were dead code.** Eight `format` implementations
-  (`zig-field` base and both extension towers, `zig-bigint`, `zig-poly`,
-  `zig-linalg`, `zig-pairing`, `zig-algebra-traits`) still declared the
-  pre-0.16 signature `(self, comptime fmt, options: std.fmt.FormatOptions,
-  writer)`. Zig 0.16 only consults a method named `format` for the **`{f}`**
-  specifier, and with that signature nothing consulted it at all, so every
-  `std.debug.print("{}", .{value})` printed the default struct dump. All eight
-  are now `pub fn format(self, writer: *std.Io.Writer) std.Io.Writer.Error!void`
-  and work with `{f}`. This is why `zig-poly`'s `toString` now yields
-  `1 + 2*x + 3*x^2` instead of a struct listing.
-
 ## [v0.5.1] — 2026-09-27
 
 > **Published 2026-09-27 at `22df684`.** Its run (36328763514) was green on
@@ -1393,6 +1289,110 @@ sign-inversion bug that only a prime field could expose.
   and the `{f}` formatting rule.
 - `zig-poly`'s README now lists `compose` with a non-monomial `q` as the one
   remaining known gap; `derivative` and `toString` are fixed and removed from it.
+
+## [v0.5.0] — 2026-09-27
+
+> **Created as a local tag and never pushed; as of 2026-09-27 there is no
+> `v0.5.0` on the remote.** Nothing below reached a consumer, which is why the
+> broken `zig build bench` documented in the header costs nobody anything. Kept
+> un-moved and signed as a record of the order; its content is also in
+> `v0.5.1`, published the same day.
+
+### Security (P0 class, second sweep — advisory ZA-2026-003)
+
+The 0.4.0 sweep (ZA-2026-002) covered six libraries. A second, exhaustive sweep
+of every `std.debug.assert`, `catch unreachable` and `@panic` in the tree found
+the same defect class in **ten more**. Each one was a real bounds or
+arithmetic hazard in `ReleaseFast`, not a cosmetic assert:
+
+- **algebra-traits** (0.2.0 -> **0.3.0**): `dotProduct` and
+  `lagrangeCoefficient` return `error.LengthMismatch` / `error.IndexOutOfBounds`
+  (the `for (a, b)` loop read past the shorter slice), and
+  `lagrangeInterpolate` returns `error.LengthMismatch` instead of indexing `ys`
+  out of bounds. The in-file `F7` gained `invChecked` / `divChecked`; `inv` and
+  `div` are total. **BREAKING:** all three are error unions now.
+- **poly** (0.1.1 -> **0.2.0**): the fixed `[max_degree + 1]F` coefficient array
+  was written past its end on an over-long `fromCoeffs` or an over-degree `mul`.
+  `fromCoeffs`, `mul`, `compose` and `pow` return `error.DegreeTooLarge`;
+  `divRem` / `div` / `rem` return `error.DivisionByZero` (a zero divisor made
+  the long-division loop non-terminating); `lagrangeInterpolate` returns
+  `error.LengthMismatch` / `error.EmptyInput` / `error.DegreeTooLarge` /
+  `error.DivisionByZero`; `vanishingPolynomial` returns `error.DegreeTooLarge`;
+  `vector.inner` / `vecAdd` / `vecSub` / `hadamard` return
+  `error.LengthMismatch`. `fromArray` keeps a comptime array literal and
+  `@compileError`s on an oversized one. **BREAKING:** all of the above are error
+  unions. Two previously declared-but-broken functions now work:
+  `p.derivative()` (an `@intCast` with no result type) and `p.toString(buf)`
+  (returned `!usize` from a `![]u8`).
+- **linalg** (0.1.1 -> **0.2.0**): `identity`, `trace`, `determinant`, `lu` and
+  `solve` return `error.NotSquare`. `identity` on a non-square `Matrix(F, r, c)`
+  wrote `m.data[i][i]` past the end of the shorter rows. **BREAKING:** error
+  unions; `solve` is now `error{NotSquare}!?Vector`.
+- **fri** (0.1.1 -> **0.2.0**): `Domain.init` returns `error.DomainTooLarge`
+  (the `two_adicity - log_n` shift underflowed, and `1 << shift` with a shift
+  >= 64 is undefined behaviour), `Domain.fill` returns
+  `error.LengthMismatch`, and `FriError` gained `DomainTooLarge` and
+  `OrderTooLarge`. **`verify` was also missing a check:** it compared
+  `log_domain` against `F.two_adicity` but not `log_final`, and `log_final`
+  comes from the proof, so a config whose `log_final` exceeded the two-adicity
+  underflowed the shift inside `Domain.init`. `verify` now returns `false` in
+  that case. **BREAKING:** error unions.
+- **curve** (0.4.0 -> **0.5.0**): `msm` returns `error.LengthMismatch` (the
+  scalar snapshot loop read past `scalars`). `ByteScalar.add` / `sub` / `mul` /
+  `inv` / `neg` / `fromBytes` return `error.NotCanonical` — they
+  `catch unreachable`d the stdlib non-canonical rejection, so a wire scalar >=
+  the group order aborted the process; `reduce` remains the total entry point.
+  `group_ops.scalarMul` and `group_poly.evalGroupPoly` / `evalGroupPolyVerify`
+  return `error.NonCanonicalScalar` for a stdlib pcurve point and a
+  non-canonical byte scalar. **BREAKING:** error unions.
+- **ntt** (0.1.1 -> **0.2.0**): `bitReverse` returns `error.InvalidLength`
+  (`@ctz(0)` on an empty slice is undefined), `ntt` / `intt` return
+  `error.LengthMismatch`, `nttWithTwiddles` / `inttWithTwiddles` add
+  `error.InvalidTwiddles` for a wrong table or stage length, and all of them
+  plus `precomputeTwiddles` return `error.LogTooLarge` because `2^log_n` was
+  computed with `std.math.pow(usize, 2, log_n)`, which overflows for
+  `log_n >= @bitSizeOf(usize)`. **BREAKING:** error unions.
+- **field** (0.3.0 -> **0.4.0**): `batchAdd` / `batchSub` / `batchMul` and
+  `multiExp` return `error.LengthMismatch` on both backends;
+  `Ipa.innerProduct` and `Ipa.commit` return `error.LengthMismatch`;
+  `primitiveRootOfUnity` returns `error.OrderTooLarge` and `rootOfUnity` adds
+  `error.NotPowerOfTwo` (`std.math.log2(0)` is undefined), on both base-field
+  backends and on `QuadraticExtension` / `CubicExtension`. Added
+  `toU64Checked` (`error.Overflow`); `toU64` keeps truncating. Removed
+  `src/ntt.zig` and `src/merkle.zig`, unreferenced duplicates of `zig-ntt` and
+  of `MerkleTree` in `lib.zig` (the field README already said the generic
+  transform lives in `zig-ntt`). **BREAKING:** error unions.
+- **rng** (0.3.0 -> **0.4.0**): `Shake256Rng.absorbSeed` and `finalize` return
+  `error.AlreadyFinalized`; absorbing or re-finalizing after the sponge was
+  squeezed corrupted its state in `ReleaseFast`. `squeezeInto` is an error union
+  for the same reason. The `byte_len` guard in `randomFieldElement` is now a
+  `@compileError` (it is comptime-known either way). **BREAKING:** error unions.
+- **hash** (0.2.0 -> **0.3.0**): `Poseidon(...).initFromSeed` returns
+  `error.NoValidMdsEntry`; the `assert(attempt < 256)` on the MDS search was
+  compiled out in `ReleaseFast`, where a failed search left `y[j]` undefined
+  and produced a singular MDS matrix. The `t >= 3` sponge requirement moved to
+  a `@compileError` in the `Poseidon` factory. **BREAKING:** new error in the
+  set.
+- **pairing** (0.3.0 -> **0.4.0**): `inv` is total (`inv(0) == zero()`) on the
+  cubic extension, both Fp6 towers and `Fp12Direct`, each with an `invChecked`
+  sibling; the closed-form inversions used to divide by a zero norm. Added
+  `millerLoopChecked` (bn254), `millerLoopPairChecked` (bn254 direct and tower),
+  all returning `error.PointAtInfinity`; the unchecked `millerLoop` /
+  `millerLoopPair` fall back to the identity element instead of producing a
+  garbage Fp12. `Fp12Direct` gained `invChecked`.
+
+### Fixed (not a P0 defect)
+
+- **`format` methods were dead code.** Eight `format` implementations
+  (`zig-field` base and both extension towers, `zig-bigint`, `zig-poly`,
+  `zig-linalg`, `zig-pairing`, `zig-algebra-traits`) still declared the
+  pre-0.16 signature `(self, comptime fmt, options: std.fmt.FormatOptions,
+  writer)`. Zig 0.16 only consults a method named `format` for the **`{f}`**
+  specifier, and with that signature nothing consulted it at all, so every
+  `std.debug.print("{}", .{value})` printed the default struct dump. All eight
+  are now `pub fn format(self, writer: *std.Io.Writer) std.Io.Writer.Error!void`
+  and work with `{f}`. This is why `zig-poly`'s `toString` now yields
+  `1 + 2*x + 3*x^2` instead of a struct listing.
 
 ## [v0.4.0] — 2026-09-27
 
