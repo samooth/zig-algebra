@@ -148,7 +148,7 @@ std.debug.assert(Fp12.one().mul(Fp12.one().inv()).isOne());
 # From the monorepo root
 zig build test
 
-# Just this library (57 tests, all inline)
+# Just this library (58 tests, all inline)
 cd libs/pairing && zig build test
 ```
 

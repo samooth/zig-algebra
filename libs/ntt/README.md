@@ -181,7 +181,7 @@ for a mismatched buffer; the plain ones leave it untouched.
 cd libs/ntt && zig build test
 ```
 
-15 tests: bit-reversal involution, bit-reversal for `n = 4`, `ntt`/`intt`
+16 tests: bit-reversal involution, bit-reversal for `n = 4`, `ntt`/`intt`
 round-trips for M31, BabyBear, Goldilocks, BN254_Fp and BLS12_381_Fp, the
 twiddled round trip, cyclic convolution via the transform, twiddle
 precomputation/free with per-entry verification, and `nttWithTwiddles` matching

@@ -189,11 +189,13 @@ and `eql`.
 cd libs/linalg && zig build test
 ```
 
-11 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
+13 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
 solve, 3×3 operations including a computed inverse, singular detection,
 partial pivoting on a matrix needing a row swap, a Goldilocks multiply, the
-`error.NotSquare` rejections for non-square shapes, and the total-vs-checked
-`inv`/`div` contract of the in-file `F7`.
+`error.NotSquare` rejections for non-square shapes, the total-vs-checked
+`inv`/`div` contract of the in-file `F7`, and two exact-arithmetic differentials
+against Python — one over the in-file field, one over `Goldilocks` — which check
+properties rather than agreement with this implementation.
 The suite uses an in-file `F7` (which includes `lexicographicCmp`) plus
 `Goldilocks` from `zig-field`.
 

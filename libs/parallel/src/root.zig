@@ -90,7 +90,7 @@ const testing = std.testing;
 // `timing.zig`, one of which is the only check on the clock at all, had never
 // been run by `zig build test` or by the root step. This is the reference that
 // reaches them.
-test {
+test "reference: timing.zig's test blocks reach this binary" {
     _ = @import("timing.zig");
 }
 

@@ -256,7 +256,7 @@ does not alter what is proved.
 # From the monorepo root
 zig build test
 
-# Just this library (84 tests, all inline)
+# Just this library (97 tests, all inline)
 cd libs/binary-field && zig build test
 ```
 

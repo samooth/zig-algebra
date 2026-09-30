@@ -112,7 +112,13 @@ this instead of writing platform-specific timing inline.
 cd libs/parallel && zig build test
 ```
 
-2 tests: a parallel-vs-sequential equality check and a 1-worker sum.
+7 tests: a parallel-vs-sequential equality check, a 1-worker sum, a sweep that
+runs every index exactly once across the chunk boundaries, a cap on the worker
+count, and two checks on `nowNs` — that it is monotonic over a busy wait, and
+that it agrees with a second OS clock on a measured interval. The last two live
+in `src/timing.zig` and reach this binary only through the reference test that
+imports it, which is why that test carries a name: a nameless reference is
+invisible to anyone searching for the clock.
 
 ## Design Notes
 

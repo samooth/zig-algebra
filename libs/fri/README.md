@@ -264,7 +264,7 @@ cannot be used** for any `log_domain > 1`.
 cd libs/fri && zig build test
 ```
 
-12 tests: a degree-2 polynomial verifies; **random data must be rejected**
+32 tests: a degree-2 polynomial verifies; **random data must be rejected**
 (regression for ZA-2026-001, which v1 accepted 16/16 of); an over-degree
 polynomial must be rejected; a tampered query value is rejected; a truncated
 Merkle path is rejected; a wrong transcript label is rejected; the

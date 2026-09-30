@@ -496,6 +496,21 @@ signed commit, so the repair was a new commit on top and never an amend. A wrong
 finding is cheap while it is still in the working tree and expensive the moment
 it has a signature, and *signed* is the boundary.
 
+**A negative finding needs the same instrument as a positive one.** That is the
+third half, and it is the one that would have caught it before the sentence was
+written rather than after. "Does not exist" and "I did not find it" are
+different claims, and the distance between them is one command. Every wrong
+negative in this repository has come from the same place: `rg` with a path
+prefix, `find` over a ref, `rg` that did not reach an ignored `zig-pkg/`, `sed`
+that excluded `predef/`. All four returned nothing and all four were read as
+absence. The cost is not the wrong answer; it is that a wrong negative gets
+signed before anyone checks it.
+
+So: **before writing "nothing", run the command that would prove it, and put
+that command in the message.** When the negative is not the kind you can prove,
+say which kind it is — "no `rg` result outside the vendored tree" is a claim;
+"no such symbol" is a different one, and it needs the search that reaches it.
+
 The same shape, from this pass and the ones before it: a Legendre symbol read
 off the base field when the subject was the extension; a diff against `v0.5.1`
 taken over the wrong range; a citation whose line number had been written over;

@@ -158,8 +158,10 @@ reject untrusted `G1`/`G2` points at the API boundary.
 cd libs/kzg && zig build test
 ```
 
-6 tests: constant/empty-polynomial edges, degree-1 commit vs manual sum, the
-happy path, tampered `y`, tampered witness, and wrong opening point.
+8 tests: constant/empty-polynomial edges, degree-1 commit vs manual sum, the
+happy path, tampered `y`, tampered witness, wrong opening point, rejection of
+a commitment that is not on the curve, and a differential against `py_ecc` that
+compares setup, commitment, witness and the pairing decision.
 
 ## License
 

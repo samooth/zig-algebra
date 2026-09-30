@@ -235,7 +235,7 @@ const eg = zat.egcd(ring, ring.one(), ring.one());
 cd libs/algebra-traits && zig build test
 ```
 
-4 tests run: the negative cases for the entry points that take slices
+8 tests run: the negative cases for the entry points that take slices
 (`dotProduct`, `lagrangeInterpolate`, `lagrangeCoefficient`) plus the
 partition-of-unity property of `lagrangeCoefficient`. `zig build` installs
 `src/main.zig` as the `traits-example` executable, which is the runnable

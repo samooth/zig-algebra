@@ -164,10 +164,13 @@ sequencing comes from the re-keying step rather than an explicit counter. Use
 cd libs/transcript && zig build test
 ```
 
-10 tests: determinism, domain separation, absorb sensitivity, challenge
+13 tests: determinism, domain separation, absorb sensitivity, challenge
 sequencing, length-prefix disambiguation, `absorbField`, 100 consecutive
 `challengeField` draws, `challengeFields`, `absorbOptionalField` presence
-encoding, and `challengeFrom` order sensitivity.
+encoding, `challengeFrom` order sensitivity, the split between
+`challengeFieldChecked` and the total legacy `challengeField`, and a byte-level
+differential against a Python mirror of the protocol that reaches the rejection
+loop on both sides of it.
 
 ## Design Notes
 

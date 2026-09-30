@@ -231,7 +231,7 @@ There are no dependencies.
 cd libs/serialization && zig build test
 ```
 
-15 tests: the golden wire layout, a nested slice-of-slices round trip, the
+17 tests: the golden wire layout, a nested slice-of-slices round trip, the
 `SIZE`-protocol field element, the `NUM_BYTES` field element plus strict
 `bool`/optional flag validation, rejection of truncated and trailing bytes, and
 the untrusted-input suite — over-long length prefixes rejected, a prefix that

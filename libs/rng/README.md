@@ -241,7 +241,7 @@ zr.csprng.bytes(&buf);
 cd libs/rng && zig build test
 ```
 
-25 tests: ChaCha20 determinism across two instances, distinct outputs for
+27 tests: ChaCha20 determinism across two instances, distinct outputs for
 distinct seeds, `randomU64Bounded`, `randomBytes` non-repetition, SHAKE256
 determinism and seed sensitivity, allocation-free `squeezeInto`, Fisher-Yates
 permutation validity, `randomPermutation`, `randomFieldElement` on an in-file

@@ -236,7 +236,9 @@ _ = .{ bits, limbs4, value, runtime, order, carry, shl_out, shr_out, wide };
 cd libs/bigint && zig build test
 ```
 
-19 tests in this release (root `zig build test` counts 19 for `zig-bigint`).
+28 tests, measured with `zig build test --summary all` on 2026-09-30. The root
+`zig build test` runs this library's inline `src/` tests too, so it counts the
+same 28.
 
 ## License
 

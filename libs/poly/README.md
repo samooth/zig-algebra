@@ -178,7 +178,7 @@ the default struct dump.
 # From the monorepo root
 zig build test
 
-# Just this library (28 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
+# Just this library (30 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
 cd libs/poly && zig build test
 ```
 
