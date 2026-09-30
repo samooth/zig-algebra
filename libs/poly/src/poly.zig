@@ -538,6 +538,57 @@ test "mul rejects a product degree beyond the fixed capacity" {
     try testing.expect((try x2.mul(x)).eql(x3));
 }
 
+test "compose with a non-monomial q matches the definition evaluated numerically" {
+    const Poly = Polynomial(TestF7, 16);
+    // p(x) = 1 + 3x, and q(x) = 2 + x + 4x^2, which is deliberately not x^k:
+    // the historical defect was an accumulation that only came out right when
+    // q was a monomial, so a monomial q cannot settle this.
+    const p = try Poly.fromCoeffs(&.{ TestF7.fromInt(1), TestF7.fromInt(3) });
+    const q = try Poly.fromCoeffs(&.{ TestF7.fromInt(2), TestF7.fromInt(1), TestF7.fromInt(4) });
+
+    const p_before = p;
+    const q_before = q;
+    const composed = try p.compose(q);
+
+    // Independent oracle: the definition is sum(c_i * q(x)^i), evaluated with
+    // scalar arithmetic. Calling compose to decide what compose should return
+    // would pass by construction, which is the failure this test exists to
+    // rule out.
+    for (0..TestF7.MODULUS) |xi| {
+        const x = TestF7.fromInt(xi);
+        const q_at_x = q.eval(x);
+        var expect = TestF7.zero();
+        var qx = TestF7.one();
+        for (p.coeffs[0..@as(usize, @intCast(p.degree + 1))]) |c| {
+            if (!c.isZero()) expect = expect.add(c.mul(qx));
+            qx = qx.mul(q_at_x);
+        }
+        try testing.expectEqual(TestF7.fromInt(expect.value), TestF7.fromInt(composed.eval(x).value));
+    }
+
+    // The state left behind: composing must not consume either operand, or a
+    // loop that reuses them silently composes with its own scratch values.
+    for (0..TestF7.MODULUS) |xi| {
+        const x = TestF7.fromInt(xi);
+        try testing.expect(p_before.eval(x).eql(p.eval(x)));
+        try testing.expect(q_before.eval(x).eql(q.eval(x)));
+    }
+}
+
+test "compose reports DegreeTooLarge instead of returning a truncated polynomial" {
+    // Capacity is max_degree + 1 == 3 coefficients, so a degree-2 composed with
+    // a degree-2 has degree 4 and cannot be represented.
+    const Poly = Polynomial(TestF7, 2);
+    const p = try Poly.fromCoeffs(&.{ TestF7.one(), TestF7.one(), TestF7.one() });
+    const q = try Poly.fromCoeffs(&.{ TestF7.one(), TestF7.one(), TestF7.one() });
+    try testing.expectError(error.DegreeTooLarge, p.compose(q));
+    // The operands survive the failure: the error comes from a partial `mul`
+    // inside the loop, and a caller that retries with a wider type must still
+    // have its inputs intact.
+    try testing.expectEqual(@as(i32, 2), p.degree);
+    try testing.expectEqual(@as(i32, 2), q.degree);
+}
+
 test "divRem rejects a zero divisor" {
     const Poly = Polynomial(TestF7, 4);
     const p = try Poly.fromCoeffs(&.{ TestF7.fromInt(1), TestF7.one() });

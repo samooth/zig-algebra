@@ -290,8 +290,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (583 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 583 tests, seconds
+zig build test        # Run all library tests (585 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 585 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -306,7 +306,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (583 total across all 27 test binaries, and the per-library sum is 583: **the root step runs the `tests/` roots too**).
+tests (585 total across all 27 test binaries, and the per-library sum is 585: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -409,9 +409,9 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 583; per-library
-  `zig build test` totals sum to 583, which now **equals** the root total because the
-  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 30, rng 27, serialization 17, transcript 13.
+- Counts (Zig 0.16.0, re-derived 2026-09-30): root `zig build test` = 585; per-library
+  `zig build test` totals sum to 585, which now **equals** the root total because the
+  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 32, rng 27, serialization 17, transcript 13.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
 - **A correct measurement can describe an invisible defect: "measured and right"

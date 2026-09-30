@@ -166,11 +166,26 @@ consulted for the `{f}` specifier, so `p.toString(&buf)` (which formats with
 `{f}`) yields `1 + 2*x + 3*x^2`, while `std.debug.print("{}", .{p})` prints
 the default struct dump.
 
-**Known gaps** — declared but currently broken in `src/poly.zig`:
+**Known gaps** — none currently listed. The table that used to sit here said:
 
-| Function | Problem |
-|----------|---------|
-| `p.compose(q)` with a non-monomial `q` | Accumulates `Σ c_i · q(x)^i` with a plain `add`, so the result is only correct when `q` is `x^k`; with a general `q` it silently returns a wrong polynomial |
+> `p.compose(q)` with a non-monomial `q` accumulates `Σ c_i · q(x)^i` with a
+> plain `add`, so the result is only correct when `q` is `x^k`
+
+**That is no longer true, and the entry was stale rather than the code being
+broken.** `compose` advances the power by multiplication, so the sum is taken
+over `q^i` and not over `q` repeated, and the accumulation is held by two tests:
+`compose with a non-monomial q matches the definition evaluated numerically`,
+which checks the definition by scalar evaluation over all of `F7` rather than
+by asking `compose` what it thinks it should return, and `polynomial arithmetic
+matches Python over the same field`. A degree overflow returns
+`error.DegreeTooLarge` instead of a truncated polynomial, held by `compose
+reports DegreeTooLarge instead of returning a truncated polynomial`.
+
+The empty set is not itself a verified claim — "nothing is broken here" is a
+claim, and the three tests above are what would refute it. A stale row in this
+table is worse than a missing one, because a table of known gaps is the part of
+a README a reader trusts most, and one wrong entry teaches the reader to
+discount the rest.
 
 ## Running Tests
 
@@ -178,7 +193,7 @@ the default struct dump.
 # From the monorepo root
 zig build test
 
-# Just this library (30 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
+# Just this library (32 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
 cd libs/poly && zig build test
 ```
 
