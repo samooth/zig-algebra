@@ -31,26 +31,35 @@ arregla nada, porque no hay inconsistencia que arreglar.
 nada**, lo cual es más trabajo del que su propuesta asume y es una decisión de
 diseño, no un parche. Con el dato por delante, la decisión es del propietario.
 
-## 2. P2-7: no hay KAT de Poseidon ni de MiMC, de ningún tipo
+## 2. P2-7: corregido. Ahora hay KAT de Poseidon, y son externos
 
-La revisión escribe que "los tests sobre F7 con valores esperados están ✓".
+Cuando esta revisión se escribió, la observación era exacta y grave: el test de
+`root.zig:260` afirmaba `h == h` —determinismo, que pasa para cualquier función
+—incluida una constante— y no había **ningún** valor esperado. Eso ya no es
+cierto, y es lo que hay que responder:
 
-**No hay ningún valor esperado.** El test de `root.zig:260` es:
+- `poseidon_hash` está anclado a los parámetros **CryptoExperts Hades** (los
+  que usa StarkNet: t=3, RF=8, RP=83, alpha=3, S-box parcial en la última
+  celda; 107 constantes de `poseidon-py`), expuestos para eso como
+  `PoseidonVariant(...)` con `Poseidon(...)` manteniendo la celda 0.
+- `initSpec` está anclado al **generador Grain de IAIK/circomlibjs**: las 195
+  constantes de ronda, la MDS 3x3 y tres estados de permutación de
+  `poseidon_reference.js`, sobre el campo escalar de BN254.
+Los dos primeros son el mismo tipo de evidencia que esta revisión pedía:
+**literales hex externos, no determinismo.** Y el KAT vive ahora en
+`poseidon.zig` y no en el agregado, que era la otra mitad de la observación.
 
-```zig
-const h  = p.hash2(a, b);
-const h2 = p.hash2(a, b);
-try std.testing.expect(h.eql(h2));
-```
+Lo que **sigue en pie**, y conviene no abultarlo:
 
-Afirma `h == h`. Es determinismo, es un round-trip, y **pasa para cualquier
-función, incluida una que devuelva siempre lo mismo**. Cero literales hex en
-`poseidon.zig` ni en `mimc.zig`.
-
-No es que falte un KAT sobre BN254 Fr: es que **no hay KAT de ningún tipo**. Y
-`poseidon.zig` (224 líneas) y `mimc.zig` (85 líneas) **no tienen ni un test
-propio** — los dos tests viven en `root.zig`, el agregado. Es la clase de
-`.hash()` otra vez: implementación en un fichero, tests en otro.
+- **`hash2` no tiene vectores publicados.** Lo anclado es la *permutación*
+  (los dos conjuntos de parámetros de arriba), no la salida de la esponja. El
+  test de `root.zig:128` afirma `hash2(1, 2) == 3` sobre `F_7`: es un valor,
+  pero de una instancia elegida aquí, así que es evidencia de tanto como
+  "determinismo" —cualquier implementación podría dar 3 por construcción. La
+  criticism original sigue siendo válida en este punto, y es el que queda
+  abierto.
+- **`mimc.zig` no tiene KAT propio.** No lo hemos instrumentado y no vamos a
+  afirmar lo contrario.
 
 ## 3. P2-6: el README afirma lo contrario de lo que hace el código
 
@@ -65,9 +74,33 @@ examples/stark_prover.zig:48  // Fibonacci transition: next_a = a + b,
                               next_b = next_a (shift)
 ```
 
-El ejemplo dice *shift*, en un comentario; el README dice *Fibonacci*. Quien lea
-el README implementa Fibonacci estándar y obtiene valores distintos. Eso no es
- undiscoverable: es un README que miente, y es el lugar donde la gente mira.
+La observación se queda corta. El código no es un *shift* y no es Fibonacci:
+
+```zig
+examples/stark_prover.zig:47-51
+    for (1..n) |i| {
+        // Fibonacci transition: next_a = a + b, next_b = next_a (shift)
+        a[i] = a[i - 1].add(b[i - 1]);
+        b[i] = a[i];
+    }
+```
+
+Con `b[i] = a[i]`, la transición es `a[i] = a[i-1] + a[i-1] = 2·a[i-1]`: **el
+ejemplo duplica.** Y la comprobación de restricciones (línea 60) verifica
+exactamente eso, así que **la prueba es internamente coherente: lo que se
+demuestra es "a se duplica"**. Lo que miente es la prosa, en tres sitios que no
+se contradicen entre sí sino con el código:
+
+- `README.md:208` dice "Fibonacci over Goldilocks with FRI";
+- la cabecera del ejemplo dice `a_{i+1} = a_i + b_i (Fibonacci step)`;
+- la misma cabecera dice `b_{i+1} = a_{i+1} (shift register)` y el campo
+  documenta `b[i] = a[i+1]`, cuando el código hace `b[i] = a[i]`: una copia,
+  no un desplazamiento.
+
+Quien lea cualquiera de las tres descripciones implementa Fibonacci estándar y
+obtiene valores distintos, y quien lea el ejemplo buscando un *shift* tampoco
+encuentra uno. No es undiscoverable: es documentación que contradice al código
+en el mismo fichero, y es el lugar donde la gente mira.
 
 ---
 
@@ -81,10 +114,14 @@ el README implementa Fibonacci estándar y obtiene valores distintos. Eso no es
 - **Alcance del P0**: era lo único corregible sin decisión de diseño. El
   `FieldKind`/`CurveKind`, el KAT de Poseidon y los helpers de límites quedan
   fuera de este commit, con el dato delante.
-- **Inventario de alcance público**: 104 métodos públicos en `field.zig` y
-  `extension.zig`, 8 sin ninguna llamada en el repositorio (7,7%) a fecha de
-  este texto, después de corregir `hash`. Antes eran 12 de 104 (11,5%): hay
-  **cuatro** copias de `hash` (dos por fichero), no una.
+- **Inventario de alcance público**: lo que `zig build assert-check` cuenta
+  sobre `field.zig` y `extension.zig` es "104 gross (50 prose) / 54 code", y
+  antes de corregir `hash` eran 12 sin ninguna llamada en el repositorio: hay
+  **cuatro** copias de `hash` (dos por fichero), no una. Se cita la salida de
+  la herramienta y no un porcentaje, porque el denominador depende de una
+  definición —qué cuenta como "público" y qué como "llamada"— que no está
+  escrita en ninguna parte, y un porcentaje sin esa definición no es un
+  número reproducible: es una medida con el objeto cambiado debajo.
 - **`montgomery`**: hay un advisory abierto y en camino, separado. No se mezcla
   con esto: es un fallo silencioso en una release publicada, esto es una
   ruptura de compilación visible. Distintos advisories, distintos commits.
