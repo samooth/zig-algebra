@@ -154,7 +154,13 @@ pub fn prove(
     return .{ .witness = affine(w), .y = y };
 }
 
-/// Verify: e(C - [y]G1, [tau]G2) == e(W, G2).
+/// Verify: e(C - [y]G1, G2) == e(W, [tau]G2 - [z]G2).
+///
+/// The two G2 operands were the wrong way round here, and the `- [z]G2` term
+/// was missing: the code has always checked this equation, and the docstring
+/// named another one. The mistake is harmless in isolation -- both sides are
+/// computed from the same alpha-free pairing -- and fatal to anyone using the
+/// sentence to reimplement or to audit the check.
 pub fn verify(
     setup: *const Setup,
     commitment: G1,

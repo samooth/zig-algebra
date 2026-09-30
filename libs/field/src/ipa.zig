@@ -227,7 +227,13 @@ pub fn Ipa(comptime F: type) type {
 
         // -- Verification ----------------------------------------------------
 
-        /// Verify an IPA proof that `<a, b> = c` against the commitment.
+        /// Not implemented: this always returns `error.Unsupported`.
+        ///
+        /// The name and the signature promise a verification of `<a, b> = c`
+        /// against the commitment, and the body does not do it. Use
+        /// `verifyWithCommitment`, which is the working entry point. The
+        /// signature is kept so that the two spellings do not silently diverge
+        /// when the stub is filled in.
         pub fn verify(self: Self, proof: *const Proof, c: F) !void {
             _ = self;
             _ = proof;

@@ -431,6 +431,27 @@ is only visible by importing it from outside, in an `F.order` that is only
 visible for a field with no `order`, and in a README whose claim is only
 visible by running the command.
 
+**Every claim needs the case that contradicts it. Without one, what there is
+a defence that has not been verified.** Not "most claims": the ones that look
+safe are the ones that need it most, because a check that has never been
+observed to disagree is indistinguishable from a check that cannot disagree.
+Three shapes of it, all from this pass: a mutation that has to be seen falling,
+a bound that has to be seen refusing (a test that only checks the error passes
+with a bound of 0), and an equality that has to be seen failing against
+something other than itself. The escape hatch is part of the rule and has to be
+written in the same place: **where no contradicting case can exist, say so and
+say why**, which is the same demand as "a declaration nothing can falsify is a
+claim nothing can test" above — a rule with no exit is a rule that gets faked.
+
+**An instrument has to show that it works before its result counts, and the
+mechanical form of that is a positive control: a mutation run that reports no
+catches is not a clean library, it is a broken harness.** The two cheapest
+controls are (1) after every mutation, assert the tree is byte-identical to the
+baseline before the next one, and (2) require the run to report at least one
+catch, so "survived" never appears without something that was caught. The
+harness that reported `torusAdicity` as survived had neither, and what it was
+reporting was a file that had not been restored.
+
 **A harness that mutates without restoring does not measure mutations, it
 measures the working tree.** A mutation that "survives" one run may have
 survived because it was still applied to the next one. This one cost real time
