@@ -286,6 +286,20 @@ pub fn build(b: *std.Build) void {
         assert_ledger.dependOn(&verify.step);
     }
 
+    // AUDIT.md is a register of open items, and a register fails silently: a row
+    // can sit open with a valid-looking table around it and nothing complains.
+    // This step makes it a gate. Every row must name the observable that was
+    // checked, a decision row must name an owner, the declared counts must
+    // match the rows, and every `git show` in the document must resolve.
+    const audit_ledger = b.step("audit-check", "Verify the AUDIT.md register holds up as a gate");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/audit_verify.py"));
+        verify.addArgs(&.{ "--audit", "AUDIT.md" });
+        verify.has_side_effects = true;
+        audit_ledger.dependOn(&verify.step);
+    }
+
     // algebra-traits (no deps)
     const traits_mod = lib(
         b,

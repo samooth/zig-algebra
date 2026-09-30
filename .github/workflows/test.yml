@@ -37,6 +37,26 @@ jobs:
           version: 0.16.0
       - run: zig build assert-check
 
+  audit-ledger:
+    # The gate for AUDIT.md. A register of open items fails silently, so this
+    # one requires a closing criterion on every row, an owner on every decision
+    # row, declared counts that match the rows, and every `git show` in the
+    # document to resolve. Row 11 sat open for a week with nothing failing; this
+    # is the job that would have made it visible on the day it was added.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Not needed for the checksum rule, which reads a file that is in the
+          # tree. Kept so that a `git show` added to AUDIT.md later resolves
+          # against a published ref instead of failing on a shallow clone.
+          fetch-depth: 0
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build audit-check
+
   test:
     strategy:
       matrix:
