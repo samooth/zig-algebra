@@ -286,9 +286,52 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   for that purpose as `PoseidonVariant(F, t, RF, RP, alpha, partial_sbox_index)`
   with `Poseidon(...)` keeping cell 0. The other pins `initSpec` itself:
   all 195 round constants and the 3x3 MDS of circomlibjs's `C[1]`/`M[1]`,
-  plus three permutation states from its `poseidon_reference.js`, over the
+  plus three permutation states from its   `poseidon_reference.js`, over the
   BN254 scalar field. Both are external vectors; neither was produced by
   this code.
+- **`zig-linalg` (tested): the linear algebra is now checked against exact
+  Python arithmetic over `F_7`, written from the definitions rather than from
+  the Zig.** The library's own tests agreed with the implementation, so they
+  could not distinguish a correct factorisation from a self-consistent one.
+  The differential asserts **properties** and not a factorisation: `A^T`,
+  `A·v`, `det A` (adjugate, signed), `A·x == b`, and `L·U == P·A`. That last
+  one is the one worth having and the one that is easiest to make vacuous —
+  see the two findings below.
+- **`zig-linalg` (finding, twice): the test was wrong four times before the
+  library was ever wrong once.** The differential was written from the
+  definitions, which is the only way it can be worth anything, and it still
+  arrived with four defects of its own: a transposed comparison written
+  against the original matrix instead of its transpose, `mulVec` fed the
+  *expected* product as its input vector, two vector cases whose lengths and
+  `norm2` values had been computed for 1 and 5 components and then asserted
+  at 4, and a Goldilocks fixture that landed in the `F_7` table with a
+  malformed slice literal. Each was caught by the arithmetic; none was caught
+  by the tests that were already there, which is the point of writing the
+  oracle from the specification. **The library survived: no defect was found
+  in `Matrix`, `Vector` or `LU` in this pass.** That is a result, not an
+  absence of one — it is what a differential is for.
+- **`zig-linalg` (instrument): `L·U == P·A` was a tautology until a case
+  forced a row swap.** The first version of the table had three invertible
+  matrices, all with a non-zero pivot already in place, so `P` was the
+  identity and the identity held without saying anything. A mutation that
+  stopped `lu` from recording the swap in `P` **survived**, which is how the
+  case set was found to be missing a branch: the fourth matrix has a zero in
+  the top-left corner, so the first column pivots on row 1. With it, the same
+  mutation is caught. A fourth mutation — choosing the first non-zero pivot
+  instead of the largest — is **meant** to survive: both are valid
+  row-pivoting rules and both satisfy `L·U == P·A`, so the test is not
+  supposed to see it. Six more mutations are caught: the `transpose` index
+  swap, the row-swap sign in `determinant`, a `mulVec` that skips the last
+  term, `norm2` returning a product, `lu` swapping `P` but not `L`'s earlier
+  columns, `solve` not permuting `b`, and `solve` reading the wrong diagonal
+  of `U`.
+- **`zig-linalg` (one 2x2 case over Goldilocks).** The `F_7` table exercises
+  the algebra and the guard paths; this one runs a small system over a real
+  prime so the Montgomery-backed `Field` operations are in the comparison too
+  — `det` reduced to `7479327909597309152` and a solution whose product
+  reproduces `b`, both computed by the same Python that produced the `F_7`
+  vectors. It was added after the first version failed to compile for exactly
+  the reason it exists: a 2x2 case in a table of 3x3 shapes.
 
 ## [v0.5.3] — 2026-09-29
 

@@ -5,6 +5,7 @@
 
 const std = @import("std");
 const traits = @import("zig-algebra-traits");
+const testing = std.testing;
 
 /// Vector over field F with compile-time known dimension.
 pub fn Vector(comptime F: type, comptime n: usize) type {
@@ -751,4 +752,126 @@ pub fn main() !void {
 
     std.debug.print("Solution: {}\n", .{x});
     std.debug.print("Verification A*x: {}\n", .{A.mulVec(x)});
+}
+
+// The expected values come from Python doing exact arithmetic over the same
+// prime -- 7 for the local test field, the Goldilocks prime for the one case
+// that uses a real field -- so they are properties of the algebra, not a
+// transcript of this code.
+//
+// What is deliberately *not* compared: the entries of L and U. Pivoting is a
+// convention, and a valid decomposition with a different pivot choice would
+// still satisfy the identities below, so pinning the entries would pin the
+// algorithm instead of the mathematics. What is compared: L*U == P*A, and
+// that solving A x = b returns an x with A x = b.
+test "linalg agrees with exact Python arithmetic on the properties, not the convention" {
+    const F7 = F7Type();
+    const V4 = Vector(F7, 4);
+    const V3 = Vector(F7, 3);
+
+    const Vec = struct { a: []const u64, b: []const u64, dot: u64, norm2: u64 };
+    const vectors = [_]Vec{
+        .{ .a = &.{ 1, 2, 3, 4 }, .b = &.{ 4, 5, 6, 0 }, .dot = 4, .norm2 = 2 },
+        .{ .a = &.{ 6, 6, 6, 6 }, .b = &.{ 1, 0, 1, 0 }, .dot = 5, .norm2 = 4 },
+        .{ .a = &.{ 2, 0, 0, 0 }, .b = &.{ 5, 0, 0, 0 }, .dot = 3, .norm2 = 4 },
+        .{ .a = &.{ 3, 1, 4, 1 }, .b = &.{ 5, 3, 2, 1 }, .dot = 6, .norm2 = 6 },
+    };
+    for (vectors) |c| {
+        const av = [4]F7{ F7.fromInt(c.a[0]), F7.fromInt(c.a[1]), F7.fromInt(c.a[2]), F7.fromInt(c.a[3]) };
+        const bv = [4]F7{ F7.fromInt(c.b[0]), F7.fromInt(c.b[1]), F7.fromInt(c.b[2]), F7.fromInt(c.b[3]) };
+        const a = V4.fromArray(av);
+        const b = V4.fromArray(bv);
+        try testing.expectEqual(c.dot, a.dot(b).toInt());
+        try testing.expectEqual(c.norm2, a.norm2().toInt());
+    }
+
+    const Mat = struct { a: []const []const u64, at: []const []const u64, avec: []const u64, det: u64 };
+    const matrices = [_]Mat{
+        .{ .a = &[_][]const u64{ &.{ 1, 2, 0 }, &.{ 0, 1, 1 }, &.{ 2, 1, 1 } }, .at = &[_][]const u64{ &.{ 1, 0, 2 }, &.{ 2, 1, 1 }, &.{ 0, 1, 1 } }, .avec = &.{ 1, 0, 4 }, .det = 4 },
+        .{ .a = &[_][]const u64{ &.{ 3, 1, 4 }, &.{ 1, 5, 2 }, &.{ 2, 6, 5 } }, .at = &[_][]const u64{ &.{ 3, 1, 2 }, &.{ 1, 5, 6 }, &.{ 4, 2, 5 } }, .avec = &.{ 4, 4, 0 }, .det = 1 },
+        .{ .a = &[_][]const u64{ &.{ 0, 0, 0 }, &.{ 1, 2, 3 }, &.{ 4, 5, 6 } }, .at = &[_][]const u64{ &.{ 0, 1, 4 }, &.{ 0, 2, 5 }, &.{ 0, 3, 6 } }, .avec = &.{ 0, 6, 5 }, .det = 0 },
+    };
+    for (matrices) |c| {
+        const M3 = Matrix(F7, 3, 3);
+        var a: M3 = undefined;
+        for (0..3) |i| {
+            for (0..3) |j| a.data[i][j] = F7.fromInt(c.a[i][j]);
+        }
+        for (0..3) |i| {
+            for (0..3) |j| {
+                try testing.expectEqual(c.at[i][j], a.transpose().data[i][j].toInt());
+            }
+        }
+        // The vector multiplied in is fixed; `avec` in the fixture is the
+        // expected product, not the input.
+        const av3 = [3]F7{ F7.fromInt(2), F7.fromInt(3), F7.fromInt(4) };
+        const mv = a.mulVec(V3.fromArray(av3));
+        for (0..3) |i| try testing.expectEqual(c.avec[i], mv.data[i].toInt());
+        try testing.expectEqual(c.det, (try a.determinant()).toInt());
+    }
+
+    // Solves: a known x with b = A x, and the returned solution has to
+    // reproduce it. The property, not the pivoting.
+    const Sol = struct { a: []const []const u64, x: []const u64, b: []const u64 };
+    const solves = [_]Sol{
+        .{ .a = &[_][]const u64{ &.{ 1, 2, 3 }, &.{ 0, 1, 4 }, &.{ 5, 6, 0 } }, .x = &.{ 1, 2, 3 }, .b = &.{ 0, 0, 3 } },
+        .{ .a = &[_][]const u64{ &.{ 2, 1, 0 }, &.{ 1, 3, 1 }, &.{ 0, 1, 4 } }, .x = &.{ 4, 5, 6 }, .b = &.{ 6, 4, 1 } },
+        .{ .a = &[_][]const u64{ &.{ 1, 0, 2 }, &.{ 0, 1, 0 }, &.{ 3, 0, 1 } }, .x = &.{ 2, 0, 5 }, .b = &.{ 5, 0, 4 } },
+        // A zero in the top-left forces a row swap during the first column, so
+        // P is not the identity and `L*U == P*A` is not a tautology here.
+        .{ .a = &[_][]const u64{ &.{ 0, 1, 0 }, &.{ 1, 0, 1 }, &.{ 0, 1, 1 } }, .x = &.{ 1, 2, 3 }, .b = &.{ 2, 4, 5 } },
+    };
+    for (solves) |c| {
+        const M3 = Matrix(F7, 3, 3);
+        var a: M3 = undefined;
+        for (0..3) |i| {
+            for (0..3) |j| a.data[i][j] = F7.fromInt(c.a[i][j]);
+        }
+        var bv: [3]F7 = undefined;
+        var xv: [3]F7 = undefined;
+        for (0..3) |i| {
+            bv[i] = F7.fromInt(c.b[i]);
+            xv[i] = F7.fromInt(c.x[i]);
+        }
+        const got = (try a.solve(V3.fromArray(bv))).?;
+        for (0..3) |i| try testing.expectEqual(c.x[i], got.data[i].toInt());
+        // And the returned vector really solves the system.
+        const check = a.mulVec(got);
+        for (0..3) |i| try testing.expectEqual(c.b[i], check.data[i].toInt());
+
+        // L * U == P * A. Any correct decomposition with row pivoting
+        // satisfies this; the entries of L and U do not have to match
+        // anything, which is the point.
+        const lu = try a.lu();
+        const lhs = lu.L.mul(3, lu.U);
+        const rhs = lu.P.mul(3, a);
+        for (0..3) |i| {
+            for (0..3) |j| try testing.expectEqual(rhs.data[i][j].toInt(), lhs.data[i][j].toInt());
+        }
+    }
+}
+
+// One case over a real prime rather than the mod-7 test field, so the
+// Montgomery-backed paths are in the comparison too. The solution is again a
+// property: b was computed as A x, and the returned x has to reproduce it.
+test "linalg over Goldilocks agrees with exact Python arithmetic" {
+    const zf = @import("zig-field");
+    const G = zf.Goldilocks;
+    const M2 = Matrix(G, 2, 2);
+    var a: M2 = undefined;
+    const rows = [_][2]u64{
+        .{ 12345678901234567890, 9876543210987654321 },
+        .{ 5555555555555555555, 1111111111111111111 },
+    };
+    for (0..2) |i| {
+        for (0..2) |j| a.data[i][j] = G.fromInt(rows[i][j]);
+    }
+    const x = [_]u64{ 42, 7 };
+    const b_expected = [_]u64{ 15805250176913317676, 1303438208721514914 };
+    try testing.expectEqual(@as(u64, 7479327909597309152), (try a.determinant()).toU64());
+
+    var bv: [2]G = undefined;
+    for (0..2) |i| bv[i] = G.fromInt(b_expected[i]);
+    const got = (try a.solve(Vector(G, 2).fromArray(bv))).?;
+    for (0..2) |i| try testing.expectEqual(x[i], got.data[i].toU64());
 }
