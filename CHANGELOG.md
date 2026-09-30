@@ -332,6 +332,41 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   reproduces `b`, both computed by the same Python that produced the `F_7`
   vectors. It was added after the first version failed to compile for exactly
   the reason it exists: a 2x2 case in a table of 3x3 shapes.
+- **`zig-kzg` (tested): the commitment, the witness and the verifier's decision
+  are now compared with `py_ecc.bn128`,** py_ecc's reference BN254 module, over
+  eight cases. The comparison is of the **decision**: each case carries py_ecc's
+  own answer to the verification equation, so the test compares two
+  implementations' verdicts and not only their bytes. The cases include two
+  random 254-bit taus, `tau = 1`, the zero polynomial -- where the commitment
+  and the witness are both the point at infinity, a branch no other case reaches
+  -- `z = 0` with a non-zero constant term, a leading zero coefficient, and a
+  degree equal to the setup bound. The setup itself is checked coordinate by
+  coordinate: `[tau^i]G1` and `[tau]G2` are a claim about points, and the test
+  now holds them to the external ones.
+- **`zig-kzg` (the instrument was wrong twice, and both times it pointed at the
+  library).** The first fixture reduced the scalars modulo `field_modulus`, which
+  in py_ecc is **p**, instead of modulo the group order **r**. The two
+  reductions coincide for any `tau` smaller than both, so five small cases
+  passed and the 254-bit one disagreed -- a case set that cannot distinguish two
+  reductions cannot report the wrong one. Rebuilt on `py_ecc.bn128`, the
+  disagreement persisted and the second fault was in that module's `neg`, which
+  returns a coordinate that is not on the curve for large scalars, and which
+  `multiply` inherits; the inverses are now the group's own negation with the
+  sign reduced by hand. With the ladder and the pairing still py_ecc's, all
+  eight cases agree, and the library's setup, commitment, witness and verdict for
+  a 254-bit `tau` are confirmed against **three** independent references:
+  `py_ecc.bn128`, `py_ecc.optimized_bn128`, and an affine double-and-add
+  written from the definition of the group law. **Nothing in the library was
+  wrong.** Five of seven mutations are caught: `g1_pows[0]` set to the identity,
+  the MSM receiving its scalars reversed, the quotient shifted one position,
+  `evaluate` skipping the top coefficient, and the sign of `z` in `verify`.
+- **`zig-kzg` (two guards that cannot be told apart).** `verify` checks that the
+  commitment and the witness are on the curve *and* that they are in the r-order
+  subgroup. Deleting either check leaves every test green, and that is expected
+  rather than a hole: BN254's G1 has cofactor 1, so on-curve implies
+  in-subgroup and neither removal can change an outcome. What the new test pins
+  is the behaviour -- a commitment one field element off the curve, which a
+  verifier must reject -- and not which of the two guards rejects it.
 
 ## [v0.5.3] — 2026-09-29
 

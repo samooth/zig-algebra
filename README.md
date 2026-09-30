@@ -93,10 +93,10 @@ parallel (no deps) · serialization (no deps)
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes. The root `zig build test` runs
-> **568 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
+> **570 tests** (verified on Zig 0.16.0 in both Debug and ReleaseFast): the root
 > step compiles **all 27 test binaries** — every library's inline `src/` tests
 > plus the separate `tests/` roots of `field` (6 files, 89 tests) and `curve`
-> (4 files, 98 tests). The per-library steps sum to **568, the same number**.
+> (4 files, 98 tests). The per-library steps sum to **570, the same number**.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 5. `kzg`
 > was added in v0.2.2 as the 17th library.
 
@@ -202,7 +202,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 568 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 570 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |
