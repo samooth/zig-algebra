@@ -452,6 +452,26 @@ catch, so "survived" never appears without something that was caught. The
 harness that reported `torusAdicity` as survived had neither, and what it was
 reporting was a file that had not been restored.
 
+**Before concluding that a search found nothing, check that what you are
+looking for and what the tool counts are the same thing.** An instrument
+answering a different question returns a *coherent* zero, and a coherent zero
+reads as absence. `rg -n 'B\.2\.12'` in this repository returns three hits,
+every one of them a citation, and no task anywhere here carries that
+identifier -- it is a section label in an external draft. Two passes of
+searching concluded there was nothing to do, and `rg` had been right both
+times: the count was of "tasks called B.2.12" while the thing that existed was
+"a citation of B.2.12". The instrument worked. **What was wrong was the object
+it was pointed at**, and nothing in the output says so.
+
+The same shape, from this pass and the ones before it: a Legendre symbol read
+off the base field when the subject was the extension; a diff against `v0.5.1`
+taken over the wrong range; a citation whose line number had been written over;
+a `rg` whose paths carried a prefix the query did not; a sort applied before the
+values were normalised; `std.debug.assert` counting eight bytes of a SHA that
+was not eight bytes long. **None of them was a tool that failed.** Each was a
+tool asked about the wrong object, which is why they are invisible: the answer
+is plausible and the question was never the one intended.
+
 **A harness that mutates without restoring does not measure mutations, it
 measures the working tree.** A mutation that "survives" one run may have
 survived because it was still applied to the next one. This one cost real time
