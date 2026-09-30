@@ -367,6 +367,36 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   in-subgroup and neither removal can change an outcome. What the new test pins
   is the behaviour -- a commitment one field element off the curve, which a
   verifier must reject -- and not which of the two guards rejects it.
+- **`zig-parallel` (fixed): the two tests in `libs/parallel/src/timing.zig` had
+  never been run by anything.** `pub const timing = @import("timing.zig")`
+  re-exports the declarations but does not pull a file's `test` blocks into the
+  test binary, so the only check on `nowNs()` at all -- its monotonicity -- was
+  collected by no gate: not by `cd libs/parallel && zig build test`, which
+  reported 2/2, and not by the root step, which ran the same two. A reference to
+  the file from a test block brings them in, and the count moves from 2 to 7.
+  This is the "nothing counts as exercised until a test calls it" rule with a
+  timer at the other end of it: the check existed, it was green, and it had
+  never been executed.
+- **`zig-parallel` (tested): the pool is now swept over its chunk boundaries and
+  the clock is checked against a second OS clock.** 21 counts by 9 worker counts
+  -- count 0 and 1, counts below the worker count, non-divisible counts, the
+  64-worker cap -- with an execution counter, because `out[i] = i + 1` written
+  twice looks exactly like written once. The clock's elapsed interval is compared
+  with `CLOCK_REALTIME`'s, the offset between the two clocks is required to stay
+  put, and the monotonic reading has to be three orders of magnitude below the
+  wall-clock one. Six of seven mutations are caught.
+- **`zig-parallel` (a check that was satisfied by construction).** Swapping
+  `CLOCK_MONOTONIC` for `CLOCK_REALTIME` in `nowNs()` left every test green at
+  first, because the offset check compares the two clocks against each other: if
+  both readings came from the same clock the offset is zero at both ends and the
+  assertion holds for the wrong reason. Only the size of the value separates
+  them -- a monotonic clock counts from boot, a wall clock from 1970 -- so the
+  check that bites is a factor of 1000 between the two readings, and it catches
+  the swap in the branch this platform executes. A second swap inside the libc
+  branch still survives here, and that is not a survivor either: `builtin.link_libc`
+  is false in this build, so the branch is never entered, and the other operating
+  systems in CI are where it runs. A mutation in a branch the platform does not
+  execute is not evidence of anything.
 
 ## [v0.5.3] — 2026-09-29
 
