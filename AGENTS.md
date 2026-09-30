@@ -290,8 +290,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (582 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 582 tests, seconds
+zig build test        # Run all library tests (583 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 583 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -306,7 +306,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (582 total across all 27 test binaries, and the per-library sum is 582: **the root step runs the `tests/` roots too**).
+tests (583 total across all 27 test binaries, and the per-library sum is 583: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -409,12 +409,39 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 582; per-library
-  `zig build test` totals sum to 582, which now **equals** the root total because the
-  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 31, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 30, rng 27, serialization 17, transcript 13.
+- Counts (Zig 0.16.0, verified): root `zig build test` = 583; per-library
+  `zig build test` totals sum to 583, which now **equals** the root total because the
+  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 30, rng 27, serialization 17, transcript 13.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
-- **Every number carries its object from the moment it is captured.** A
+- **A correct measurement can describe an invisible defect: "measured and right"
+is not sufficient, "measured and with the mutation that breaks it" is.** The
+sharpest instance in this repository is `torus.findGenerator`. Its first
+candidate is `t = 2` over M31 and `t = 4` over M61 -- both measured, both
+correct, both written down in `libs/fri/README.md` with the modulus attached.
+That measurement is what the loop's cost was judged on, and it is exactly why
+the loop was called bounded: the bound was `t < p`, and with `torusAdicity`
+computing `v2(p - 1)` instead of `v2(p + 1)` -- one operator -- every candidate
+fails the order test and the loop walks 2^61 of them. **The good case of a
+search is the one that makes it look harmless, and the good case is what runs
+first, so it is what gets measured first.** A search has to be measured in the
+case where it fails, and that case is only visible by mutating the parameter the
+result depends on. The same shape shows up in a `Circuit` that is not `pub` and
+is only visible by importing it from outside, in an `F.order` that is only
+visible for a field with no `order`, and in a README whose claim is only
+visible by running the command.
+
+**A harness that mutates without restoring does not measure mutations, it
+measures the working tree.** A mutation that "survives" one run may have
+survived because it was still applied to the next one. This one cost real time
+in `fri`: the harness reported `torusAdicity` as *survived*, which was wrong in
+two ways at once -- the file had not been restored, and what the run actually
+showed was a 600 s timeout, not a pass. The first correct move when a script
+does not give the answer you expected is to **run the thing by hand and
+compare**, not to widen the script: widening is how a bad harness becomes a
+worse one, and the hands are the second instrument that worked that night.
+
+**Every number carries its object from the moment it is captured.** A
   well-measured number from the wrong object is worse than no number, because
   it gets signed: the `legendre` values that located a hang in a quadratic
   extension were read off the base field, and the hypothesis that came with

@@ -463,6 +463,24 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   purpose, because restoring the search bound to `p` changes nothing on the
   happy path, and a check that pins a constant's value is a drift detector
   rather than a proof.
+- **`zig-fri` (tested): the candidate bound has its own test, and it is the
+  discriminating one.** `max_candidates` was, until this test, a promise: the
+  suite pinned that the constant existed and that the first working `t` was 2
+  and 4, but nothing checked that lowering the limit produces
+  `error.TorusGeneratorNotFound`. For M61 a limit of 3 now has to give the error
+  and a limit of 4 the generator, so a loop that skipped the check, or applied
+  it once instead of per candidate, cannot pass -- and a test that only
+  asserted the error would have passed with a limit of 0. Three mutations
+  confirm it: the limit going back to `p`, the loop ignoring the limit, and the
+  limit being consulted once.
+- **`zig-fri` (the loop and its own docstring disagreed by one).** The bound is
+  documented as "at most `max_candidates` values of `t`" and the loop was
+  `while (t < limit)` starting at `t = 1`, which examines one fewer than the
+  limit it promises -- so a limit of exactly the first working `t` returned the
+  error instead of the generator. The loop is now `t <= limit`. This is the
+  sixth time in this pass that a stated contract and the code have differed, and
+  the first time one was found by a test written to check the contract from the
+  other side rather than by reading the two next to each other.
 
 ## [v0.5.3] — 2026-09-29
 

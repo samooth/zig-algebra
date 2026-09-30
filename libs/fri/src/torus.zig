@@ -185,14 +185,32 @@ pub const Generator = struct {
 };
 
 pub fn findGenerator(comptime F: type, comptime Base: type) error{TorusGeneratorNotFound}!Generator {
+    return findGeneratorBoundedForTest(F, Base, max_candidates);
+}
+
+/// The search with the candidate limit as a parameter, so the bound is
+/// falsifiable rather than merely stated: `findGenerator` pins it to
+/// `max_candidates`, and the tests call this with a limit just below the first
+/// working `t` to see the typed error the bound produces. A bound with no such
+/// a test is a promise -- and a promise that a limit of 0 would also satisfy.
+/// The candidate limit is a parameter here so the bound can be falsified; see
+/// the test at the end of this file. `findGenerator` is the public entry point
+/// and pins it to `max_candidates`.
+pub fn findGeneratorBoundedForTest(comptime F: type, comptime Base: type, comptime limit: u64) error{TorusGeneratorNotFound}!Generator {
     const p: u64 = @as(u64, Base.MODULUS);
     const nres: u64 = @as(u64, F.NON_RESIDUE.toInt());
     const A = torusAdicity(Base);
     const minus_one = Raw{ .a = p - 1, .b = 0 };
     const half_order: u64 = @as(u64, 1) << @intCast(A - 1);
 
+    // `t <= limit`, not `t < limit`: the bound is a count of candidates
+    // examined, and starting at 1 a strict comparison would examine one fewer
+    // than the limit it is documented to allow. A test that asserts "the first
+    // working t is reachable" is what caught that -- the docstring and the
+    // loop disagreed by one, which is the same class as every other stated
+    // contract in this repository that the code has to be held to.
     var t: u64 = 1;
-    while (t < max_candidates) : (t += 1) {
+    while (t <= limit) : (t += 1) {
         const num = Raw{ .a = 1, .b = t };
         const den = Raw{ .a = 1, .b = rsub(0, t, p) };
         const x = num.mul(den.inv(p, nres), p, nres);
@@ -411,4 +429,30 @@ test "torus: fill agrees with at" {
     try dom.fill(buf);
     for (buf, 0..) |x, i| try testing.expect(x.eql(dom.at(i)));
     try testing.expectError(error.LengthMismatch, dom.fill(buf[0 .. buf.len - 1]));
+}
+
+test "torus: the candidate bound is load-bearing, and it is a bound and not a zero" {
+    // `max_candidates` exists to turn a wrong `torusAdicity` from a timeout
+    // into a typed error. A test that only checked the error would also pass
+    // with a limit of 0, so both halves are here: a limit below the first
+    // working `t` must give the error, and a limit that reaches it must give
+    // the generator.
+    //
+    // For M61 the first working `t` is 4, so 3 and 4 are the discriminating
+    // pair: a loop that ignored the bound, or one that tested it once instead
+    // of per candidate, gives the same answer for both.
+    try testing.expectError(error.TorusGeneratorNotFound, findGeneratorBoundedForTest(Torus31, zfield.M31, 0));
+    try testing.expectError(error.TorusGeneratorNotFound, findGeneratorBoundedForTest(Torus61, zfield.M61, 3));
+    try testing.expectError(error.TorusGeneratorNotFound, findGeneratorBoundedForTest(Torus61, zfield.M61, 2));
+
+    const ok61 = try findGeneratorBoundedForTest(Torus61, zfield.M61, 4);
+    try testing.expectEqual(@as(u64, 1627653888856725141), ok61.a);
+    const ok31 = try findGeneratorBoundedForTest(Torus31, zfield.M31, 2);
+    try testing.expectEqual(@as(u64, 1717986917), ok31.a);
+
+    // And the public entry point, at its own limit, still finds them.
+    const viaPublic61 = try findGenerator(Torus61, zfield.M61);
+    try testing.expectEqual(ok61.a, viaPublic61.a);
+    const viaPublic31 = try findGenerator(Torus31, zfield.M31);
+    try testing.expectEqual(ok31.a, viaPublic31.a);
 }
