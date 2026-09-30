@@ -479,6 +479,23 @@ times: the count was of "tasks called B.2.12" while the thing that existed was
 "a citation of B.2.12". The instrument worked. **What was wrong was the object
 it was pointed at**, and nothing in the output says so.
 
+**A name can be a path, a ref, or neither, and a search only sees the kind you
+pointed it at.** The sharpest instance here is a *recovery*: the
+`backup/pre-todo-rewrite-20260925` directory was reported gone, unrecoverable,
+"no blob, no stash and no reflog entry", and that claim was committed and signed
+in a document whose subject was bounding losses. It was recoverable the whole
+time, because the name was also a **branch** -- `find / -name 'pre-todo-rewrite*'`
+asked the filesystem about a ref and returned an empty answer that read as
+absence. `git show backup/pre-todo-rewrite-20260925:TODO.md` was one command
+away and returned 155 intact lines. The rule has two halves, and the first is
+the one that gets skipped: **before reporting anything lost, ask what kind of
+thing its name denotes** -- path, ref, tag, stash, worktree, remote -- and look
+in each, because the search you reach for first only sees one. The second half
+is the one this file already insists on, applied here: the claim went into a
+signed commit, so the repair was a new commit on top and never an amend. A wrong
+finding is cheap while it is still in the working tree and expensive the moment
+it has a signature, and *signed* is the boundary.
+
 The same shape, from this pass and the ones before it: a Legendre symbol read
 off the base field when the subject was the extension; a diff against `v0.5.1`
 taken over the wrong range; a citation whose line number had been written over;
