@@ -452,6 +452,22 @@ catch, so "survived" never appears without something that was caught. The
 harness that reported `torusAdicity` as survived had neither, and what it was
 reporting was a file that had not been restored.
 
+**A fact verified in one repository is not a fact in another until it has
+been verified there too.** The object can be identical and the tree different,
+and then the number is from somewhere else. `error.FieldTooSmall` was reported
+as non-existent, verified in one repository, and carried into another: in the
+first it is declared and returned in `libs/binary-field/src/sumcheck.zig:43-44`
+and asserted by tests at `:712`; in the second it exists only inside the
+vendored dependency, at
+`zig-pkg/zig_algebra-0.5.2-*/libs/binary-field/src/sumcheck.zig`, and a grep of
+that repository's first-party `.zig` files returns zero. **Same error, same
+code, two answers depending on whether the query reaches `zig-pkg/`.** That is
+the coherent zero again one level deeper, and it is why the rule above needs a
+second half: before believing a zero from *any* repository, check that the
+search reached the code it is about -- vendored trees, submodules and
+dependencies included. And before carrying a fact across repositories, carry the
+repository with it.
+
 **Before concluding that a search found nothing, check that what you are
 looking for and what the tool counts are the same thing.** An instrument
 answering a different question returns a *coherent* zero, and a coherent zero
