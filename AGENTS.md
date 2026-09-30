@@ -144,6 +144,19 @@ assert, assert the state you left behind.** The same shape appears in the round
 trip that cannot see a sign convention, and in the field vectors that never
 reached the wraparound window.
 
+**A gate that expires says nothing about what it was checking, and silence is
+the worst of the three outcomes.** A red run names the file and the line; a
+green run names a pass; a timeout names nothing, and it does not even tell you
+which of the two it was. `zig build test` with a 600 s budget hit exactly this
+while auditing `fri`: one operator changed in `torusAdicity` made
+`findGenerator` walk `p` candidates, and the run produced no output at all --
+so the mutation was briefly recorded as a survivor when what had happened is
+that the question was never asked. The fix was in the library, not the
+instrument: the search now stops at a named bound and returns a typed error,
+and the same mutation is a red run in seconds. **A search without a bound is a
+check without an answer**, and the two failures look identical from the log: one
+hangs, the other was never reached.
+
 **A check that produces no output is not a check that passed -- it is a check
 that did not run.** This is a *different* failure mode from the one above, and
 both rules are needed. A check that always passes is caught by breaking it and
@@ -277,8 +290,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (577 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 577 tests, seconds
+zig build test        # Run all library tests (582 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 582 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -293,7 +306,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (577 total across all 27 test binaries, and the per-library sum is 577: **the root step runs the `tests/` roots too**).
+tests (582 total across all 27 test binaries, and the per-library sum is 582: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -396,9 +409,9 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, verified): root `zig build test` = 577; per-library
-  `zig build test` totals sum to 577, which now **equals** the root total because the
-  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 26, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 30, rng 27, serialization 17, transcript 13.
+- Counts (Zig 0.16.0, verified): root `zig build test` = 582; per-library
+  `zig build test` totals sum to 582, which now **equals** the root total because the
+  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 31, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 30, rng 27, serialization 17, transcript 13.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
 - **Every number carries its object from the moment it is captured.** A
@@ -505,6 +518,12 @@ version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 - ArrayList needs explicit allocator at method calls, not construction.
 - Struct fields need trailing commas.
 - Error unions: `error{X}!T` syntax (not `T!X`).
+- A `fn` declared **inside a `test` block does not parse** on Zig 0.16, and the
+  error is reported far from the declaration (it points at a `};` dozens of
+  lines earlier). Test helpers go at file scope. For the same reason,
+  `pub const x = @import("y.zig")` re-exports `y`'s *declarations* but does not
+  pull its `test` blocks into the test binary: a file whose tests are only
+  reachable that way is a file no gate runs. See `libs/parallel`.
 
 ## Releasing: the tag is the gate
 

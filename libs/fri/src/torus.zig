@@ -159,9 +159,26 @@ pub fn torusAdicity(comptime Base: type) comptime_int {
 /// A full-2-adic-order generator of the torus, as raw residues.
 ///
 /// Deterministic: the first `t >= 1` whose Cayley image has order exactly
-/// `2^A`. `error.TorusGeneratorNotFound` is unreachable for `A >= 2` -- half of
-/// `T` is non-square and only `-1` is outside the parametrization -- but it is
-/// returned rather than assumed away.
+/// `2^A`.
+///
+/// # Bounded, deliberately
+///
+/// The search examines at most `max_candidates` values of `t` and returns
+/// `error.TorusGeneratorNotFound` after that. The bound is not decoration: the
+/// previous loop ran to `t < p`, and a defect anywhere upstream -- a wrong
+/// `torusAdicity`, or a non-residue where one is expected -- makes every
+/// candidate fail the order test, at which point the loop walks `p` candidates,
+/// each an inverse and an exponentiation in a 61-bit field. That is not slow,
+/// it is the end of the run: with `torusAdicity` returning `ctz(p - 1)` the
+/// suite was observed hitting a 600 s timeout rather than reporting a failure,
+/// which is the worst of the three outcomes, because a gate that times out
+/// says nothing about what it was checking.
+///
+/// The bound is generous relative to what is measured: the first `t` is 2 over
+/// M31 and 4 over M61, both pinned by tests. Those are two measurements of two
+/// moduli, not a proof about the worst case, and the typed error is what covers
+/// the rest.
+pub const max_candidates: u64 = 1 << 20;
 pub const Generator = struct {
     a: u64,
     b: u64,
@@ -175,7 +192,7 @@ pub fn findGenerator(comptime F: type, comptime Base: type) error{TorusGenerator
     const half_order: u64 = @as(u64, 1) << @intCast(A - 1);
 
     var t: u64 = 1;
-    while (t < p) : (t += 1) {
+    while (t < max_candidates) : (t += 1) {
         const num = Raw{ .a = 1, .b = t };
         const den = Raw{ .a = 1, .b = rsub(0, t, p) };
         const x = num.mul(den.inv(p, nres), p, nres);

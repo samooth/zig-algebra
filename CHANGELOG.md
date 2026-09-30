@@ -423,6 +423,46 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   The expectation in every case is the specification's, not the code's. Nine
   mutations are caught, including the length bound whose removal lets a
   declared length reach the allocator.
+- **`zig-fri` (fixed, P0 class): `torus.findGenerator` had no usable bound, and a
+  wrong adicity turned it into the end of the run.** The search walked `t` to
+  `p`, and its order test is `x^(2^(A-1)) == -1` with `A = torusAdicity(Base) =
+  v2(p + 1)`. Replace `v2(p + 1)` with `v2(p - 1)` -- one operator -- and every
+  candidate fails that test, so the loop walks `2^31` candidates for M31 and
+  `2^61` for M61, each an inverse and an exponentiation in a 61-bit field. What
+  that looks like from a gate is **a timeout, not a failure**: the suite was
+  observed hitting 600 s with no output, which is the worst of the three
+  outcomes, because a gate that expires says nothing about what it was
+  checking. The search now stops at `torus.max_candidates` (2^20) and returns
+  `error.TorusGeneratorNotFound`, and the same mutation is a red run in seconds.
+  Nothing observable changes for a consumer: the first `t` is 2 over M31 and 4
+  over M61, both far inside the bound, and the new constant is the only addition
+  to the surface.
+- **`zig-fri` (tested): the domain and the torus generator are now compared with
+  a Python implementation of the module's documented sentences.** The
+  generator is "the first `t >= 1` whose Cayley image has order exactly `2^A`",
+  the adicity is `v2(p + 1)`, and the domain is `omega^2^(adicity - log_n)` with
+  `at(i) = step_gen^i`; all 256 elements of three domains match element by
+  element -- the Goldilocks base-field domain and the M31 and M61 torus domains.
+  The Python side checks itself before it is believed: the generator's order is
+  exactly `2^A` by repeated squaring, which does not go through the search, and
+  every smaller `t` is rejected, which is the "first" half of the claim.
+- **`zig-fri` (three assertions of mine were false about FRI, and the
+  arithmetic said so each time).** The first version of the residual test
+  asserted the residual *is* the input polynomial's coefficients; the second
+  asserted it is a degree-3 polynomial. Neither is true: the fold is
+  `p_even(x) + alpha * p_odd(x)/x`, so the child is a function of `x^2`, not of
+  `x`, and a degree-3 input becomes a *constant* after two rounds. The third
+  version used `x^n` as "not low degree" data on a domain of order `n`, which is
+  the constant 1 -- the lowest-degree function on the domain -- so the verifier
+  was right to accept it. What survived is the claim with content: a degree-31
+  input (the maximum the config admits) must leave a residual with a nonzero
+  coefficient above index 0, because a fold that dropped the odd part or forgot
+  the challenge would send every input to a constant, and a degree-32 input must
+  be rejected. **No defect was found in the fold, the domain or the
+  interpolation.** Five of six mutations are caught; the sixth survives on
+  purpose, because restoring the search bound to `p` changes nothing on the
+  happy path, and a check that pins a constant's value is a drift detector
+  rather than a proof.
 
 ## [v0.5.3] — 2026-09-29
 
