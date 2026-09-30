@@ -49,8 +49,20 @@ def main() -> int:
         return 1
     lines = path.read_text(encoding="utf-8").splitlines()
 
+    # A heading inside a fenced block is an example, not a section. The reference
+    # implementation of this rule in the other repository has a dedicated counter
+    # for exactly this, and it exists because a `## [` line inside a fenced example
+    # reads as a section to anything that only looks at line starts. This tree has
+    # no such line today, so the rule does not fire — but the difference between the
+    # two implementations is real, and it is this one that is behind.
     sections: List[Tuple[int, str, Optional[str]]] = []  # (lineno, titulo, version)
+    in_fence = False
     for i, line in enumerate(lines, 1):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
         if UNRELEASED.match(line):
             sections.append((i, line, None))
             continue

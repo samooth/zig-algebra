@@ -48,6 +48,12 @@ GIT_SHOW = re.compile(r"git show\s+([A-Za-z0-9._/-]+:[A-Za-z0-9._/-]+)")
 
 CLOSED, OPEN, DECISION = "closed", "open", "decision"
 
+# Words that satisfy "owner:" without naming anybody.
+ROLES = frozenset({
+    "the", "someone", "somebody", "anyone", "nobody", "a", "an",
+    "we", "i", "you", "they", "it",
+})
+
 
 def classify(status: str) -> str:
     s = status.strip().lower().strip("*")
@@ -114,11 +120,34 @@ def main() -> int:
                 "If the only way to satisfy it is to re-read the sentence, it is not a "
                 "criterion."
             )
-        elif kind == DECISION and "owner:" not in criterion.lower():
-            failures.append(
-                f"{path}:{lineno} row {num}: a decision row names no owner. A decision "
-                "with no owner is an open row wearing a different label."
-            )
+        elif kind == DECISION:
+            if "owner:" not in criterion.lower():
+                failures.append(
+                    f"{path}:{lineno} row {num}: a decision row names no owner. A decision "
+                    "with no owner is an open row wearing a different label."
+                )
+            else:
+                # Strip markdown emphasis and surrounding punctuation before looking
+                # at the word: the document writes `owner: **thomas**`, and comparing
+                # the raw token meant the rule never fired on the format actually in use.
+                # A check that passes on the wrong reason is a check that does not exist.
+                raw = criterion.lower().split("owner:", 1)[1].strip()
+                # The owner is the name before the first comma; the rest of the cell is
+                # the decision being waited on, and quoting it as the owner made the
+                # message unreadable.
+                owner = raw.split(",", 1)[0].strip().strip("*_` ").rstrip(".,:;")
+                words = owner.split()
+                # A gate that only checks for a string accepts a role, and a role does
+                # not answer. This rule exists because a row said "the repository owner"
+                # and satisfied the previous rule while naming nobody — the same shape
+                # as a true statement that cannot be refuted.
+                first = words[0].strip("*_`.,:;") if words else ""
+                if not first or first in ROLES:
+                    failures.append(
+                        f"{path}:{lineno} row {num}: the owner is {owner!r}, which is a role "
+                        "rather than a person. Naming a role satisfies the requirement to "
+                        "name an owner and answers nothing."
+                    )
 
     # Rule 4, declared counts against counted rows.
     counts = {CLOSED: 0, OPEN: 0, DECISION: 0}
