@@ -3,8 +3,10 @@
 Estado: `para enviar`. Idioma: español, el del revisor. No vive en `docs/`
 porque no es documentación de la librería sino correspondencia con un tercero,
 y porque las afirmaciones de un mensaje externo caducan: las de aquí son
-verificadas contra `40f4468` (583/583, 27 binarios) y se vuelven a verificar
-antes de que exista la siguiente entrega.
+verificadas contra el árbol en `40f4468` (583/583 en ambos modos, 27 binarios);
+los dos commits posteriores solo cambian documentación y comentarios, así que el
+recuento sigue siendo el mismo. El envío es acción del propietario y este
+fichero se queda como registro de lo que se envió.
 
 Los tres puntos de abajo son **correcciones a la descripción de la API que la
 revisión da por sentado**, y repetirlas sin corregir serían peores que no
