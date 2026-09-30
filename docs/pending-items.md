@@ -76,9 +76,13 @@ was corrected during the rewrite.
 
 ## The 13 open items, with what was measured
 
-Line numbers are those of the recovered file. **Six are measured closed and seven
-are not verified.** The unverified column is not a formality: the instruments
-that would answer several of them do not exist, and that is itself the finding.
+Line numbers are those of the recovered file, which is now restored in the tree
+as [`roadmap-2026-09-25.md`](roadmap-2026-09-25.md) — verbatim, so its unchecked
+boxes are a record rather than a claim. **Ten are measured closed or
+partly closed, and three remain open**, two of them by the repository's own
+admission. Updated 2026-09-30, after the second verification pass; an earlier
+version of this table said seven were unverified, which is itself the staleness
+this repository keeps paying for in prose.
 
 | Line | Item | Status |
 |---|---|---|
@@ -88,17 +92,20 @@ that would answer several of them do not exist, and that is itself the finding.
 | 136 | Remove the local `/tmp/bsvz.tar.gz` dependency | **Closed.** No match in `build.zig.zon`. |
 | 137 | Remove the `zig_algebra` self-dependency | **Closed.** `.dependencies = .{}` and no `path = "."`. The `.name = .zig_algebra` on line 2 is the package's own name, which is required, not a self-reference. |
 | 139 | Reconcile versions `0.3.0`/`0.3.1` and the FRI advisory | **Closed by supersession.** Root is `0.6.0` and `zig-fri` is `0.4.0`; the versions the item names no longer exist. |
-| 138 | Make the submodule path packages reproducible | **Not verified.** Needs a sweep of the 17 `build.zig.zon` files that nobody has run. |
-| 148 | No critical security TODO without a regression test | **Not verified.** No instrument enumerates security TODOs. |
-| 151 | No test hangs indefinitely on rejection sampling; field and transcript need review | **Not verified.** The FRI generator is bounded and typed as of `f80827b`; `field` and `transcript` are unchecked, and an unbounded search is a check without an answer. |
-| 152 | No asserts removed in ReleaseFast leaving out-of-range pathways | **Not answerable by the ledger.** The ledger counts asserts that are *present*; this item is about ones that were *removed*, which is a different question with no instrument. |
-| 153 | External points validate on-curve, subgroup and encoding | **Partly visible.** `wasm-build` checks subgroup and encoding; nothing checks the curve library's external entry points. |
-| 154 | Serializers have resource limits and free memory on every error | **Partly contradicted.** The serialization differential added rejection tests, and `libs/poly`'s `compose` is a live wrong answer against the spirit of this item. |
-| 155 | Constant-time claims backed by tests or an assembly audit | **Not verified, and open by admission.** `SECURITY.md` states that no independent audit exists for any library. |
+| 138 | Make the submodule path packages reproducible | **Closed.** All 17 `libs/*/build.zig.zon` path dependencies are relative and resolve inside the repository; none absolute, none dangling. |
+| 148 | No critical security TODO without a regression test | **Two findings, both the shape the item forbids.** `libs/pairing/src/bn254.zig:207` carries `TODO: Pairing tests` over a `pub fn pairing()` that nothing calls and nothing tests, in a second BN254 implementation absent from `libs/pairing/README.md`'s status table; its *types* are used by `libs/curve/src/msm.zig`, so the file is half live. Not a vulnerability — an uncalled function cannot give a wrong answer to anyone — but a live trap, and `assert-check` cannot see it because "declared but never called" is not inventoried. Separately `libs/binary-field/src/pack.zig:29` cites `TODO.md §1` and no such file exists in that library. |
+| 151 | No test hangs indefinitely on rejection sampling; field and transcript need review | **Closed by reading the construction, not by sweeping.** All five satisfaction-loops in `field` and `transcript` accept with probability at least one half by construction: the big-field `randomBounded` masks to `bitlength(limit-1)`, so `2^bits >= limit` and acceptance is `limit / 2^bits >= 1/2`; the small-field path delegates to `std.Random.uintLessThan`; the two transcript loops re-key the hasher per attempt, so retries are uncorrelated. A 32-site sweep classified as 19 counter-bounded, 8 value-bounded and 5 satisfaction; the first sweep's pattern (`while (x % m)`) could not see the `while (true)` it was looking for. **Residual:** 4 of the 19 counter-bounded were read individually and are test sample sizes, not searches; the other 15 were classified by head, not read. |
+| 152 | No asserts removed in ReleaseFast leaving out-of-range pathways | **Closed as far as any instrument reaches, with the gap named.** `assert-check` reports `public=0`, so no public validation assert exists; the full suite is green in ReleaseFast on three operating systems, which is what exercises the paths an assert used to guard. **Named gap:** a pathway no test exercises is invisible to both instruments, and no instrument here can see a removal. |
+| 153 | External points validate on-curve, subgroup and encoding | **Partial, and the residual is the finding.** On-curve is enforced with a typed error in one public path (`libs/curve/src/weierstrass.zig:95`). **No subgroup check exists in the curve library at all** — subgroup validation lives in `zig-pairing` and in the WASM layer — so a point taken from outside `zig-curve` and multiplied by a secret receives no subgroup check from it. Encoding is not checked by this pass. |
+| 154 | Serializers have resource limits and free memory on every error | **Partial.** Boundedness is argued in a comment (`libs/serialization/src/root.zig:33`, sizes bounded by the input size via `minWireSize`) and the rejection tests use a `FailingAllocator` to prove nothing reaches the allocator, but **no test is named for a resource limit**. The `compose` counter-example named in the earlier version of this table is resolved: it accumulates by multiplication, the entry was stale, and two tests now hold it — one evaluating the definition numerically over `F7`, one asserting the operands survive a degree failure. |
+| 155 | Constant-time claims backed by tests or an assembly audit | **Open, and its would-be instrument is decorative.** The test named "Constant-time primitives" (`libs/field/src/montgomery.zig:471`) asserts that a selector returns the value asked for, not that it takes constant time, so it would pass against an implementation that is not constant-time. There is deliberately no timing test in `field`, since timing tests are flaky. The instrument that would close this is an assembly audit, and `SECURITY.md` states that no independent audit exists for any library. |
 
 ## What is actually lost
 
-Narrower than first reported, and it is worth stating exactly:
+Narrower than first reported, and it is worth stating exactly. The roadmap
+itself is **not** lost: it is in this tree, verbatim, as
+[`roadmap-2026-09-25.md`](roadmap-2026-09-25.md), and the working directory that
+held a duplicate of it is the only thing that is gone:
 
 - The **directory** `backup/pre-todo-rewrite-20260925`, as a directory. It was
   never tracked, so the duplicate of the tree it held is gone. The tracked state
@@ -108,8 +115,11 @@ Narrower than first reported, and it is worth stating exactly:
 - Nothing else that was measured. The roadmap itself is intact.
 
 And the risk that remains is not loss but **single-copy custody**: the
-pre-rewrite history, with its 34 commits and the only copy of that roadmap,
-exists in exactly one ref in exactly one clone. The remote carries `main` only.
+pre-rewrite history, with its 34 commits, exists in exactly one ref in exactly
+one clone, and the remote carries `main` only. The roadmap is no longer part of
+that risk — it is in this tree — but the history it was written against is, and
+a `git push origin backup/pre-todo-rewrite-20260925` would end the custody
+question without touching the working tree.
 
 ## The structural consequence
 
