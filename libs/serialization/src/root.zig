@@ -717,3 +717,186 @@ test "a valid payload with empty elements still round-trips" {
     try testing.expectEqual(@as(usize, 3), back.rows.len);
     for (back.rows) |row| try testing.expectEqual(@as(usize, 0), row.len);
 }
+
+// ---------------------------------------------------------------------------
+// Differential against an encoder written from the documented rules
+// ---------------------------------------------------------------------------
+//
+// Every expected byte string below was produced by a Python encoder written
+// from this module's own docstring -- little-endian integers, `u64` length
+// prefixes, declaration-order fields with `std.mem.Allocator` and
+// `owns_entries` skipped, one presence byte per optional, raw bytes for `[N]u8`
+// -- and from nothing in this file. It independently reproduces the
+// hand-written golden vector above, which is the point: two derivations of the
+// same specification agreeing with each other and with the code.
+//
+// The rejection cases come from the specification too. A conforming decoder
+// has to refuse trailing bytes, a length prefix that outruns the input, and a
+// presence byte outside {0, 1}; the truncated buffers have to fail wherever
+// they are cut.
+
+/// The struct the hand-written golden vector above uses, hoisted so the
+/// rejection cases can name it as a decode target.
+const SerGolden = struct {
+    name: [3]u8,
+    count: u32,
+    rows: []const u16,
+    flag: bool,
+    maybe: ?[2]u8,
+};
+
+const SerCase = struct {
+    name: []const u8,
+    hex: []const u8,
+};
+
+/// Which type the decoder is asked for, and the error the format requires.
+/// Both come from the specification, not from the implementation: a length
+/// prefix is only an over-declaration when the bytes behind it cannot hold the
+/// elements, so the target type is part of the contract being pinned.
+const SerTarget = enum { u8, slice, bool, golden };
+
+const SerReject = struct {
+    name: []const u8,
+    hex: []const u8,
+    target: SerTarget,
+    expected: anyerror,
+};
+
+/// Decode a hex literal from the oracle into a caller-owned buffer.
+///
+/// Run time, not comptime: the rejection cases are iterated at run time, and a
+/// comptime reader would make the whole table a compile-time computation for no
+/// gain -- a fixture is data, and data does not have to be evaluated early to
+/// be checked.
+fn serHex(h: []const u8, buf: []u8) ![]u8 {
+    if (h.len != buf.len * 2) return error.MalformedOracleLiteral;
+    _ = std.fmt.hexToBytes(buf, h) catch return error.MalformedOracleLiteral;
+    return buf;
+}
+
+const ser_cases = [_]SerCase{
+    .{ .name = "the golden struct: raw bytes, u32, a slice, a bool and a present optional", .hex = "616263040302010200000000000000020104030101dead" },
+    .{ .name = "an absent optional and an empty slice", .hex = "01ffffffffffffffff000000000000000000" },
+    .{ .name = "usize at both widths, zero-extended to eight bytes", .hex = "00000000000000000700000000000100" },
+    .{ .name = "zero and all-ones for every unsigned width", .hex = "00ff0000ffff00000000ffffffff0000000000000000ffffffffffffffff" },
+    .{ .name = "a slice of slices of structs, each with an optional", .hex = "020000000000000002000000000000000b0a0101ffff000100000000000000010000" },
+    .{ .name = "arrays of elements and of arrays", .hex = "0100000002000000030000000400000001000001" },
+    .{ .name = "32 bytes as a raw array, and 32 bytes as a slice of u8", .hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2000000000000000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" },
+};
+
+const ser_rejects = [_]SerReject{
+    .{ .name = "a trailing byte after a complete u8", .hex = "616263040302010200000000000000020104030101dead00", .target = .u8, .expected = error.TrailingBytes },
+    .{ .name = "a length prefix of 2^40 elements", .hex = "00000000000100000000000000000000", .target = .slice, .expected = error.InvalidLength },
+    .{ .name = "a length prefix of 5 elements over 4 bytes", .hex = "050000000000000001020304", .target = .slice, .expected = error.InvalidLength },
+    .{ .name = "a presence byte outside {0, 1}", .hex = "02", .target = .bool, .expected = error.InvalidValue },
+    .{ .name = "a struct truncated inside its last field", .hex = "616263040302010200000000000000020104030101de", .target = .golden, .expected = error.UnexpectedEnd },
+    .{ .name = "an empty input for a struct", .hex = "", .target = .golden, .expected = error.UnexpectedEnd },
+    .{ .name = "a length prefix of 2^32 elements over 32 bytes", .hex = "0000000001000000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", .target = .slice, .expected = error.InvalidLength },
+};
+
+/// Serialize `value`, compare the bytes with the oracle's, then read the
+/// oracle's bytes back and check the value survives a second serialization.
+fn serExpectWire(comptime T: type, value: T, comptime hex: []const u8) !void {
+    const alloc = testing.allocator;
+    var buffer: [256]u8 = undefined;
+    const want = try serHex(hex, buffer[0 .. hex.len / 2]);
+
+    const got = try serialize(alloc, value);
+    defer alloc.free(got);
+    if (!std.mem.eql(u8, want, got)) {
+        std.debug.print("serialization: fixture de {d} bytes\n  esperado {x}\n  obtenido {x}\n", .{
+            want.len, want, got,
+        });
+        return error.TestExpectedEqual;
+    }
+
+    var back = try deserialize(alloc, want, T);
+    defer deinitValue(alloc, &back);
+    const again = try serialize(alloc, back);
+    defer alloc.free(again);
+    try testing.expectEqualSlices(u8, want, again);
+}
+
+test "serialization: the wire bytes match an encoder written from the documented rules" {
+    try serExpectWire(SerGolden, .{
+        .name = .{ 'a', 'b', 'c' },
+        .count = 0x01020304,
+        .rows = &.{ 0x0102, 0x0304 },
+        .flag = true,
+        .maybe = .{ 0xde, 0xad },
+    }, ser_cases[0].hex);
+
+    const Opts = struct {
+        here: ?u64,
+        there: ?u64,
+        none: []const u8,
+    };
+    try serExpectWire(Opts, .{
+        .here = 0xFFFFFFFFFFFFFFFF,
+        .there = null,
+        .none = &.{},
+    }, ser_cases[1].hex);
+
+    const Sizes = struct { small: usize, large: usize };
+    try serExpectWire(Sizes, .{ .small = 0, .large = (1 << 48) + 7 }, ser_cases[2].hex);
+
+    const Bounds = struct {
+        a: u8,
+        b: u8,
+        c: u16,
+        d: u16,
+        e: u32,
+        f: u32,
+        g: u64,
+        h: u64,
+    };
+    try serExpectWire(Bounds, .{
+        .a = 0,
+        .b = 255,
+        .c = 0,
+        .d = 65535,
+        .e = 0,
+        .f = 0xFFFFFFFF,
+        .g = 0,
+        .h = 0xFFFFFFFFFFFFFFFF,
+    }, ser_cases[3].hex);
+
+    const Cell = struct { v: u16, m: ?bool };
+    const Nested = struct { matrix: []const []const Cell };
+    try serExpectWire(Nested, .{ .matrix = &.{
+        &.{ .{ .v = 0x0A0B, .m = true }, .{ .v = 0xFFFF, .m = null } },
+        &.{.{ .v = 1, .m = null }},
+    } }, ser_cases[4].hex);
+
+    const Arrays = struct {
+        quad: [4]u32,
+        grid: [2][2]bool,
+    };
+    try serExpectWire(Arrays, .{
+        .quad = .{ 1, 2, 3, 4 },
+        .grid = .{ .{ true, false }, .{ false, true } },
+    }, ser_cases[5].hex);
+
+    const Both = struct { raw: [32]u8, listed: []const u8 };
+    var raw: [32]u8 = undefined;
+    for (&raw, 0..) |*b, i| b.* = @intCast(i);
+    var listed: [32]u8 = undefined;
+    for (&listed, 0..) |*b, i| b.* = @intCast(i);
+    try serExpectWire(Both, .{ .raw = raw, .listed = &listed }, ser_cases[6].hex);
+}
+
+test "serialization: buffers the format requires a decoder to reject" {
+    const alloc = testing.allocator;
+
+    for (ser_rejects) |r| {
+        var buffer: [256]u8 = undefined;
+        const bytes = try serHex(r.hex, buffer[0 .. r.hex.len / 2]);
+        switch (r.target) {
+            .u8 => try testing.expectError(r.expected, deserialize(alloc, bytes, u8)),
+            .slice => try testing.expectError(r.expected, deserialize(alloc, bytes, []const u8)),
+            .bool => try testing.expectError(r.expected, deserialize(alloc, bytes, bool)),
+            .golden => try testing.expectError(r.expected, deserialize(alloc, bytes, SerGolden)),
+        }
+    }
+}

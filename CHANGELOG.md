@@ -397,6 +397,32 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   is false in this build, so the branch is never entered, and the other operating
   systems in CI are where it runs. A mutation in a branch the platform does not
   execute is not evidence of anything.
+- **`zig-serialization` (tested): the wire layout is now compared with an
+  encoder written from the module's own documentation.** The format is a local
+  convention, so there is no external standard to lean on; what there is
+  instead is a second derivation of the same specification. A Python encoder
+  implements the docstring's rules -- little-endian integers, `u64` length
+  prefixes, declaration-order fields with `std.mem.Allocator` and
+  `owns_entries` skipped, one presence byte per optional, raw bytes for `[N]u8`
+  -- and reads nothing of this implementation. Over seven shapes it agrees
+  byte for byte, and it independently reproduces the hand-written golden vector
+  that was already in the file: two derivations of one specification, agreeing
+  with each other and with the code. The shapes are chosen for what they
+  distinguish rather than for their values -- an absent optional beside a
+  present one, an empty slice, `usize` at both widths, zero and all-ones for
+  every unsigned width, a slice of slices of structs, arrays of arrays, and 32
+  bytes written both as a raw array and as a slice, which is the pair that
+  tells the two forms apart on the wire.
+- **`zig-serialization` (tested): seven buffers the format requires a decoder
+  to reject.** Trailing bytes, a length prefix of 2^40 elements, a prefix one
+  element longer than the bytes behind it, a presence byte outside {0, 1}, a
+  struct truncated inside its last field, an empty input, and a 2^32 prefix over
+  32 bytes. Each carries the type it is decoded as, because that is part of the
+  contract: a prefix claiming four `u8` over four bytes is not an
+  over-declaration, and the first version of this test asserted that it was.
+  The expectation in every case is the specification's, not the code's. Nine
+  mutations are caught, including the length bound whose removal lets a
+  declared length reach the allocator.
 
 ## [v0.5.3] — 2026-09-29
 
