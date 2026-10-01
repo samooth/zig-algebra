@@ -557,11 +557,20 @@ fn SmallField(comptime modulus: comptime_int) type {
 
         /// Fast exponentiation (NOT constant-time).
         ///
-        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
-        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
-        /// the small Mersenne primes M31 and BabyBear, where the windowed form
-        /// is slower than what it replaces. Do not use this on a small Mersenne
-        /// field expecting a speedup.
+        /// **There is no speedup figure, because there is no single speedup.** The
+        /// ratio to `pow` is field-dependent and it changes sign: measured with
+        /// `zig build pow-bench`, which reports the minimum of seven repetitions per
+        /// field, `powFast` is SLOWER on the small fields -- about 1.1-1.2x on M31,
+        /// BabyBear and M61 -- indistinguishable from parity on Goldilocks, and
+        /// about 1.25-1.35x faster on the large fields BN254_Fp, BLS12_381_Fp and
+        /// StarkNet_Fp. An earlier version of this docstring said "~2x faster",
+        /// which understated the win on the large fields, hid the loss on the small
+        /// ones, and had no referent at all on the two where there is no difference.
+        ///
+        /// So: use it when the exponent is public AND the field is large, and
+        /// measure before assuming either way. Whether windowing has nothing to gain
+        /// on a 31-bit exponent and much to gain on a 381-bit one is a hypothesis
+        /// about this code, not a finding.
         /// Use when the exponent is public (e.g., FRI queries, roots of unity).
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -1279,11 +1288,20 @@ fn BigField(comptime modulus: comptime_int) type {
 
         /// Fast exponentiation (NOT constant-time).
         ///
-        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
-        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
-        /// the small Mersenne primes M31 and BabyBear, where the windowed form
-        /// is slower than what it replaces. Do not use this on a small Mersenne
-        /// field expecting a speedup.
+        /// **There is no speedup figure, because there is no single speedup.** The
+        /// ratio to `pow` is field-dependent and it changes sign: measured with
+        /// `zig build pow-bench`, which reports the minimum of seven repetitions per
+        /// field, `powFast` is SLOWER on the small fields -- about 1.1-1.2x on M31,
+        /// BabyBear and M61 -- indistinguishable from parity on Goldilocks, and
+        /// about 1.25-1.35x faster on the large fields BN254_Fp, BLS12_381_Fp and
+        /// StarkNet_Fp. An earlier version of this docstring said "~2x faster",
+        /// which understated the win on the large fields, hid the loss on the small
+        /// ones, and had no referent at all on the two where there is no difference.
+        ///
+        /// So: use it when the exponent is public AND the field is large, and
+        /// measure before assuming either way. Whether windowing has nothing to gain
+        /// on a 31-bit exponent and much to gain on a 381-bit one is a hypothesis
+        /// about this code, not a finding.
         /// Use when the exponent is public (e.g., FRI queries, roots of unity).
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);

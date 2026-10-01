@@ -122,12 +122,20 @@ Ordered roughly by value per unit of effort.
       squaring (saving the `a*b` cross term) should land around 30% on
       `BigField`; nothing has been measured yet, so the old "~30% faster" claim
       was removed rather than kept.
-- [ ] **Correct the `powFast` docstrings.** All four copies say
-      "~2x faster than `pow`" (`src/field.zig:477`, `src/field.zig:1084`,
-      `src/extension.zig:276`, `src/extension.zig:555`). Measured: 7.5x on
-      BN254_Fp, 11.2x on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5–2x
-      regression** on M31 and BabyBear. The claim should also warn about the
-      small-Mersenne regression.
+- [x] **Correct the `powFast` docstrings.** Done 2026-10-01. All four copies said
+      "~2x faster than `pow`", which was wrong in three ways at once: the ratio is
+      field-dependent, the sign is inverted on the small Mersenne primes, and on
+      two fields there is no difference to report. `zig build pow-bench` now
+      measures it per field as the minimum of seven repetitions and prints
+      powFast/pow, where **greater than one means slower** — the reading that
+      inverts the old claim. Measured: `powFast` is ~1.1-1.2x slower on M31,
+      BabyBear and M61, indistinguishable from parity on Goldilocks, and
+      ~1.25-1.35x faster on BN254_Fp, BLS12_381_Fp and StarkNet_Fp. So the dual
+      API's bargain is real on large fields and what falls is its universality,
+      not the API. Why the ratio is field-dependent is a hypothesis about the
+      code, recorded in the benchmark's header and not here as a finding.
+      Two measurements of this disagreed on M61 and on the size of the large-field
+      win, so the docstrings carry the direction and the range, not a number.
 - [x] **Fix the `format` method signature.** Done in 0.4.0: `field.zig` (both
       backends) and `extension.zig` (both towers), plus `zig-bigint`,
       `zig-linalg`, `zig-poly`, `zig-pairing` and `zig-algebra-traits`, all use
