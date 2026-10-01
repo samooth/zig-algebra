@@ -468,7 +468,10 @@ test "BLS12_381 Montgomery inverse of zero is defined" {
     try std.testing.expect(P.ctLimbsEql(&P.invMontgomery(P.ZERO_LIMBS), &P.ZERO_LIMBS));
 }
 
-test "Constant-time primitives" {
+// Selection/comparison semantics only: nothing here measures or proves
+// constant-time behaviour, which needs an assembly or disassembly audit. See
+// SECURITY.md ("Scope and non-claims") -- no independent audit exists here.
+test "ctSelect and the other constant-time primitives select correctly (not a timing claim)" {
     const P = Montgomery(0x30644E72E131A029B85045B68181585D97816A916871CA8D3C208C16D87CFD47);
 
     // ctSelect
