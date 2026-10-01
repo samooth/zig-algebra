@@ -88,18 +88,18 @@ parallel (no deps) · serialization (no deps)
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 32 |
 | [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 13 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 7 |
-| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 17 |
+| [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 20 |
 | [kzg](libs/kzg/) | KZG polynomial commitments over BN254 (commit/prove/verify via pairings + MSM; synthetic setup, tests only) | 8 |
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes, and every figure here was
 > re-derived from that step's own `--summary all` on 2026-09-30 rather than
-> carried forward. The root `zig build test` runs **585 tests** (verified on Zig
+> carried forward. The root `zig build test` runs **588 tests** (verified on Zig
 > 0.16.0 in both Debug and ReleaseFast): the root step compiles **all 27 test
 > binaries** — every library's inline `src/` tests plus the separate `tests/`
 > roots of `field` (6 files, 75 tests; 89 including the 14 inline) and `curve`
 > (4 files, 44 tests; 98 including the 54 inline). The per-library steps sum to
-> **585, the same number**, and that equality is the check: a test added to one
+> **588, the same number**, and that equality is the check: a test added to one
 > list and not the other shows up as a table that no longer adds up.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 8. `kzg`
 > was added in v0.2.2 as the 17th library.
@@ -206,7 +206,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 585 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 588 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |

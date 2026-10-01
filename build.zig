@@ -300,6 +300,23 @@ pub fn build(b: *std.Build) void {
         audit_ledger.dependOn(&verify.step);
     }
 
+    // Every test count written in prose, against the measured one. This happened
+    // four times in one week: each time tests were added, the root total and the
+    // per-library figures had to move together across the root README, seventeen
+    // library READMEs and AGENTS.md, and three times they did not. The parts sum
+    // to the total is the cheap half; the live half is CI handing this the number
+    // the suite it just ran reported, so adding a test without moving
+    // docs/test_counts.json fails the job that ran the tests.
+    const counts = b.step("counts-check", "Verify every documented test count against the measurement");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/counts_verify.py"));
+        verify.addArgs(&.{ "--root", "." });
+        if (b.args) |args| verify.addArgs(args);
+        verify.has_side_effects = true;
+        counts.dependOn(&verify.step);
+    }
+
     // CHANGELOG.md is the artefact a consumer reads before bumping, so its
     // release headers are checked rather than trusted: unique versions,
     // descending order, and a non-empty body under every section. This was

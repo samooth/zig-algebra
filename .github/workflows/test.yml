@@ -83,7 +83,30 @@ jobs:
         with:
           version: 0.16.0
       - name: Run all tests
-        run: zig build test --summary all
+        run: zig build test --summary all | tee summary.txt
+      # The suite that just ran knows the number, so hand it to the counts gate
+      # rather than paying for it twice. This is what turns the baseline into a
+      # gate instead of another register: a test added without moving
+      # docs/test_counts.json fails right here.
+      - name: Check every documented test count against what the suite reported
+        run: |
+          measured=$(sed -n 's|.*; \([0-9][0-9]*\)/[0-9][0-9]* tests passed.*|\1|p' summary.txt)
+          echo "suite reported: $measured"
+          zig build counts-check -- --measured "$measured"
+
+  counts-ledger:
+    # Every test count written in prose, against docs/test_counts.json. The live
+    # form of this runs inside the test job above, which passes the number the
+    # suite reported; this job is the cheap form so a reworded document is caught
+    # even if the test job changes shape.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build counts-check
 
   release-smoke:
     runs-on: ubuntu-latest
