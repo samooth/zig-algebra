@@ -126,7 +126,8 @@ publicadas:
 - **ZA-2026-006 — `ChaCha20Rng` no era ChaCha20.** La rotación del Quarter
   Round iba al revés: tres de las cuatro constantes del quarter round rotaban a
   la derecha donde RFC 8439 las rota a la izquierda. Salió en `v0.5.0`, `v0.5.1`,
-  `v0.5.2` y `v0.5.3`; está corregido desde `v0.6.0`, con los dos vectores de
+  `v0.5.2` y `v0.5.3` —cuatro tags, de las cuales tres están publicadas y
+  firmadas en el remoto—; está corregido desde `v0.6.0`, con los dos vectores de
   RFC 8439 anclados en la librería. **Si generaste material con esas versiones,
   ese material no viene de ChaCha20.** El alcance está medido: el único
   importador es la propia librería de RNG, así que ninguna otra biblioteca cambió
