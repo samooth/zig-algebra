@@ -303,7 +303,8 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
         }
 
         /// Constant-time exponentiation. Exponent must fit in `WideExp` and be non-negative.
-        /// WARNING: ~2x slower than square-and-multiply because every multiply is
+        /// UNMEASURED: this was documented as "~2x slower than square-and-multiply
+        /// because every multiply is
         /// executed unconditionally. Use only when the exponent is secret.
         pub fn pow(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -329,7 +330,13 @@ pub fn QuadraticExtension(comptime BaseField: type, comptime non_residue: BaseFi
             return result;
         }
 
-        /// Fast exponentiation (NOT constant-time). ~2x faster than `pow`.
+        /// Fast exponentiation (NOT constant-time).
+        ///
+        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
+        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
+        /// the small Mersenne primes M31 and BabyBear, where the windowed form
+        /// is slower than what it replaces. Do not use this on a small Mersenne
+        /// field expecting a speedup.
         /// Use when the exponent is public.
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -634,7 +641,8 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
         }
 
         /// Constant-time exponentiation. Exponent must fit in `WideExp` and be non-negative.
-        /// WARNING: ~2x slower than square-and-multiply because every multiply is
+        /// UNMEASURED: this was documented as "~2x slower than square-and-multiply
+        /// because every multiply is
         /// executed unconditionally. Use only when the exponent is secret.
         pub fn pow(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -660,7 +668,13 @@ pub fn CubicExtension(comptime BaseField: type, comptime non_residue: BaseField)
             return result;
         }
 
-        /// Fast exponentiation (NOT constant-time). ~2x faster than `pow`.
+        /// Fast exponentiation (NOT constant-time).
+        ///
+        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
+        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
+        /// the small Mersenne primes M31 and BabyBear, where the windowed form
+        /// is slower than what it replaces. Do not use this on a small Mersenne
+        /// field expecting a speedup.
         /// Use when the exponent is public.
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);

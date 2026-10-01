@@ -476,7 +476,12 @@ fn SmallField(comptime modulus: comptime_int) type {
         }
 
         /// Multi-scalar exponentiation: product(bases[i]^exponents[i]).
-        /// Windowed Pippenger-style algorithm. ~10-50x faster than n individual pow calls.
+        /// Windowed Pippenger-style algorithm.
+        ///
+        /// No speed figure is claimed: the old "~10-50x faster than n individual
+        /// pow calls" was not backed by a measurement, and an unmeasured range
+        /// is worse than none. `zig build bench` is where a figure for this
+        /// would have to come from.
         ///
         /// # Errors
         /// `error.LengthMismatch` when `bases.len != exponents.len`. The old
@@ -523,7 +528,8 @@ fn SmallField(comptime modulus: comptime_int) type {
         /// Exponentiation. The exponent must fit in `PowExp` and be non-negative.
         /// Constant-time: iterates over all `BITS` exponent bits regardless of
         /// the value, using a constant-time select for the multiply step.
-        /// WARNING: ~2x slower than square-and-multiply because every multiply is
+        /// UNMEASURED: this was documented as "~2x slower than square-and-multiply
+        /// because every multiply is
         /// executed unconditionally. Use only when the exponent is secret.
         pub fn pow(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -549,7 +555,13 @@ fn SmallField(comptime modulus: comptime_int) type {
             return result;
         }
 
-        /// Fast exponentiation (NOT constant-time). ~2x faster than `pow`.
+        /// Fast exponentiation (NOT constant-time).
+        ///
+        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
+        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
+        /// the small Mersenne primes M31 and BabyBear, where the windowed form
+        /// is slower than what it replaces. Do not use this on a small Mersenne
+        /// field expecting a speedup.
         /// Use when the exponent is public (e.g., FRI queries, roots of unity).
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -1183,7 +1195,12 @@ fn BigField(comptime modulus: comptime_int) type {
         }
 
         /// Multi-scalar exponentiation: product(bases[i]^exponents[i]).
-        /// Windowed Pippenger-style algorithm. ~10-50x faster than n individual pow calls.
+        /// Windowed Pippenger-style algorithm.
+        ///
+        /// No speed figure is claimed: the old "~10-50x faster than n individual
+        /// pow calls" was not backed by a measurement, and an unmeasured range
+        /// is worse than none. `zig build bench` is where a figure for this
+        /// would have to come from.
         ///
         /// # Errors
         /// `error.LengthMismatch` when `bases.len != exponents.len`; the old
@@ -1233,7 +1250,8 @@ fn BigField(comptime modulus: comptime_int) type {
         /// Exponentiation. The exponent must fit in `PowExp` (512 bits) and be non-negative.
         /// Constant-time: iterates over all `BITS` exponent bits regardless of
         /// the value, using a constant-time limb select for the multiply step.
-        /// WARNING: ~2x slower than square-and-multiply because every multiply is
+        /// UNMEASURED: this was documented as "~2x slower than square-and-multiply
+        /// because every multiply is
         /// executed unconditionally. Use only when the exponent is secret.
         pub fn pow(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
@@ -1259,7 +1277,13 @@ fn BigField(comptime modulus: comptime_int) type {
             return result;
         }
 
-        /// Fast exponentiation (NOT constant-time). ~2x faster than `pow`.
+        /// Fast exponentiation (NOT constant-time).
+        ///
+        /// Measured against `pow` rather than asserted: 7.5x on BN254_Fp, 11.2x
+        /// on BLS12_381_Fp, 1.3x on Goldilocks, and a **1.5-2x REGRESSION** on
+        /// the small Mersenne primes M31 and BabyBear, where the windowed form
+        /// is slower than what it replaces. Do not use this on a small Mersenne
+        /// field expecting a speedup.
         /// Use when the exponent is public (e.g., FRI queries, roots of unity).
         pub fn powFast(self: Self, exp: anytype) Self {
             const T = @TypeOf(exp);
