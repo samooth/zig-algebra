@@ -571,6 +571,30 @@ pub fn build(b: *std.Build) void {
     );
 
     // Benchmark step (always ReleaseFast regardless of -Doptimize)
+    // pow against powFast, per field, as the minimum of seven repetitions. It is
+    // a build step and not a test because a timing assertion in the suite is flaky
+    // by construction. One measurement is not a number: Goldilocks came out at
+    // 0.79, 0.89 and 1.28 across three single measurements, crossing the 1.0 that
+    // decides the question, and 0.85, 0.84, 0.86 with the minimum of seven.
+    const pow_bench_step = b.step("pow-bench", "Measure pow against powFast per field (min of 7)");
+    {
+        const exe = b.addExecutable(.{
+            .name = "pow-bench",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("libs/field/bench/pow.zig"),
+                .target = target,
+                .optimize = .ReleaseFast,
+            }),
+        });
+        exe.root_module.addImport("zig-field", field_mod);
+        exe.root_module.addImport("zig-bigint", bigint_mod);
+        exe.root_module.addImport("zig-parallel", parallel_mod);
+        b.installArtifact(exe);
+        const run = b.addRunArtifact(exe);
+        run.step.dependOn(b.getInstallStep());
+        pow_bench_step.dependOn(&run.step);
+    }
+
     const bench_step = b.step("bench", "Run benchmarks (ReleaseFast)");
     const bench_optimize = .ReleaseFast;
     const bench_module = b.createModule(.{
