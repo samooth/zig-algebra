@@ -1,6 +1,6 @@
 # zig-field Improvements Roadmap
 
-Status as of this revision. `zig-field` is version **0.3.0**.
+Status as of this revision. `zig-field` is version **0.5.0**.
 
 Each item was checked against `libs/field/src/`, `libs/field/tests/` and
 `libs/field/build.zig`. Items marked **Phantom** were previously listed as
@@ -135,8 +135,25 @@ Ordered roughly by value per unit of effort.
       remaining half of the problem is the *call site*, not the method: Zig
       0.16 only selects a `format` method for the `{f}` specifier, so
       `std.debug.print("{}", .{M31.fromInt(7)})` still prints
-      `.{ .value = 7 }` while `"{f}"` prints `7`. Sweeping every `{}` on a
-      field element in the tests, examples and docs is still open.
+      `.{ .value = 7 }` while `"{f}"` prints `7`. The `[x]` above covers the
+      method only; the *call-site* sweep is still open. Re-checked 2026-10-01
+      over the whole tree, and it is not clean: six remain in this library's
+      own tests, inside `if (DEBUG_MULTIEXP)` blocks that never run
+      (`tests/field_test.zig:13` sets it `false`) —
+      `tests/field_test.zig:608`, `:609`, `:630`, `:631`, `:668` and `:669`
+      print `multi_result` and `expected`, and both are field elements, not
+      integers (`multiExp` returns `error{LengthMismatch}!Self`; `expected`
+      starts at `F.one()`). Outside `libs/field` the sweep is open too:
+      `zig-pairing` prints `Fp12`/`Fp12T` elements (`src/main.zig:10`, `:17`,
+      `:18`, `:24` — and those types have no `format` method at all, so `{f}`
+      is not the fix there), `zig-algebra-traits` prints `F7` elements
+      (`src/main.zig:194`-`:201`, `:205`, `:210`, `:214`, `:227`), and
+      `zig-poly` prints the coefficient `F` with `{}` inside
+      `Polynomial.format` (`src/poly.zig:351`, `:353`, `:355`;
+      `src/root.zig:578`, `:581`, `:584`). `zig-poly/src/main.zig` also prints
+      `Poly` values with `{}` although `Polynomial.format` exists — same
+      symptom, not a field element. Nothing has been fixed here; this is the
+      list a sweep has to visit.
 - [ ] **Implement `Ipa.verify`.** `src/ipa.zig:221` is a stub that returns
       `error.Unsupported`; only `verifyWithCommitment` works. Related: IPA round
       challenges are a local SHA-256 of `(L, R, round)`, not a
