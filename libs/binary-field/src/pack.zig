@@ -25,8 +25,11 @@ const Polynomial = @import("polynomial.zig");
 /// l_i has leading coefficient 1/d, hence [x^(N-1)] of the residue is
 /// (1/d)·Σ_i f(i)β_r(i) = f(r)/d. This lets a verifier who holds the packed
 /// polynomial g (e.g. via a FRI commitment) evaluate f at an arbitrary point
-/// r without the table: the algebraic core of the sub-linear Binius
-/// evaluation (see TODO.md §1).
+/// r without the table: the algebraic core of a sub-linear opening, where the
+/// commitment is to g and the 2^k table entries are never sent. Nothing here
+/// commits to g — `MlePcs` and `CommittedMlePcs` still take the whole table,
+/// and `CommittedMlePcs` opens one Merkle path per entry — so the identity is
+/// today reachable only by a caller that packs and commits on its own.
 pub fn PackedMle(comptime F: type) type {
     return struct {
         const Self = @This();
