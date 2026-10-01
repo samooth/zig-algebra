@@ -30,7 +30,14 @@
 //! - A `u64` length prefix is validated against the number of bytes actually
 //!   left in the input before anything is allocated, so a declared length can
 //!   never be larger than the input that backs it. Every allocation is
-//!   therefore bounded by the input size (see `minWireSize`).
+//!   therefore bounded by the input, scaled by the element type's own
+//!   memory-per-wire-byte ratio (see `minWireSize`) — and that ratio is not 1:
+//!   measured against this implementation, a 64-byte input reserves 896 bytes
+//!   for `[]const ?[]const u8`, because a slice of optionals spends one
+//!   presence byte on the wire per sixteen bytes of memory. The bound is real
+//!   and a `2^40` prefix is still refused; "bounded by the input size" alone
+//!   was not true as written, and the numbers are pinned in the tests rather
+//!   than hedged here.
 //! - A failing `readValue` rolls back every value it had already decoded:
 //!   the partially built value owns nothing when the error surfaces, so
 //!   `DebugAllocator` reports no leaks.
@@ -585,6 +592,118 @@ test "an over-long length prefix never reaches the allocator" {
     try testing.expectEqual(@as(usize, 0), failing2.alloc_index);
 }
 
+test "a resource limit: a prefix at the limit is accepted, one past it reserves nothing" {
+    // The bound has two ends and the tests above only pin one of them. They
+    // show a prefix *far* over the limit asking the heap for nothing; nothing
+    // pins what happens at the limit itself, so a bound that rejects one element
+    // too early -- `>=` for `>` -- would pass every one of them. And nothing
+    // counts bytes at all, so the memory-per-wire-byte ratio the docstring
+    // hedges about ("the fixed memory-per-wire-byte ratio of the type itself")
+    // is prose rather than a number.
+    //
+    // A `FailingAllocator` with no `fail_index` never fails, so its
+    // `allocated_bytes` is exactly what the decoder asked the heap for.
+
+    // `[]const Inner`: 16 wire bytes and 16 bytes of memory per element, so a
+    // prefix saturating the 48 bytes behind it reserves exactly 48.
+    var inner_input: [56]u8 = [_]u8{0} ** 56;
+    std.mem.writeInt(u64, inner_input[0..8], 3, .little);
+    var inner_ok = std.testing.FailingAllocator.init(testing.allocator, .{});
+    const inner_back = try deserialize(inner_ok.allocator(), &inner_input, []const Inner);
+    defer inner_ok.allocator().free(inner_back);
+    try testing.expectEqual(@as(usize, 3), inner_back.len);
+    try testing.expectEqual(@as(usize, 3 * @sizeOf(Inner)), inner_ok.allocated_bytes);
+
+    // One element more is refused, and refused *before* the reservation: the
+    // 64 bytes an unchecked decoder would ask for were never requested.
+    var inner_over: [56]u8 = [_]u8{0} ** 56;
+    std.mem.writeInt(u64, inner_over[0..8], 4, .little);
+    var inner_refused = std.testing.FailingAllocator.init(testing.allocator, .{});
+    try testing.expectError(error.InvalidLength, deserialize(inner_refused.allocator(), &inner_over, []const Inner));
+    try testing.expectEqual(@as(usize, 0), inner_refused.allocated_bytes);
+
+    // The sharpest ratio this format admits, from a shape the tests above never
+    // decode: `?[]const u8` costs one presence byte on the wire and 16 bytes of
+    // memory, so 56 elements of a 64-byte input reserve 896 -- fourteen times
+    // the input, which is the honest reading of "bounded by the input size".
+    var tagged_input: [64]u8 = [_]u8{0} ** 64;
+    std.mem.writeInt(u64, tagged_input[0..8], 56, .little);
+    var tagged_ok = std.testing.FailingAllocator.init(testing.allocator, .{});
+    var tagged_back = try deserialize(tagged_ok.allocator(), &tagged_input, []const ?[]const u8);
+    defer deinitValue(tagged_ok.allocator(), &tagged_back);
+    try testing.expectEqual(@as(usize, 56), tagged_back.len);
+    try testing.expectEqual(@as(usize, 56 * @sizeOf(?[]const u8)), tagged_ok.allocated_bytes);
+
+    var tagged_over: [64]u8 = [_]u8{0} ** 64;
+    std.mem.writeInt(u64, tagged_over[0..8], 57, .little);
+    var tagged_refused = std.testing.FailingAllocator.init(testing.allocator, .{});
+    try testing.expectError(error.InvalidLength, deserialize(tagged_refused.allocator(), &tagged_over, []const ?[]const u8));
+    try testing.expectEqual(@as(usize, 0), tagged_refused.allocated_bytes);
+
+    // `minWireSize == 0` is the branch that bounds an element by the remaining
+    // byte count alone, and no other test reaches it: every element type above
+    // costs wire bytes, and a type that costs none (`struct { allocator }`
+    // writes nothing, the allocator field is skipped) is the only shape that
+    // lands here. The accepted end of this branch cannot be pinned by any input
+    // -- such elements consume no wire bytes, so `deserialize` would always
+    // reject the result as trailing -- which is why only the refusing end is
+    // asserted here.
+    const Wireless = struct { allocator: std.mem.Allocator };
+    var wireless_over: [64]u8 = [_]u8{0} ** 64;
+    std.mem.writeInt(u64, wireless_over[0..8], 57, .little);
+    var wireless_refused = std.testing.FailingAllocator.init(testing.allocator, .{});
+    try testing.expectError(error.InvalidLength, deserialize(wireless_refused.allocator(), &wireless_over, []const Wireless));
+    try testing.expectEqual(@as(usize, 0), wireless_refused.allocated_bytes);
+
+    var wireless_huge: [8]u8 = [_]u8{0} ** 8;
+    std.mem.writeInt(u64, wireless_huge[0..8], 1 << 40, .little);
+    var wireless_huge_refused = std.testing.FailingAllocator.init(testing.allocator, .{});
+    try testing.expectError(error.InvalidLength, deserialize(wireless_huge_refused.allocator(), &wireless_huge, []const Wireless));
+    try testing.expectEqual(@as(usize, 0), wireless_huge_refused.allocated_bytes);
+}
+
+/// Decode a `NestedHolder` and release it, so `checkAllAllocationFailures` can
+/// fail the heap at each allocation in turn.
+fn nestedHolderThenFree(allocator: std.mem.Allocator, bytes: []const u8) !void {
+    var value = try deserialize(allocator, bytes, NestedHolder);
+    releaseValue(allocator, &value);
+}
+
+/// Encode a slice-of-slices and release the buffer, for the same reason.
+fn nestedHolderThenEncode(allocator: std.mem.Allocator) !void {
+    const S = struct { count: usize, rows: []const []const u32 };
+    const rows = [_][]const u32{ &.{ 1, 2 }, &.{} };
+    const bytes = try serialize(allocator, S{ .count = 7, .rows = &rows });
+    allocator.free(bytes);
+}
+
+test "a resource limit: an induced OutOfMemory leaves nothing allocated" {
+    // Every rollback test above fails on a *check*. `OutOfMemory` is an error
+    // path too, and it is the one where something has usually already been
+    // allocated: this decodes a value whose last allocation can be the one that
+    // fails, with the two outer allocations already live.
+    //
+    // rows: two inner slices holding 2 u32 and none, then a 3-byte tail. Every
+    // byte of the input is consumed, so the decode succeeds when the heap
+    // allows it -- three allocations, any of which can be the failing one.
+    var buf: [43]u8 = [_]u8{0} ** 43;
+    std.mem.writeInt(u64, buf[0..8], 2, .little);
+    std.mem.writeInt(u64, buf[8..16], 2, .little);
+    std.mem.writeInt(u32, buf[16..20], 11, .little);
+    std.mem.writeInt(u32, buf[20..24], 22, .little);
+    std.mem.writeInt(u64, buf[24..32], 0, .little);
+    std.mem.writeInt(u64, buf[32..40], 3, .little);
+    try testing.checkAllAllocationFailures(
+        testing.allocator,
+        nestedHolderThenFree,
+        .{@as([]const u8, buf[0..])},
+    );
+
+    // The encoder has the same obligation: a failing `append` part-way through
+    // a buffer has to release the buffer, not leak it.
+    try testing.checkAllAllocationFailures(testing.allocator, nestedHolderThenEncode, .{});
+}
+
 const Inner = struct { a: [8]u8, b: [8]u8 };
 
 /// Allocator and `owns_entries` fields are stored, never owned: the rollback
@@ -627,6 +746,25 @@ test "a failure inside a slice rolls back the elements already decoded" {
 
     // `rows` (and its first element) were fully decoded; both must be freed.
     try testing.expectError(error.UnexpectedEnd, deserialize(alloc, &buf, NestedHolder));
+}
+
+test "a failure inside a fixed-size array rolls back the earlier elements" {
+    // The slice case above is a `[]T`; a `[N]T` of allocating elements is a
+    // separate `readValue` branch with its own rollback, and nothing reached it:
+    // the only test that decodes an array of slices is the round trip, which
+    // never fails half-way. Counting bytes rather than trusting the leak
+    // reporter: this is the resource claim, so it is read as a number.
+    var buf: [18]u8 = [_]u8{0} ** 18;
+    std.mem.writeInt(u64, buf[0..8], 2, .little); // rows[0]: two bytes follow
+    buf[8] = 0xaa;
+    buf[9] = 0xbb;
+    std.mem.writeInt(u64, buf[10..18], 8, .little); // rows[1]: eight, none left
+
+    var counted = std.testing.FailingAllocator.init(testing.allocator, .{});
+    try testing.expectError(error.InvalidLength, deserialize(counted.allocator(), &buf, [2][]const u8));
+    // rows[0] was decoded and then has to be given back.
+    try testing.expectEqual(@as(usize, 2), counted.allocated_bytes);
+    try testing.expectEqual(counted.allocated_bytes, counted.freed_bytes);
 }
 
 test "trailing bytes free the decoded value" {
