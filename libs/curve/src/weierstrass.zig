@@ -8,6 +8,33 @@
 const std = @import("std");
 
 /// Affine point on a Weierstrass curve y^2 = x^3 + a*x + b over field F.
+///
+/// **Trusted by construction, with no subgroup check.** A point built here is
+/// not validated beyond what the caller already trusted:
+///
+/// - The fields below are `pub`, so a struct literal reaches a point that never
+///   passed through any constructor. There is no choke point to put a check in,
+///   and one placed in `fromBytes` would be bypassed by that literal.
+/// - `fromBytes` validates on-curve and returns `error.NotOnCurve` when the
+///   encoding is not a curve point. It does **not** check subgroup. A point of
+///   small order is accepted, and multiplying one by a secret scalar leaks that
+///   scalar through the same moves that break ElGamal and Schnorr. For BLS12-381
+///   the G1 cofactor is deliberately non-smooth, so `clearCofactor` is not a
+///   substitute: it needs the x-only trick precisely because endomorphism-based
+///   clearing is unavailable.
+/// - The subgroup check is `n*P == O`, a full scalar multiplication by the group
+///   order. Putting it on `fromBytes` would charge every internal
+///   deserialisation for it, including the ones this library performs on points
+///   it chose itself.
+///
+/// **So the trust boundary is the caller's, by decision.** If you take a point
+/// from outside this library, you validate it. `zig-pairing` is where that
+/// happens for pairings, and it is worth knowing how, because the two layers
+/// reject differently: `isG1InSubgroup` and `isG2InSubgroup` are public, and
+/// `millerLoop` returns the identity `Fp12.one()` for a point that fails, while
+/// the WASM entry point returns the typed `error.InvalidG1`. The silent one is
+/// the one to watch: a caller who does not check cannot tell a result from a
+/// rejection.
 pub fn AffinePoint(comptime F: type, comptime a: F, comptime b: F) type {
     return struct {
         const Self = @This();
