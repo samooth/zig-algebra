@@ -83,28 +83,17 @@ jobs:
         with:
           version: 0.16.0
       - name: Run all tests
-        # pipefail is load-bearing, not decoration. Actions runs `bash -e` with no
-        # pipefail, and `zig build test | tee` returns tee's status, so a failing
-        # suite would leave this step green and every count below it meaningless.
-        # Measured: a command exiting 1 through a pipe returns 0 without it.
-        run: |
-          set -o pipefail
-          zig build test --summary all 2>&1 | tee summary.txt
-      # The suite that just ran knows the number, so hand it to the counts gate
-      # rather than paying for it twice. This is what turns the baseline into a
-      # gate instead of another register: a test added without moving
-      # docs/test_counts.json fails right here.
-      - name: Check every documented test count against what the suite reported
-        run: |
-          measured=$(sed -n 's|.*; \([0-9][0-9]*\)/[0-9][0-9]* tests passed.*|\1|p' summary.txt)
-          echo "suite reported: $measured"
-          zig build counts-check -- --measured "$measured"
+        run: zig build test --summary all
 
   counts-ledger:
-    # Every test count written in prose, against docs/test_counts.json. The live
-    # form of this runs inside the test job above, which passes the number the
-    # suite reported; this job is the cheap form so a reworded document is caught
-    # even if the test job changes shape.
+    # Every test count written in prose, against docs/test_counts.json AND
+    # against the number the suite actually reports. This runs the suite itself
+    # rather than borrowing the matrix job's, for two reasons that cost three red
+    # runs to learn: the build's summary line goes to stderr, so a stdout-only
+    # pipe captures nothing; Actions runs the default shell with no pipefail, so a
+    # failing suite pipes to tee and returns 0; and on windows-latest the default
+    # shell is PowerShell, which does not accept `set -o pipefail` at all. Keeping
+    # this in one ubuntu job with one shell removes all three.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -112,7 +101,15 @@ jobs:
         uses: ./.github/actions/setup-zig
         with:
           version: 0.16.0
-      - run: zig build counts-check
+      # pipefail is load-bearing: without it a failing suite leaves this job green
+      # and the gate below reports everything in order over a red suite. Measured
+      # with a stub exiting 1: rc=0 without pipefail, rc=1 with it.
+      - name: Run the suite and keep its own summary
+        run: |
+          set -o pipefail
+          zig build test --summary all 2>&1 | tee suite-summary.txt
+      - name: Check every documented test count against what the suite reported
+        run: zig build counts-check -- --summary-file suite-summary.txt
 
   release-smoke:
     runs-on: ubuntu-latest

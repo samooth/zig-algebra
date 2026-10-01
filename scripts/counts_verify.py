@@ -41,6 +41,8 @@ TABLE_ROW = re.compile(r"^\| \[[a-z-]+\]\(libs/([a-z-]+)/\)[^\n]*\| (\d+) \|$")
 # The root total is looked for in named sentences rather than as a bare number,
 # because "588" also appears in benchmark timings and in prose about a past
 # mistake. Each pattern must match exactly once.
+SUMMARY_TOTAL = re.compile(r".*;\s+(\d+)/\d+ tests passed.*")
+
 ROOT_TOTAL_PATTERNS = [
     ("README.md", r"runs \*\*(\d+) tests\*\*"),
     ("README.md", r"\*\*(\d+), the same number\*\*"),
@@ -61,11 +63,16 @@ def main() -> int:
     ap.add_argument(
         "--measured",
         default=None,
-        help="the total the suite just reported; with this, adding a test "
-        "without moving the baseline fails the job that ran the tests. Taken as "
-        "text on purpose: an empty value here means the caller's extraction found "
-        "nothing, and that deserves a sentence naming the cause rather than an "
-        "argparse type error that tells the reader nothing.",
+        help="the total the suite just reported, as text. An empty value fails with "
+        "a sentence naming the cause rather than an argparse type error.",
+    )
+    ap.add_argument(
+        "--summary-file",
+        default=None,
+        help="a file holding the suite's own --summary output; the count is parsed out "
+        "of it here, where the pattern can be tested, rather than in a workflow "
+        "where nothing tests it. The line is on STDERR, which is why the caller "
+        "redirects 2>&1.",
     )
     args = ap.parse_args()
 
@@ -142,7 +149,27 @@ def main() -> int:
 
     # 3. the live measurement, when CI has one.
     measured = None
-    if args.measured is not None:
+    if args.summary_file is not None:
+        spath = Path(args.summary_file)
+        if not spath.exists():
+            failures.append(
+                f"--summary-file {args.summary_file} does not exist. The caller is "
+                "supposed to hand over the suite's own output."
+            )
+        else:
+            text = spath.read_text(encoding="utf-8", errors="replace")
+            hits = re.findall(SUMMARY_TOTAL, text)
+            if len(hits) != 1:
+                failures.append(
+                    f"{args.summary_file}: the suite's summary line matched {len(hits)} "
+                    f"times, not 1, looking for {SUMMARY_TOTAL.pattern!r}. The build "
+                    "prints that line on STDERR, so `zig build test --summary all` "
+                    "piped without 2>&1 writes an empty file and this check cannot see "
+                    "its own input."
+                )
+            else:
+                measured = int(hits[0])
+    if measured is None and args.measured is not None:
         raw = str(args.measured).strip()
         if not raw or not raw.isdigit():
             failures.append(
@@ -155,13 +182,18 @@ def main() -> int:
             )
         else:
             measured = int(raw)
-            if measured != total:
-                failures.append(
-                    f"{args.baseline}: total says {total} and the suite just reported "
-                    f"{measured}. The tests moved and the documented counts did not; "
-                    f"re-derive the per-library figures and update this file in the same "
-                    f"commit that added the tests."
-                )
+    # The comparison lives OUTSIDE both extraction paths on purpose. It sat inside
+    # the --measured branch, so a number that arrived via --summary-file was parsed
+    # and then never compared: the live gate, the one that matters, did not fire.
+    # Restructuring a check and not re-testing every direction is how that happens,
+    # and the symptom was a direction that printed nothing.
+    if measured is not None and measured != total:
+        failures.append(
+            f"{args.baseline}: total says {total} and the suite just reported "
+            f"{measured}. The tests moved and the documented counts did not; re-derive "
+            f"the per-library figures and update this file in the same commit that added "
+            f"the tests."
+        )
 
     if failures:
         print("documented test counts do not hold up:\n", file=sys.stderr)

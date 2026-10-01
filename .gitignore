@@ -11,3 +11,7 @@ zig-out/
 *~
 .opencode/
 zig-pkg/
+
+# written by the counts-ledger CI job, and by a local run of the same steps
+suite-summary.txt
+summary.txt
