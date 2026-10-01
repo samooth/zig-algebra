@@ -60,10 +60,12 @@ def main() -> int:
     ap.add_argument("--baseline", default="docs/test_counts.json")
     ap.add_argument(
         "--measured",
-        type=int,
         default=None,
         help="the total the suite just reported; with this, adding a test "
-        "without moving the baseline fails the job that ran the tests",
+        "without moving the baseline fails the job that ran the tests. Taken as "
+        "text on purpose: an empty value here means the caller's extraction found "
+        "nothing, and that deserves a sentence naming the cause rather than an "
+        "argparse type error that tells the reader nothing.",
     )
     args = ap.parse_args()
 
@@ -139,13 +141,27 @@ def main() -> int:
             )
 
     # 3. the live measurement, when CI has one.
-    if args.measured is not None and args.measured != total:
-        failures.append(
-            f"{args.baseline}: total says {total} and the suite just reported "
-            f"{args.measured}. The tests moved and the documented counts did not; "
-            f"re-derive the per-library figures and update this file in the same "
-            f"commit that added the tests."
-        )
+    measured = None
+    if args.measured is not None:
+        raw = str(args.measured).strip()
+        if not raw or not raw.isdigit():
+            failures.append(
+                f"--measured was {raw!r}, which is not a count. The caller extracts "
+                "the number from the suite's own summary line, and that summary goes to "
+                "STDERR: piping `zig build test --summary all` without `2>&1` captures "
+                "stdout only, so the extraction silently yields nothing. This is the "
+                "check failing to see its own input, which is the one failure mode it "
+                "cannot be allowed to have."
+            )
+        else:
+            measured = int(raw)
+            if measured != total:
+                failures.append(
+                    f"{args.baseline}: total says {total} and the suite just reported "
+                    f"{measured}. The tests moved and the documented counts did not; "
+                    f"re-derive the per-library figures and update this file in the same "
+                    f"commit that added the tests."
+                )
 
     if failures:
         print("documented test counts do not hold up:\n", file=sys.stderr)
@@ -154,7 +170,7 @@ def main() -> int:
         print(f"\n{len(failures)} violation(s).", file=sys.stderr)
         return 1
 
-    tail = f", measured {args.measured}" if args.measured is not None else ""
+    tail = f", measured {measured}" if measured is not None else ""
     print(
         f"documented counts in sync: {len(per)} libraries, {summed} tests"
         f"{tail}; baseline dated {base['measured']}"
