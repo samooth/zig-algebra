@@ -53,6 +53,20 @@ ROOT_TOTAL_PATTERNS = [
     ("AGENTS.md", r"root `zig build test` = (\d+);"),
     ("AGENTS.md", r"totals sum to (\d+), which now"),
     ("AGENTS.md", r"pairing 58, parallel 7, poly 32, rng 27, serialization (\d+),"),
+    # These two were missing from this list and were the worst in the tree:
+    # DESIGN.md said the root step executes 391 tests, and docs/architecture.md
+    # said 423 in one place and 583 in another, against a measurement of 588. A gate
+    # is only as good as the file list it was given, and that list came from
+    # whichever task happened to be in front of me rather than from the tree.
+    ("DESIGN.md", r"executes \*\*(\d+)\*\* tests"),
+    ("docs/architecture.md", r"same (\d+) tests, seconds"),
+    ("docs/architecture.md", r"runs \*\*(\d+) tests\*\*"),
+]
+
+# A named library's own count, asserted outside its README.
+LIBRARY_CLAIMS = [
+    ("docs/architecture.md", r"before 0\.5\.0 and now has (\d+)", "algebra-traits"),
+    ("README.md", r"before `0\.5\.0` and now has (\d+)", "algebra-traits"),
 ]
 
 
@@ -194,6 +208,20 @@ def main() -> int:
             f"the per-library figures and update this file in the same commit that added "
             f"the tests."
         )
+
+    # 2d. a named library's own count, asserted outside its README.
+    for rel, pat, lib in LIBRARY_CLAIMS:
+        found = re.findall(pat, (root / rel).read_text(encoding="utf-8"))
+        if len(found) != 1:
+            failures.append(
+                f"{rel}: the claim about {lib} matched {len(found)} times, not 1. "
+                f"Pattern: {pat!r}. A reworded document is not a passing document."
+            )
+            continue
+        if int(found[0]) != per[lib]:
+            failures.append(
+                f"{rel}: says {lib} has {found[0]} tests, the measurement is {per[lib]}."
+            )
 
     if failures:
         print("documented test counts do not hold up:\n", file=sys.stderr)

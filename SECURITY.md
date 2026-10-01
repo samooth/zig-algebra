@@ -24,7 +24,7 @@ it.
   `MerkleTree` and `MMR` constructors in `merkle/root.zig`, and the query-point
   binding in `binary-field/src/pcs.zig`.
 - **Not affected:** the Fiat-Shamir challenge derivation *in this repository*.
-  `libs/fri/src/root.zig:73` and `libs/transcript/src/transcript.zig:31` both
+  `libs/fri/src/root.zig` and the transcript library's `root.zig` both
   use `std.crypto.hash.Blake3`, not this one, so no challenge here was ever
   derived from it. The exposure was commitments and Merkle openings, not
   challenges.

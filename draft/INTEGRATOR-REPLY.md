@@ -117,6 +117,47 @@ en el mismo fichero, y es el lugar donde la gente mira.
 
 ---
 
+## 4. Lo que encontramos después, y no está en tu revisión
+
+Esta revisión se escribió antes de que cerráramos seis advisories. Va lo
+relevante para quien compile la librería, porque afecta a releases ya
+publicadas:
+
+- **ZA-2026-006 — `ChaCha20Rng` no era ChaCha20.** La rotación del Quarter
+  Round iba al revés: tres de las cuatro constantes del quarter round rotaban a
+  la derecha donde RFC 8439 las rota a la izquierda. Salió en `v0.5.0`, `v0.5.1`,
+  `v0.5.2` y `v0.5.3`; está corregido desde `v0.6.0`, con los dos vectores de
+  RFC 8439 anclados en la librería. **Si generaste material con esas versiones,
+  ese material no viene de ChaCha20.** El alcance está medido: el único
+  importador es la propia librería de RNG, así que ninguna otra biblioteca cambió
+  de salida y ninguna decisión de un verificador cambió con ello.
+- **`primitiveRootOfUnity` no devolvía nunca una raíz de orden potencia de dos**
+  sobre el eje real, y **el generador del toro iteraba sin cota** —hasta 2^61
+  candidatos si un parámetro se desviaba. Ambos P0 corregidos en `v0.6.0`; el
+  segundo ahora devuelve un error tipado en vez de no terminar nunca.
+- **`m31` no estaba cubierto por `refAllDecls`**, que es el módulo más grande
+  del árbol. Corregido.
+- **Subgrupo en las curvas.** `fromBytes` valida que el punto esté en la curva,
+  no que pertenezca al subgrupo de orden primo. **Lo decidimos así, y está
+  escrito en `AUDIT.md` fila 11:** la frontera de confianza es de quien llama, y
+  lo que faltaba no era una comprobación sino que estuviera escrito. La
+  comprobación vive en `libs/pairing` y en la capa WebAssembly, que son las que
+  aceptan puntos externos.
+- `ZA-2026-004` (inversas de `Montgomery` con un módulo sin holgura) y
+  `ZA-2026-005` (`modExp` con un módulo más ancho que la mitad del contenedor)
+  también están publicados.
+
+Lo que **sigue en pie** de nuestra parte, sin adornos: `hash2` y `mimc` no tienen
+vectores de prueba externos, y el P0 que encontraste era el único corregible sin
+una decisión de diseño.
+
+Las dos cifras de esta sección se comprueban con un comando cada una, no con un
+identificador de commit: el rango del PRNG se lee en el advisory `ZA-2026-006` de
+`SECURITY.md`, y la decisión sobre el subgrupo en la fila 11 de `AUDIT.md`. Un
+SHA habría caducado con el siguiente commit; un tag y un advisory, no.
+
+---
+
 ## Anexo: lo que sí es cierto y se acepta
 
 - **P0, cuatro métodos públicos que no compilan.** Confirmado y corregido.

@@ -143,9 +143,14 @@ and mismatched-length inputs must return typed errors, and must not leave a
 leak, an out-of-bounds access or an unbounded allocation behind. See the
 "Total vs checked" section above.
 
-Counts (Zig 0.16.0): the root `zig build test` step executes 391 tests in both
-Debug and ReleaseFast; per-library steps sum to 507 because `field` (85) and
-`curve` (98) also compile their `tests/` roots there. See `README.md`.
+Counts (Zig 0.16.0, re-derived 2026-10-01): the root `zig build test` step
+executes **588** tests in both Debug and ReleaseFast, and the per-library steps
+sum to the same 588 because the root step compiles the `tests/` roots of `field`
+(89) and `curve` (98) as well as every library's inline `src/` tests. This line
+said 391, and the per-library sum it quoted, 507, is a number from a tree that
+no longer exists. `zig build counts-check` is what keeps it right; it is in the
+gate precisely because a design document nobody re-reads is where a stale count
+survives longest. See `README.md`.
 
 ## Security Notes
 
