@@ -3,10 +3,13 @@
 Estado: `para enviar`. Idioma: español, el del revisor. No vive en `docs/`
 porque no es documentación de la librería sino correspondencia con un tercero,
 y porque las afirmaciones de un mensaje externo caducan: las de aquí son
-verificadas contra el árbol en `40f4468` (583/583 en ambos modos, 27 binarios);
-los dos commits posteriores solo cambian documentación y comentarios, así que el
-recuento sigue siendo el mismo. El envío es acción del propietario y este
-fichero se queda como registro de lo que se envió.
+verificadas en dos momentos, y las dos cifras se dan con su fecha porque
+difieren: el tag `v0.6.0` reportaba **583/583** en ambos modos con 27 binarios de
+prueba, y `main` reporta **588/588** tras las tres pruebas de límites de recursos
+añadidas a `zig-serialization`. Un commit concreto no se cita como ancla: es una
+afirmación sobre un árbol que deja de ser cierta en cuanto se publica otra cosa,
+y el tag sí se puede comprobar con `git show`. El envío es acción del propietario y este fichero se queda
+como registro de lo que se envió.
 
 Los tres puntos de abajo son **correcciones a la descripción de la API que la
 revisión da por sentado**, y repetirlas sin corregir serían peores que no
@@ -24,11 +27,13 @@ presentes con formas distintas.
 **Esas cinco cosas tienen cero ocurrencias en todo el repositorio.** La
 superficie no es irregular: no hay nada de qué elegir.
 
-- `examples/wasm_fp.zig:9` es `const Fp = zf.BLS12_381_Fp`. El campo es fijo
+- `examples/wasm_fp.zig` es `const Fp = zf.BLS12_381_Fp`. El campo es fijo
   en tiempo de compilación.
 - Los exports son `fp_add(a_lo: u64, a_hi: u64, b_lo: u64, b_hi: u64, out: [*]u8)`
   sobre 256 bits. No hay `kind` en ninguna parte, ni paramétrico ni de otro modo.
-- `wasm_pairing` tiene **7 exports**, no ~4.
+- `wasm_pairing` expone **6 exports**, no ~4: `scratch_ptr`,
+  `pairing_api_version`, `g1_validate`, `g2_validate`, `pairing_bilinear_check` y
+  `pairing_compute`.
 
 Lo que la revisión construyó compensa una superficie **sin costuras por las que
 elegir campo**, no una superficie inconsistente. El diagnóstico está equivocado
@@ -42,7 +47,7 @@ diseño, no un parche. Con el dato por delante, la decisión es del propietario.
 ## 2. P2-7: corregido. Ahora hay KAT de Poseidon, y son externos
 
 Cuando esta revisión se escribió, la observación era exacta y grave: el test de
-`root.zig:260` afirmaba `h == h` —determinismo, que pasa para cualquier función
+`root.zig` afirmaba `h == h` —determinismo, que pasa para cualquier función
 —incluida una constante— y no había **ningún** valor esperado. Eso ya no es
 cierto, y es lo que hay que responder:
 
@@ -61,10 +66,10 @@ Lo que **sigue en pie**, y conviene no abultarlo:
 
 - **`hash2` no tiene vectores publicados.** Lo anclado es la *permutación*
   (los dos conjuntos de parámetros de arriba), no la salida de la esponja. El
-  test de `root.zig:128` afirma `hash2(1, 2) == 3` sobre `F_7`: es un valor,
+  test de `root.zig` afirma `hash2(1, 2) == 3` sobre `F_7`: es un valor,
   pero de una instancia elegida aquí, así que es evidencia de tanto como
   "determinismo" —cualquier implementación podría dar 3 por construcción. La
-  criticism original sigue siendo válida en este punto, y es el que queda
+  crítica original sigue siendo válida en este punto, y es el que queda
   abierto.
 - **`mimc.zig` no tiene KAT propio.** No lo hemos instrumentado y no vamos a
   afirmar lo contrario.
@@ -72,20 +77,20 @@ Lo que **sigue en pie**, y conviene no abultarlo:
 ## 3. P2-6: el README afirma lo contrario de lo que hace el código
 
 La revisión dice que la semántica del ejemplo STARK vive solo en el ejemplo y
-es undiscoverable. El problema es más grave que undiscoverable: **el README
+es indescubrible. El problema es más grave que eso: **el README
 afirma lo contrario de lo que hace el código.**
 
 ```
-README.md:208              "...STARK prover/verifier demo: Fibonacci over
-                            Goldilocks with FRI"
-examples/stark_prover.zig:48  // Fibonacci transition: next_a = a + b,
-                              next_b = next_a (shift)
+README.md   (root)          "...STARK prover/verifier demo: Fibonacci over
+                                 Goldilocks with FRI"
+stark_prover.zig             // Fibonacci transition: next_a = a + b,
+                                 next_b = next_a (shift)
 ```
 
 La observación se queda corta. El código no es un *shift* y no es Fibonacci:
 
 ```zig
-examples/stark_prover.zig:47-51
+examples/stark_prover.zig
     for (1..n) |i| {
         // Fibonacci transition: next_a = a + b, next_b = next_a (shift)
         a[i] = a[i - 1].add(b[i - 1]);
@@ -94,12 +99,12 @@ examples/stark_prover.zig:47-51
 ```
 
 Con `b[i] = a[i]`, la transición es `a[i] = a[i-1] + a[i-1] = 2·a[i-1]`: **el
-ejemplo duplica.** Y la comprobación de restricciones (línea 60) verifica
+ejemplo duplica.** Y la comprobación de restricciones verifica
 exactamente eso, así que **la prueba es internamente coherente: lo que se
 demuestra es "a se duplica"**. Lo que miente es la prosa, en tres sitios que no
 se contradicen entre sí sino con el código:
 
-- `README.md:208` dice "Fibonacci over Goldilocks with FRI";
+- `README.md` dice "Fibonacci over Goldilocks with FRI";
 - la cabecera del ejemplo dice `a_{i+1} = a_i + b_i (Fibonacci step)`;
 - la misma cabecera dice `b_{i+1} = a_{i+1} (shift register)` y el campo
   documenta `b[i] = a[i+1]`, cuando el código hace `b[i] = a[i]`: una copia,
@@ -107,7 +112,7 @@ se contradicen entre sí sino con el código:
 
 Quien lea cualquiera de las tres descripciones implementa Fibonacci estándar y
 obtiene valores distintos, y quien lea el ejemplo buscando un *shift* tampoco
-encuentra uno. No es undiscoverable: es documentación que contradice al código
+encuentra uno. No es indescubrible: es documentación que contradice al código
 en el mismo fichero, y es el lugar donde la gente mira.
 
 ---
@@ -115,13 +120,16 @@ en el mismo fichero, y es el lugar donde la gente mira.
 ## Anexo: lo que sí es cierto y se acepta
 
 - **P0, cuatro métodos públicos que no compilan.** Confirmado y corregido.
-  Las líneas reales son `field.zig:663`, `field.zig:1368`, `extension.zig:227`,
-  `extension.zig:644` (la revisión citaba 20-28 líneas más abajo, y la
-  corrección que nos llegó también). Las dos copias de la extensión tenían un
+  Los símbolos son `hash`: dos copias en `field.zig` y dos en `extension.zig`.
+  Sin números de línea, a propósito — la revisión los situaba desplazados, la
+  corrección que nos llegó también, y un número de línea en un mensaje a un
+  tercero es una afirmación sobre un árbol que ni él puede verificar, porque
+  cualquier commit posterior los mueve sin tocar la función. Las dos copias
+  de la extensión tenían un
   **segundo** error no reportado: `hash_val ^= v & 0xFF` con `v: u512`.
 - **Alcance del P0**: era lo único corregible sin decisión de diseño. El
-  `FieldKind`/`CurveKind`, el KAT de Poseidon y los helpers de límites quedan
-  fuera de este commit, con el dato delante.
+  `FieldKind`/`CurveKind` y los helpers de límites quedan pendientes de una
+  decisión de diseño, con el dato delante; el KAT de Poseidon ya está hecho.
 - **Inventario de alcance público**: lo que `zig build assert-check` cuenta
   sobre `field.zig` y `extension.zig` es "104 gross (50 prose) / 54 code", y
   antes de corregir `hash` eran 12 sin ninguna llamada en el repositorio: hay
@@ -130,6 +138,8 @@ en el mismo fichero, y es el lugar donde la gente mira.
   definición —qué cuenta como "público" y qué como "llamada"— que no está
   escrita en ninguna parte, y un porcentaje sin esa definición no es un
   número reproducible: es una medida con el objeto cambiado debajo.
-- **`montgomery`**: hay un advisory abierto y en camino, separado. No se mezcla
-  con esto: es un fallo silencioso en una release publicada, esto es una
-  ruptura de compilación visible. Distintos advisories, distintos commits.
+- **`montgomery`**: ese fallo tiene ya su advisory, **`ZA-2026-004`**, en
+  `SECURITY.md`, y salió en `v0.5.3`. No se mezcla con lo de aquí: es un fallo
+  silencioso en una release publicada —`Montgomery` invertido da un resultado
+  equivocado para cualquier módulo sin holgura—, esto era una ruptura de
+  compilación visible. Distintos advisories, distintos commits.
