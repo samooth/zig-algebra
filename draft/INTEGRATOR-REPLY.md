@@ -8,8 +8,8 @@ difieren: el tag `v0.6.0` reportaba **583/583** en ambos modos con 27 binarios d
 prueba, y `main` reporta **588/588** tras las tres pruebas de límites de recursos
 añadidas a `zig-serialization`. Un commit concreto no se cita como ancla: es una
 afirmación sobre un árbol que deja de ser cierta en cuanto se publica otra cosa,
-y el tag sí se puede comprobar con `git show`. El envío es acción del propietario y este fichero se queda
-como registro de lo que se envió.
+y el tag sí se puede comprobar con `git show`. El envío es acción del propietario
+y este fichero se queda como registro de lo que se envió.
 
 Los tres puntos de abajo son **correcciones a la descripción de la API que la
 revisión da por sentado**, y repetirlas sin corregir serían peores que no
