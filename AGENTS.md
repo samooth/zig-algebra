@@ -554,6 +554,30 @@ and no assert — "declared but never called" is currently unenforced, and the
 `main.zig` case is the one that bit three times. Treat the ledger as the
 mechanical half of the rule, not the whole of it.
 
+**A gate is only as good as the file list it was given, and that list must come
+from the tree.** `counts_verify.py` spent four divergences catching only the
+documents its author happened to think of; `DESIGN.md` said the root step runs
+391 tests and `docs/architecture.md` said 423 in one place and 583 in another,
+against a measurement of 588, and every one of them passed a gate that did exist.
+Two errors sat in files the gate never opened.
+
+So a gate states its scope by deriving it, not by naming it. `counts_verify.py`
+takes every tracked `*.md` from `git ls-files` and requires each one to be either
+read by a pattern or listed in `NOT_CHECKED` with a reason; a new document in
+neither fails, and an entry naming a file that is gone fails too. **An exception
+list inside a derived scope is still a hand-written list, and the failure mode
+returns through the back door** — which is why each reason is printed on every
+passing run rather than living only in the source, and why a document measured to
+cite no count at all is *checked* for citing none instead of being skipped. A skip
+list is the right instrument for a record whose numbers are meant to be old (a
+`CHANGELOG.md` that restated today's totals would be falsifying the past) and the
+wrong instrument for a document that simply has none.
+
+The same shape applies to any gate added here: the question to ask before trusting
+it is not "what does it assert" but **"what does it look at, and how would I know
+if that list went stale"**. If the answer involves a filename, the answer is a
+list someone typed.
+
 ### Property-Based Testing Pattern
 For ring/field axioms, generate random elements and verify:
 ```zig

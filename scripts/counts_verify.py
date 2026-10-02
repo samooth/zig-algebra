@@ -29,6 +29,7 @@ check that stopped looking at anything.
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -67,6 +68,54 @@ ROOT_TOTAL_PATTERNS = [
 LIBRARY_CLAIMS = [
     ("docs/architecture.md", r"before 0\.5\.0 and now has (\d+)", "algebra-traits"),
     ("README.md", r"before `0\.5\.0` and now has (\d+)", "algebra-traits"),
+]
+
+# Which tracked Markdown documents this gate checks, and which it deliberately does
+# not. The second list is the one to read skeptically, which is why every entry
+# carries a reason and why the script prints the skipped set on every run.
+#
+# It exists because the obvious rule does not work, and the measurement is worth more
+# than the rule: scanning every tracked .md for "<N> tests" finds 63 citations, of
+# which 31 are not any current total. Every one of the 31 is correct. CHANGELOG.md
+# is 12 of them -- a changelog that restated today's counts would be a changelog that
+# lied about the past. SECURITY.md quotes 417/417 because that is what two test
+# modes reported on the day. docs/requirements.md is a mutation log whose rows say
+# "2 tests fail" as the expected outcome of a deliberate mutation. So a gate of "every
+# N tests in every .md must equal a current total" would have to be fed 31 lies to
+# pass, and a gate nobody can pass is a gate nobody reads.
+#
+# The rule that does work is a registry checked against the tree: a document is either
+# matched by a pattern above, or it is here with a reason. A new Markdown file that is
+# in neither fails, so the scope cannot grow silently; an entry naming a file that is
+# gone fails, so it cannot rot. That is the difference between an exception list and a
+# hidden hand-written list: this one is derived, it is gated in both directions, and it
+# is printed every run.
+NOT_CHECKED = {
+    "CHANGELOG.md": "a record of what was true at each release; restating today's "
+    "totals would falsify it",
+    "SECURITY.md": "quotes the counts the affected releases reported, and a vector "
+    "count from an external implementation",
+    "docs/requirements.md": "mutation log; rows state how many tests SHOULD fail",
+    "docs/assert-ledger.md": "per-library analysis of a past gap, including counts "
+    "of tests that were not being run",
+    "libs/field/TODO.md": "a work list; its counts are the ones being argued about, "
+    "and TODO.md is where they get resolved",
+    "TODO.md": "a work list, for the same reason",
+    "draft/INTEGRATOR-REPLY.md": "an unsent draft quoting release figures",
+    "libs/field/CHANGELOG.md": "same reason as the root CHANGELOG.md; its two "
+    "stale figures (85 tests) are entries about v0.3.0 and v0.4.0",
+}
+
+# Documents measured to cite no test count at all. Skipping them would be the weak
+# move: the claim "this file states no count" is itself checkable, it is true today for
+# all four, and if one of them ever grows a figure the gate fires instead of going
+# quietly unchecked. A skip list is the right instrument for a record whose numbers are
+# meant to be old; it is the wrong instrument for a document that simply has none.
+CITES_NO_COUNT = [
+    "AUDIT.md",
+    "docs/pending-items.md",
+    "docs/roadmap-2026-09-25.md",
+    "libs/field/AGENTS.md",
 ]
 
 
@@ -142,6 +191,51 @@ def main() -> int:
             failures.append(f"README.md:{i}: row for {lib}, which is not in the baseline")
         elif got != per[lib]:
             failures.append(f"README.md:{i}: table says {got} for {lib}, measurement is {per[lib]}")
+
+    # 2c-0b. documents measured to cite no count must still cite none.
+    for rel in CITES_NO_COUNT:
+        path = root / rel
+        if not path.exists():
+            failures.append(f"{rel}: listed as citing no test count, but the file is absent.")
+            continue
+        found = COUNT_IN_LIBRARY.findall(path.read_text(encoding="utf-8"))
+        if found:
+            failures.append(
+                f"{rel}: now states {len(found)} test count(s) ({', '.join(found[:6])}), and "
+                "this gate reads none of them. Either the figure is current and belongs in a "
+                "pattern above so it is compared, or it is historical and the file belongs "
+                "in NOT_CHECKED with that reason. The third option -- a number nothing checks "
+                "-- is the one that let DESIGN.md say 391 for a release."
+            )
+
+    # 2c-0. the gate's own scope, checked against the tree in both directions.
+    checked_files = {rel for rel, _ in ROOT_TOTAL_PATTERNS} | {
+        rel for rel, _, _ in LIBRARY_CLAIMS
+    } | {"README.md"} | {f"libs/{lib}/README.md" for lib in per} | set(CITES_NO_COUNT)
+    tracked = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "*.md"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    for rel in sorted(tracked):
+        if rel not in checked_files and rel not in NOT_CHECKED:
+            failures.append(
+                f"{rel}: a tracked Markdown file that no pattern in this gate reads and "
+                f"that {Path(__file__).name} has no reason for skipping. Adding a document "
+                "that quotes a test count has to be a decision, and this is where the "
+                "decision is recorded. If the file genuinely holds no count, add it to "
+                "NOT_CHECKED with the reason -- that way the next reader sees what is not "
+                "being checked instead of inferring it."
+            )
+    for rel in sorted(NOT_CHECKED):
+        if rel not in tracked:
+            failures.append(
+                f"{Path(__file__).name}: NOT_CHECKED names {rel}, which is not a tracked "
+                "file. A skip list that names a file that is gone is a list nobody reads."
+            )
+        if not NOT_CHECKED[rel].strip():
+            failures.append(f"{Path(__file__).name}: NOT_CHECKED[{rel}] has no reason.")
 
     # 2c. the named sentences carrying the root total.
     for rel, pat in ROOT_TOTAL_PATTERNS:
@@ -235,6 +329,16 @@ def main() -> int:
         f"documented counts in sync: {len(per)} libraries, {summed} tests"
         f"{tail}; baseline dated {base['measured']}"
     )
+    # The skipped set goes to stdout on every passing run, not only on failure. A gate
+    # that tells you what it did not look at is auditable; one that stays quiet about it
+    # reads as complete coverage, which is the belief that let DESIGN.md say 391.
+    if NOT_CHECKED:
+        print(
+            f"scope: {len(tracked)} tracked Markdown files, "
+            f"{len(tracked) - len(NOT_CHECKED)} checked; not checked, with reasons:"
+        )
+        for rel in sorted(NOT_CHECKED):
+            print(f"  - {rel}: {NOT_CHECKED[rel]}")
     return 0
 
 
