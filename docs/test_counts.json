@@ -1,7 +1,7 @@
 {
-  "measured": "2026-10-01",
+  "measured": "2026-10-02",
   "command": "cd libs/<name> && zig build test --summary all",
-  "total": 588,
+  "total": 592,
   "note": "The root `zig build test` runs the same 27 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`.",
   "per_library": {
     "algebra-traits": 8,
@@ -15,7 +15,7 @@
     "linalg": 13,
     "merkle": 20,
     "ntt": 16,
-    "pairing": 58,
+    "pairing": 62,
     "parallel": 7,
     "poly": 32,
     "rng": 27,
