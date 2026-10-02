@@ -473,6 +473,22 @@ is still no external known-answer vector for BN254 anywhere in this tree, in any
 of its three implementations, so even a corrected pairing could not yet be pinned
 to a known answer here. `AUDIT.md` row 15 carries the closing criterion.
 
+**Isolated to one file, by differential against the other two.** This tree has
+three BN254 implementations, and the same property test run against each one gives:
+
+```
+tower (bn254_tower.zig)    e(2P,Q) == e(P,Q)^2   -> true
+direct (bn254_direct.zig)  e(2P,Q) == e(P,Q)^2   -> true
+this file                  e(2P,Q) == e(P,Q)^2   -> false
+```
+
+So `bn254_tower.zig` and `bn254_direct.zig` are bilinear and `bn254.zig` is not,
+and the defect is one file rather than a curve. That also corrects an earlier
+sentence of this advisory: it says below that neither BN254 implementation has an
+external known-answer vector, which is true and is *not* the same as saying both
+are wrong. Two of the three satisfy the property; what none of the three has is a
+vector from outside this repository.
+
 **Who this reaches.** Only a caller that calls `bn254.zig`'s `pairing()` directly.
 Nothing in this workspace calls it: `bls12_381.zig` has its own `pairing`, and
 the BLS12-381 path — the one the demos, `zig build example` and the benchmark
