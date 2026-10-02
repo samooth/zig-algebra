@@ -15,3 +15,7 @@ zig-pkg/
 # written by the counts-ledger CI job, and by a local run of the same steps
 suite-summary.txt
 summary.txt
+
+# compiled Python, from any import in scripts/ or tools/
+__pycache__/
+*.pyc
