@@ -382,6 +382,80 @@ is the owner's, and the vectors have not been read into this tree.
   must always be paired with `defer setRandomForTesting(null)`; prefer
   `setRandomForTestingSeed`, whose state lives inside the module.
 
+## Advisory ZA-2026-007 — `zig-pairing`'s BN254 `pairing()` is not bilinear
+
+**A silent wrong answer. Not a crash, not a refusal, and not an impossible
+value — a plausible one.**
+
+`libs/pairing/src/bn254.zig` declares `pub fn pairing(G1Point, G2Point) Fp12`
+and computes `finalExp(millerLoop(p, q))`. It is **not a pairing**: on the
+canonical generators,
+
+```
+e(2P, Q) != e(P, Q)^2
+e(P, 2Q) != e(P, Q)^2
+```
+
+independently on each side. Its output is nevertheless an element of the correct
+r-order subgroup (`e^r == 1`) and it is non-degenerate, so a caller that checks
+either of those properties sees a pass.
+
+**Affected:** every release from `v0.5.1` through `v0.6.0`, all four published
+and signed on the remote. Measured by reading the tagged file, not by following
+a commit: the body of `pairing()` is byte-identical at `v0.5.1`, `v0.5.2`,
+`v0.5.3` and `v0.6.0`, and at the local-only `v0.5.0`. The defect predates the
+first published tag, so there is no "upgrade introduced it" reading available:
+it has been present, and untested, since before anyone could fetch this code.
+
+**There were no tests for it, and the reason was written down and false.** The
+file carried a `TODO: Pairing tests` stating that BN254's D-type twist needs
+different tower parameters, because `b'/b = 1/(9+u)` "IS a cube in Fp2" and is
+therefore unusable as an Fp6 cubic non-residue. Measured over Fp2, with the
+criterion that `a` is a cube iff `a^((p^2-1)/3) == 1` (valid because
+`p == 1 mod 3` for BN254):
+
+```
+XI = 1/(9+u) = (9-u)/82
+XI^((p^2-1)/3) = 2203960485148121921418603742825762020974279258880205651966  != 1
+```
+
+`XI` is **not** a cube, so `v^3 - XI` is irreducible and `Fp6` **is** a field. The
+criterion was checked in both directions before the result was believed: a
+constructed cube is detected and a constructed non-cube is rejected, so the
+"!= 1" above is an answer rather than a criterion that always says no. The TODO
+was not documentation; it was a reason not to write the test, and it was wrong.
+
+**Class of defect — and this is the part worth carrying to other code.** The
+existing tests in `bn254_direct.zig` — non-degeneracy, bilinearity, r-torsion —
+all pass against a pairing that computes the wrong value, because they compare
+the implementation with itself. They are not useless, but they are *wrongly
+informative*: they look like coverage of the property and they cannot detect its
+absence. A real bilinearity check calls the same code twice with different
+arguments, and the error does not cancel; a self-consistency check runs the same
+path on the same argument, and the error cancels against itself. `e^r == 1` and
+non-degeneracy both survive here, which is why this shipped past three tests that
+looked like they covered it.
+
+**Instrument, verified before the finding was believed.** `powFast` composes
+(`(e^2)^3 == e^6`), `scalarMul(P,2) == P+P`, `scalarMul(Q,2) == Q+Q`, and
+`e(P+P, Q)` fails identically to `e(2P, Q)` — so the fault is inside the Miller
+loop, not in the exponentiation or in the point arithmetic feeding it.
+
+**Current state, stated as a sequence.** The defect is asserted, not fixed. A test
+in `bn254.zig` pins the wrong behaviour on purpose and is named `DEFECT MARKER`;
+it fails when the Miller loop is fixed, and must be inverted at that moment. There
+is still no external known-answer vector for BN254 anywhere in this tree, in any
+of its three implementations, so even a corrected pairing could not yet be pinned
+to a known answer here. `AUDIT.md` row 15 carries the closing criterion.
+
+**Who this reaches.** Only a caller that calls `bn254.zig`'s `pairing()` directly.
+Nothing in this workspace calls it: `bls12_381.zig` has its own `pairing`, and
+the BLS12-381 path — the one the demos, `zig build example` and the benchmark
+exercise — is the one that has an external EIP-197 vector behind it. The affected
+code is reachable in principle and by export, which is why this is published
+rather than filed as an open audit row: an exported function that returns a false
+value is a disclosure, not an internal finding.
+
 ## Advisory ZA-2026-001 — zig-fri `verify()` is not a low-degree test
 
 **Affected:** the `zig-fri` implementation released in zig-algebra 0.3.0 and
