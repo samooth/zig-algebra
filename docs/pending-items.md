@@ -136,7 +136,8 @@ clone, and this exact branch was already reported lost once for a day because th
 search asked the filesystem about a name that was also a ref.
 
 The repository remote belongs to the owner and neither the agent nor the
-coordinator pushes to it, so the command is left here to be run when it is wanted:
+coordinator pushes `main` or the tag namespace, so the command is recorded here
+rather than left in a conversation:
 
 ```
 git push origin backup/pre-todo-rewrite-20260925:refs/heads/backup/pre-todo-rewrite-20260925
@@ -145,6 +146,12 @@ git push origin backup/pre-todo-rewrite-20260925:refs/heads/backup/pre-todo-rewr
 The full refspec rather than the short name on purpose. `git push origin
 backup/...` is ambiguous about what it creates, and the ambiguity is the difference
 between a branch on the remote and a tag-shaped thing nobody can find later.
+
+**It was pushed on 2026-10-02**, to `6f5d50b44d9aa7ac1a747061c4ead8e2e1271d81`,
+after `git ls-remote --heads origin` confirmed zero matches for it — a new
+reference, not a move of an existing one, and `main` was not touched. The custody
+risk above is therefore closed as of that date: the history exists somewhere other
+than one clone, and can be deleted from a working tree knowing what was kept.
 
 What survives on `main` regardless: [`roadmap-2026-09-25.md`](roadmap-2026-09-25.md),
 verbatim and checksummed, since `93ea907`. The other 34 commits are the earlier
