@@ -121,6 +121,36 @@ that risk — it is in this tree — but the history it was written against is, 
 a `git push origin backup/pre-todo-rewrite-20260925` would end the custody
 question without touching the working tree.
 
+## Custody of the pre-rewrite branch
+
+Decided: **push it, do not merge it.** It is a record of a state, and the state is
+worth having somewhere other than one disk; merging it is not, because it would put
+a second live list of open items back on `main` next to this one.
+
+The measurement behind that, taken on 2026-10-02: 101 commits on the branch, 34 of
+them not on `main`, and 142 on `main` not on it. Not an ancestor of `main` in
+either direction. `git ls-remote --heads origin backup/pre-todo-rewrite-20260925`
+returned **zero** matches on that date, which is why the decision is written here
+instead of assumed: the alternative is a record whose only copy is a ref in one
+clone, and this exact branch was already reported lost once for a day because the
+search asked the filesystem about a name that was also a ref.
+
+The repository remote belongs to the owner and neither the agent nor the
+coordinator pushes to it, so the command is left here to be run when it is wanted:
+
+```
+git push origin backup/pre-todo-rewrite-20260925:refs/heads/backup/pre-todo-rewrite-20260925
+```
+
+The full refspec rather than the short name on purpose. `git push origin
+backup/...` is ambiguous about what it creates, and the ambiguity is the difference
+between a branch on the remote and a tag-shaped thing nobody can find later.
+
+What survives on `main` regardless: [`roadmap-2026-09-25.md`](roadmap-2026-09-25.md),
+verbatim and checksummed, since `93ea907`. The other 34 commits are the earlier
+state of the 19 stale figures and the shape `TODO.md` had before the rewrite, and
+that is what the branch is for.
+
 ## The structural consequence
 
 Open items live in at least **fifteen** places, and no document enumerates them
