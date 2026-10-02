@@ -402,10 +402,35 @@ either of those properties sees a pass.
 
 **Affected:** every release from `v0.5.1` through `v0.6.0`, all four published
 and signed on the remote. Measured by reading the tagged file, not by following
-a commit: the body of `pairing()` is byte-identical at `v0.5.1`, `v0.5.2`,
-`v0.5.3` and `v0.6.0`, and at the local-only `v0.5.0`. The defect predates the
-first published tag, so there is no "upgrade introduced it" reading available:
-it has been present, and untested, since before anyone could fetch this code.
+a commit. Both figures below are given with the span they were computed over and
+the command that reproduces them, because a checksum without its object is a line
+nobody can check — and someone who recomputes a different span gets a different
+number and concludes the range in this advisory is wrong.
+
+*Whole file*, so there is no span to argue about:
+
+```
+$ for t in v0.5.0 v0.5.1 v0.5.2 v0.5.3 v0.6.0; do
+    git show "$t:libs/pairing/src/bn254.zig" | md5sum
+  done
+a5d19e3887ac...   (identical at all five; v0.5.0 is local-only)
+```
+
+*Body of `pairing()`*, span declared as *from the line matching `^pub fn pairing`
+to the first following line that is exactly `}`*:
+
+```
+$ git show <tag>:libs/pairing/src/bn254.zig \
+    | sed -n '/^pub fn pairing/,/^}/p' | md5sum
+9132f52108f3...   (identical at v0.5.1, v0.5.2, v0.5.3, v0.6.0)
+```
+
+`HEAD` differs from both (`4d4a070323ae`) because it carries the tests and the
+correction to the false TODO; the defect itself is unchanged and asserted.
+
+The defect therefore predates the first published tag, so there is no "an upgrade
+introduced it" reading available: it has been present, and untested, since before
+anyone could fetch this code.
 
 **There were no tests for it, and the reason was written down and false.** The
 file carried a `TODO: Pairing tests` stating that BN254's D-type twist needs

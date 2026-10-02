@@ -116,6 +116,46 @@ their paths in `docs/requirements.md`, and each is a real one here:
    `DivisionByZero | InverseOfZero` and can only produce the first, and a
    declaration nothing can falsify is a claim nothing can test.
 
+**Wrongly informative is worse than absent.** A test that cannot detect the
+absence of the property it appears to cover is not a weak check; it is a check
+that certifies the wrong thing while occupying the place of a real one. The
+distinction is exact and it is about the *arguments*: a genuine bilinearity check
+calls the same code twice with **different** arguments, and the error does not
+cancel; a self-consistency check runs the same path on the same argument, and the
+error cancels against itself. That is the whole difference. `bn254_direct.zig`
+had non-degeneracy, bilinearity and torsion tests, and all three pass against a
+pairing that computes the wrong value — they compared the implementation with
+itself. **That is not the same as a missing test, and calling it that understates
+it**: the missing test is visible, while the three present ones look like coverage
+of exactly the property that is absent. The same shape appears here three times
+over: a differential that compared a pin against itself, a gate that reported "does
+not start" one commit after it existed, and this.
+
+The tell is worth naming: **a check whose failure mode is the absence of something,
+that can only ever fail if the thing is absent, while the thing it names is broken
+in a way the check cannot express.** Write the assertion against the property, not
+against the current output. A defect marker that asserts the *negation* of the
+property is defensible where nothing else is possible, because the inversion is
+forced — anchoring a wrong *value* instead would let a partial fix pass.
+
+**Every search must be able to say "more than one" and "none", and both are
+failures, not answers.** A name resolver that takes the first of eight matches is
+not measuring anything: it is choosing, on your behalf, which of the eight you
+meant. The sharpest case is in this tree — `pairing` is defined by *four* BN254
+files, so the one rule whose subject is `pairing` is exactly the rule whose
+subject is ambiguous. A first cut of the rule for row 16 counted `pub fn` by bare
+name across files and found 32 uncalled entries, of which **8 were false
+negatives** from name collisions, `pairing` among them: it would have declared a
+broken exported pairing to be reachable, and a gate that certifies safety it has not
+checked is worse than a gate that fails, because nobody goes looking for it.
+
+The corollary, and it is about instruments rather than searches: **an instrument
+must report that it looked and found nothing, distinctly from reporting that it
+looked.** "No results" is a question, not an answer, and the difference is one
+`if`. This is also where a shallow-copy precondition becomes a lie — "exempt
+because I found it in one place" when there are three, with the gate counting the
+exemptions it used and never checking that the count is the right one.
+
 **A check that cannot fail is not a check. Give it an input that would break
 it, or mark it as decorative and stop citing it.** The instrument is a mutation:
 a mutation is a check asked a question it could answer wrongly, and the mutation
