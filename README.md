@@ -82,7 +82,7 @@ parallel (no deps) · serialization (no deps)
 | [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 89 |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 97 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 98 |
-| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate, BN254 tower (production `pairing()` = sparse Miller + split final exp) and BN254 direct degree-12; all covered by bilinearity/EIP-197 KAT tests | 58 |
+| [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate (EIP-197 vector), BN254 tower (sparse Miller + split final exp) and BN254 direct degree-12. **The BN254 `pairing()` in `bn254.zig` is not bilinear — see [ZA-2026-007](SECURITY.md); neither BN254 implementation has an external known-answer vector** | 58 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 16 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 20 |
 | [poly](libs/poly/) | Dense univariate polynomials over finite fields | 32 |
@@ -104,10 +104,37 @@ parallel (no deps) · serialization (no deps)
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 8. `kzg`
 > was added in v0.2.2 as the 17th library.
 
-## API Status
+## Documentation
 
-| Status | Libraries and APIs |
-|--------|--------------------|
+Thirty-three Markdown documents are tracked in this repository, and this table is
+the only place all of them appear. It is derived from `git ls-files '*.md'` rather
+than maintained by hand, because the difference it removes is the difference
+between "sixteen libraries and here they are" and "thirty-three documents and go
+looking for them".
+
+| Document | What it is for |
+|----------|----------------|
+| [AGENTS.md](AGENTS.md) | Working rules for agents in this tree, and the reasoning behind each gate |
+| [SECURITY.md](SECURITY.md) | Advisories ZA-2026-001..007, the security model, and what is explicitly *not* audited |
+| [AUDIT.md](AUDIT.md) | The audit register: 16 rows, 11 closed, 5 open, 0 decisions. Checked by `zig build audit-check` |
+| [TODO.md](TODO.md) | Open work items at the workspace level |
+| [DESIGN.md](DESIGN.md) | Design decisions and their reasons |
+| [CHANGELOG.md](CHANGELOG.md) | Releases, newest first. Headers are checked by `zig build changelog-check` |
+| [docs/architecture.md](docs/architecture.md) | How the libraries fit together, dependency graph, build steps |
+| [docs/requirements.md](docs/requirements.md) | What each library must satisfy, what sustains each claim, and the mutation log |
+| [docs/assert-ledger.md](docs/assert-ledger.md) | Every `std.debug.assert` in the tree and why it is allowed to stay |
+| [docs/pending-items.md](docs/pending-items.md) | Where each of the thirteen pre-rewrite items went, and the custody of the record branch |
+| [docs/roadmap-2026-09-25.md](docs/roadmap-2026-09-25.md) | The pre-rewrite roadmap, verbatim and checksummed. A record, not a live list |
+| [draft/INTEGRATOR-REPLY.md](draft/INTEGRATOR-REPLY.md) | Unsent draft, quoting release figures |
+| [libs/field/TODO.md](libs/field/TODO.md) | Open work inside `zig-field` |
+| [libs/field/AGENTS.md](libs/field/AGENTS.md) | Working rules specific to `zig-field` |
+| [libs/field/CHANGELOG.md](libs/field/CHANGELOG.md) | `zig-field` releases, independent of the workspace version |
+| One `README.md` per library | Sixteen of them, next to their `build.zig`; each carries that library's own test count |
+
+## Component Maturity
+
+| Maturity | Libraries and APIs |
+|----------|--------------------|
 | **Production candidate** | `algebra-traits`, `bigint`, `field`, `curve`, `hash`, `rng`, `transcript`, `merkle`, `ntt`, `poly`, `linalg`, `parallel`, `serialization` |
 | **Security-sensitive / experimental** | `binary-field`, `pairing`, `fri`, `kzg`; review `SECURITY.md`, threat models, and deployment parameters before use |
 | **Demo only** | Files under `examples/` and library `main.zig` programs; they are not protocol implementations or audited deployments |
