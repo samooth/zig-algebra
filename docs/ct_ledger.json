@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "purpose": "Constant-time claims are judgements. A judgement is not auditable; a count is. This ledger records the count, who judged it, where that judgement came from, and whether the function was reachable in an emission at all.",
+  "how_to_reproduce": "See each entry's emit command. Every entry names the optimization mode and the target, because the count is a property of that triple and not of the function.",
+  "withdrawn": [
+    {
+      "claim": "field.BigField has 18 conditional jumps, 53 branchless selects, 13 of them data-dependent",
+      "why_withdrawn": "It came from tools/asm_probe.py's first version, whose function-boundary parser matched only 71 of the 428 functions in a real emission, so bodies from several functions were counted as one. Re-run with the committed tool, whose boundaries come from the '.type ...,@function' directives, and no function named field.BigField appears in any mode: at ReleaseSafe the 256-bit field's whole multiplication survives as montgomery.Montgomery(<modulus>).mul and every other operation is inlined into the caller. The number was never about a function.",
+      "the_error_below_this": "The type and the backend were confused in the same step. field.zig:83-86 returns SmallField below 2^64 and BigField above it, and BigField then delegates to Montgomery arithmetic internally, so 'the wide backend is Montgomery, not BigField' is true about the technique and false about the type. A correction that arrives before the text does, is worth more than a correction that arrives after.",
+      "also": "The 13 data-dependent figure came from a form-based classifier that could not exist in a correct form. It read the digit in 'al' inside 'test al, 1' as a constant comparison, it missed the test governing a jump by looking only one line back, it flagged a correct carry mask-select chain as data-dependent, and it refused 'cmp r14, 6' for not being all-constant. The case that settles it is 'test r8, 8', where 8 is a mask on the value and no rule over operand shape can tell it from a literal, because in assembly it is a question of what the instruction means in the dataflow and not of how it is written."
+    }
+  ],
+  "entries": [
+    {
+      "function": "montgomery.Montgomery(<modulus>).mul",
+      "subject": "Montgomery CIOS multiplication, the multiplication path for every field of 64 bits or more",
+      "conditional_jumps": 1,
+      "branchless": 6,
+      "judgment": "branchless in the sense this codebase uses it: no conditional branch on a data value, and the six selects carry the final conditional move. One jump remains, outside the dataflow of the value.",
+      "provenance": "read by hand at 6aed980 and re-measured by tools/asm_probe.py after the tool was reduced to counting only; the two agree",
+      "reachability": "emitted. This is the only operation of the 256-bit probe that survives inlining at ReleaseSafe or ReleaseFast, so it is also the only one the count can speak about.",
+      "object": {
+        "modulus": "0x73EDA753299D7D483339D80809A1D80553BDA402FFFE5BFEFFFFFFFF00000001, 256-bit prime, so Field() takes the BigField branch",
+        "target": "native x86_64",
+        "zig": "0.16.0",
+        "modes_measured": "ReleaseSafe 376 functions, ReleaseFast 8, ReleaseSmall 8 with the multiplication inlined away entirely",
+        "not_measured": "Debug, which emits no assembly for this probe; latency; a flag read after a setcc; the guard that chooses between CIOS paths",
+        "tool": "tools/asm_probe.py --json, which counts and does not classify"
+      }
+    }
+  ],
+  "not_covered": "47 declarations in libs/field and elsewhere describe an operation as constant-time with no count behind them. This ledger covers the one that was measured. The rest are AUDIT.md row 13, still open, and they are the reason this file is a ledger and not a verdict."
+}

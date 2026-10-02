@@ -37,6 +37,25 @@ jobs:
           version: 0.16.0
       - run: zig build assert-check
 
+  ct-ledger:
+    # The gate for the constant-time judgements. Every docstring in this workspace
+    # that says "branchless" is a judgement about a secret, and a judgement is not
+    # auditable. What is auditable is the count behind it, where the count came
+    # from, and whether the function was even reachable in an emission -- so this
+    # job fails when any of those five is missing or blank. It does not classify
+    # jumps; four attempts at that from the instruction text alone were each wrong
+    # in a direction the previous one was not, and 'test r8, 8' is the case that
+    # settles it. Row 13 of AUDIT.md, which is why the ledger covers one function
+    # and not the forty-seven claims it would take to close that row.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      - run: zig build ct-check
+
   audit-ledger:
     # The gate for AUDIT.md. A register of open items fails silently, so this
     # one requires a closing criterion on every row, an owner on every decision

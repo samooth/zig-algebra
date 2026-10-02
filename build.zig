@@ -300,6 +300,23 @@ pub fn build(b: *std.Build) void {
         audit_ledger.dependOn(&verify.step);
     }
 
+    // The constant-time judgements, as a gate. A count says how many conditional
+    // jumps a function emits; it does not say whether they depend on a secret, and
+    // nothing here can decide that from the instruction stream -- it takes a person
+    // reading the dataflow. So docs/ct_ledger.json records the count, the judgement,
+    // the judgement's provenance, the reachability, and the object the count is a
+    // property of, and this step fails on any of those missing or blank. It does
+    // not classify anything, and the withdrawn section keeps a retracted figure
+    // visible with its cause instead of deleting it.
+    const ct_ledger = b.step("ct-check", "Verify the constant-time judgement ledger holds up");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/ct_verify.py"));
+        verify.addArgs(&.{ "--ledger", "docs/ct_ledger.json" });
+        verify.has_side_effects = true;
+        ct_ledger.dependOn(&verify.step);
+    }
+
     // Every test count written in prose, against the measured one. This happened
     // four times in one week: each time tests were added, the root total and the
     // per-library figures had to move together across the root README, seventeen
