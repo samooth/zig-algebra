@@ -468,10 +468,8 @@ loop, not in the exponentiation or in the point arithmetic feeding it.
 
 **Current state, stated as a sequence.** The defect is asserted, not fixed. A test
 in `bn254.zig` pins the wrong behaviour on purpose and is named `DEFECT MARKER`;
-it fails when the Miller loop is fixed, and must be inverted at that moment. There
-is still no external known-answer vector for BN254 anywhere in this tree, in any
-of its three implementations, so even a corrected pairing could not yet be pinned
-to a known answer here. `AUDIT.md` row 15 carries the closing criterion.
+it fails when the Miller loop is fixed, and must be inverted at that moment.
+`AUDIT.md` row 15 carries the closing criterion.
 
 **Isolated to one file, by differential against the other two.** This tree has
 three BN254 implementations, and the same property test run against each one gives:
@@ -498,12 +496,39 @@ advisory: the ring is degree 24 on purpose, because `mu_r` sits inside `Fp12` wh
 sits inside `Fp24`, so a value computed there *is* the Fp12 pairing value in a
 larger representation. Bilinearity holds there. It does not by itself say the value
 is the right one, because a bilinear map into the wrong group is still a bilinear
-map. That is what an external vector settles and what none of the three has.
+map. That is what an external vector settles, and `bn254_tower.zig` has had one.
 
-That also corrects an earlier sentence of this advisory: it said neither BN254
-implementation has an external known-answer vector, which is true and is *not* the
-same as saying all three are wrong. Two satisfy the property; none has a vector
-from outside this repository.
+**What was already in the tree, and was not looked for.** `bn254_tower.zig`
+carries a test named `known-answer vs py_ecc reference` (`bn254_tower.zig:895`)
+with two hardcoded `Fp12` values, committed at `5bbd59e` — before this advisory
+was drafted — and the paragraph above did not know it existed. It was re-derived
+rather than trusted: a fresh py_ecc 8.0.0 run (both `py_ecc.bn128` and
+`py_ecc.optimized_bn128`, agreeing coefficient for coefficient in
+`Fq[t]/(t^12 - 18 t^6 + 82)`), converted into tower coordinates through the
+isomorphism `t -> w`. That map is valid because `w^6 = v^3 = 9+u` satisfies
+`(9+u)^2 - 18(9+u) + 82 = 0`, so `w` is a root of the same degree-12 polynomial,
+and it was checked as a ring homomorphism on random elements
+(`convert(A) * convert(B) == convert(A*B)`), so it cannot be right by luck. The
+converted value lies in `mu_r` (`X^r == 1`), equals `pairing(G1, G2)` exactly,
+and `want_twothree == want_g1g2^6` matches `e(2P, 3Q) = e(P, Q)^6`. The vector
+was also seen to reject: tampering one digit of `want_g1g2` turns the test red at
+`bn254_tower.zig:915`, one failure of 62, exit code 1. So `bn254_tower.zig` is
+pinned to an implementation independent of this repository, and `bn254.zig` and
+`bn254_direct.zig` still have no external vector each. For `bn254.zig` the
+acceptance test for the fix already exists in that form, because its tower uses
+`XI = 1/(9+u)` and the same py_ecc vector converts by `t^k -> XI^-2 w^(12-k)`.
+
+Two earlier sentences of this advisory are corrected by the paragraph above: this
+one first said neither BN254 implementation has an external known-answer vector,
+then that none of the three has one, and both were false for `bn254_tower.zig`.
+They are kept visible here rather than deleted, because the error was not a typo —
+it was an advisory about untested code that did not search the tree for tests. The
+first attempt to check it also produced a false mismatch, from hand-copying the
+76-digit constants into a scratch script: two digits were dropped and the
+comparison failed coherently, which is the failure mode where a wrong answer looks
+like a finding. The constants were then parsed from the file instead of retyped,
+and it matched. A comparison is only as good as the object it was fed, and the
+object was a transcription.
 
 **Who this reaches.** Only a caller that calls `bn254.zig`'s `pairing()` directly.
 Nothing in this workspace calls it: `bls12_381.zig` has its own `pairing`, and
