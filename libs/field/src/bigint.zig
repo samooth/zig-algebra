@@ -86,10 +86,19 @@ pub fn add(comptime n: usize, a: *const [n]u64, b: *const [n]u64, out: *[n]u64) 
 pub fn sub(comptime n: usize, a: *const [n]u64, b: *const [n]u64, out: *[n]u64) u64 {
     var borrow: u64 = 0;
     for (0..n) |i| {
-        const diff = a[i] -% b[i];
-        out[i] = diff - borrow;
+        // Both borrow terms are computed *before* `out[i]` is written, and the
+        // subtraction that produces it wraps. It used to be
+        //     out[i] = diff - borrow;
+        // read first, with `b2` derived afterwards -- a checked subtraction whose
+        // overflow was known one statement later. In Debug that is an "integer
+        // overflow" panic on exactly the inputs the borrowing branch exists for;
+        // in ReleaseFast it wraps and the result is still right, so the two modes
+        // disagreed about whether the call had succeeded. Order and `-%` make the
+        // function total.
         const b1: u64 = if (a[i] < b[i]) 1 else 0;
+        const diff = a[i] -% b[i];
         const b2: u64 = if (diff < borrow) 1 else 0;
+        out[i] = diff -% borrow;
         borrow = b1 + b2;
     }
     return borrow;
@@ -172,6 +181,30 @@ test "bigint cmp / add / sub" {
     const borrow = sub(n, &a, &b, &diff);
     try std.testing.expectEqual(@as(u64, 0), borrow);
     try std.testing.expectEqual(a, diff);
+}
+
+test "bigint sub: a borrow that reaches a zero difference limb" {
+    // This is the case the old statement order got wrong, and the subtraction
+    // above cannot reach it: `b` is all zeros there, so no borrow is ever
+    // generated. With the limbs arranged so that a limb cancels exactly while a
+    // borrow is arriving, `diff` is 0 and the incoming borrow is 1, and the old
+    // `out[i] = diff - borrow` -- evaluated before `b2` showed the subtraction
+    // was in range -- panicked with "integer overflow" in Debug.
+    const n = 4;
+    const a = [n]u64{ 0, 5, 0, 0 };
+    const b = [n]u64{ 1, 5, 0, 0 };
+    var out: [n]u64 = undefined;
+
+    // a - b is negative, so every limb saturates and the final borrow is 1.
+    try std.testing.expectEqual(@as(u64, 1), sub(n, &a, &b, &out));
+    try std.testing.expectEqual([n]u64{ 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff }, out);
+
+    // 2^64 - 1: a borrow crosses the first limb and lands on a limb that is
+    // already zero, which is the other way to reach a zero difference.
+    const c = [n]u64{ 0, 1, 0, 0 };
+    const d = [n]u64{ 1, 0, 0, 0 };
+    try std.testing.expectEqual(@as(u64, 0), sub(n, &c, &d, &out));
+    try std.testing.expectEqual([n]u64{ 0xffffffffffffffff, 0, 0, 0 }, out);
 }
 
 test "bigint shl / shr round-trip" {
