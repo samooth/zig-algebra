@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     });
     const field_mod = field_dep.module("zig-field");
 
-    _ = b.addModule("zig-fri", .{
+    const fri_mod = b.addModule("zig-fri", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -53,4 +53,23 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    // A consumer, so the public surface is exercised rather than declared. The
+    // eight `main.zig` files in this workspace exist for this reason: an example
+    // is the cheapest way to find out that a public name does not resolve, which
+    // is how `libs/hash/main.zig` carried an interface nobody compiled.
+    const example = b.addExecutable(.{
+        .name = "fri-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zig-fri", .module = fri_mod },
+                .{ .name = "zig-transcript", .module = transcript_mod },
+                .{ .name = "zig-field", .module = field_mod },
+            },
+        }),
+    });
+    b.installArtifact(example);
 }

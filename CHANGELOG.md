@@ -61,6 +61,36 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Added: the last two examples, `zig-fri` and `zig-kzg`, completing all
+  seventeen.** Both check properties rather than printing values, and both pair
+  every negative with the honest case -- a test that only checks the tamper would
+  pass against a verifier that rejects everything.
+
+  `fri` asserts an honest proof verifies and then that a changed evaluation, a
+  different domain label, and a full-domain random imposter are all rejected. That
+  last one is the case v1 accepted 16 of 16, which is ZA-2026-001. It also shows
+  `Config.validate()` rejecting five malformed configurations, since the degree
+  relation lives there and not in `rounds()` -- which is easy to get backwards, and
+  getting it backwards accepts a config that cannot describe a proof.
+
+  `kzg` asserts a correct opening verifies, and that a wrong claimed value, an
+  off-curve commitment, an identity commitment, and a degree past the setup are all
+  rejected. The off-curve and identity cases matter specifically: those are the two
+  guards `docs/requirements.md` recorded as dead code, reachable from nothing in the
+  tree. An example is what makes a guard reachable, which is the argument for having
+  one per library. It also opens with and closes on the reason the setup is
+  labelled tests-only -- `tau` is in the source, so the scheme is not binding.
+- **Fixed: `libs/kzg/build.zig.zon` was missing its `zig-algebra-traits`
+  dependency.** `build.zig` called `b.dependency("zig_algebra_traits", ...)` and the
+  manifest did not declare it, so `cd libs/kzg && zig build` panicked while the root
+  build worked -- it passes `traits_mod` in directly. A library that builds from the
+  root and not from itself is the same defect as a `main.zig` nothing compiles, one
+  level out. Introduced when `evaluate` converged onto the canonical Horner, so the
+  commit that added the dependency edge also adds its declaration.
+- Docs: `docs/assert_ledger.json` regenerated for the `std.debug.assert` that went
+  with `zig-field`'s deleted Merkle tree -- 104 gross and 50 prose to 103 and 49. It
+  was prose-only, so it had no entry in the classified list and the ledger's own
+  totals are what moved.
 - **Added: `zig-curve` example**, the eighth of seventeen. It checks the property a
   curve library actually has to satisfy rather than printing points: the windowed
   Jacobian ladder, repeated addition, and the affine formulas must all land on the

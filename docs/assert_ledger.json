@@ -750,5 +750,5 @@
   "scanner": "scripts/assert_scan.py",
   "scanner_version": 1,
   "schema": 1,
-  "source_commit": "053d9ca2315c79c1af9ff92bc6cdca388b56794e"
+  "source_commit": "REPLACE_WITH_ORIGIN_COMMIT"
 }

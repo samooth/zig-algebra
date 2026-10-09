@@ -4,6 +4,7 @@
     .fingerprint = 0x77fb6611f26e6d,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
+        .zig_algebra_traits = .{ .path = "../algebra-traits" },
         .zig_field = .{ .path = "../field" },
         .zig_curve = .{ .path = "../curve" },
         .zig_pairing = .{ .path = "../pairing" },

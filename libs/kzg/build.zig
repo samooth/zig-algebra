@@ -53,4 +53,18 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    const example = b.addExecutable(.{
+        .name = "kzg-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "zig-kzg", .module = kzg_mod },
+                .{ .name = "zig-curve", .module = curve_mod },
+            },
+        }),
+    });
+    b.installArtifact(example);
 }
