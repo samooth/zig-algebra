@@ -53,7 +53,14 @@ ROOT_TOTAL_PATTERNS = [
     ("AGENTS.md", r"\((\d+) total across all \d+ test binaries"),
     ("AGENTS.md", r"root `zig build test` = (\d+);"),
     ("AGENTS.md", r"totals sum to (\d+), which now"),
-    ("AGENTS.md", r"pairing 62, parallel 7, poly 34, rng 27, serialization (\d+),"),
+    # The AGENTS.md per-library sentence. This is the one pattern that names
+    # other libraries' numbers as context instead of deriving them, and the cost
+    # was paid on 2026-10-09: the baseline moved rng 27 -> 28 while this
+    # sentence kept 27, the pattern went on matching the stale sentence, and the
+    # gate reported green while the document disagreed with the measurement it
+    # was supposed to agree with. All four numbers move together or the gate
+    # starts lying again.
+    ("AGENTS.md", r"pairing 65, parallel 7, poly 34, rng 28, serialization (\d+),"),
     # These two were missing from this list and were the worst in the tree:
     # DESIGN.md said the root step executes 391 tests, and docs/architecture.md
     # said 423 in one place and 583 in another, against a measurement of 588. A gate

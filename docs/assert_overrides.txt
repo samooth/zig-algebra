@@ -14,3 +14,4 @@
 # classification, and the gate fails on any of them.
 
 libs/bigint/src/bigint.zig internal subMag requires |a| >= |b|; all three callers (the cmp-then-subtract branches and the division remainder) establish that by control flow, never from caller input
+libs/poly/bench/mul.zig internal mulKaraSlice's two length preconditions (out >= la+lb-1, pool >= 2w+3pw) are established by the benchmark harness that sizes the output and the pool, never by caller input

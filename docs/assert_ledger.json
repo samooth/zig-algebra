@@ -1,5 +1,5 @@
 {
-  "code_occurrences": 54,
+  "code_occurrences": 104,
   "counts_by_file_kind": [
     {
       "count": 1,
@@ -37,6 +37,26 @@
       "kind": "fixture"
     },
     {
+      "count": 7,
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 7,
+      "file": "libs/curve/tests/bn254_test.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 20,
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 14,
+      "file": "libs/curve/tests/pasta_test.zig",
+      "kind": "fixture"
+    },
+    {
       "count": 1,
       "file": "libs/field/src/bigint.zig",
       "kind": "comptime"
@@ -58,6 +78,16 @@
     },
     {
       "count": 1,
+      "file": "libs/field/tests/field_test.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 1,
+      "file": "libs/field/tests/simd_test.zig",
+      "kind": "fixture"
+    },
+    {
+      "count": 1,
       "file": "libs/hash/src/poseidon.zig",
       "kind": "comptime"
     },
@@ -72,20 +102,20 @@
       "kind": "comptime"
     },
     {
-      "count": 2,
-      "file": "libs/pairing/src/bn254.zig",
-      "kind": "comptime"
-    },
-    {
       "count": 4,
       "file": "libs/pairing/src/tower.zig",
       "kind": "comptime"
+    },
+    {
+      "count": 2,
+      "file": "libs/poly/bench/mul.zig",
+      "kind": "internal"
     }
   ],
   "counts_by_kind": {
-    "comptime": 23,
-    "fixture": 30,
-    "internal": 1
+    "comptime": 21,
+    "fixture": 80,
+    "internal": 3
   },
   "entries": [
     {
@@ -281,6 +311,294 @@
       "reason": "REPLACE"
     },
     {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bls12_381_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/bn254_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/hash_to_curve_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/curve/tests/pasta_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
       "file": "libs/field/src/bigint.zig",
       "fn": "limbsToInt",
       "kind": "comptime",
@@ -353,6 +671,18 @@
       "reason": "REPLACE"
     },
     {
+      "file": "libs/field/tests/field_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/field/tests/simd_test.zig",
+      "fn": "<module>",
+      "kind": "fixture",
+      "reason": "REPLACE"
+    },
+    {
       "file": "libs/hash/src/poseidon.zig",
       "fn": "hash",
       "kind": "comptime",
@@ -372,18 +702,6 @@
     },
     {
       "file": "libs/pairing/src/bls12_381.zig",
-      "fn": "<module>",
-      "kind": "comptime",
-      "reason": "REPLACE"
-    },
-    {
-      "file": "libs/pairing/src/bn254.zig",
-      "fn": "<module>",
-      "kind": "comptime",
-      "reason": "REPLACE"
-    },
-    {
-      "file": "libs/pairing/src/bn254.zig",
       "fn": "<module>",
       "kind": "comptime",
       "reason": "REPLACE"
@@ -411,16 +729,26 @@
       "fn": "etaOnce",
       "kind": "comptime",
       "reason": "REPLACE"
+    },
+    {
+      "file": "libs/poly/bench/mul.zig",
+      "fn": "mulKaraSlice",
+      "kind": "internal",
+      "reason": "REPLACE"
+    },
+    {
+      "file": "libs/poly/bench/mul.zig",
+      "fn": "mulKaraSlice",
+      "kind": "internal",
+      "reason": "REPLACE"
     }
   ],
-  "gross_occurrences": 104,
-  "prose_only_occurrences": 50,
+  "gross_occurrences": 153,
+  "prose_only_occurrences": 49,
   "root": "libs",
-  "scan_args": [
-    "--src-only"
-  ],
+  "scan_args": [],
   "scanner": "scripts/assert_scan.py",
   "scanner_version": 1,
   "schema": 1,
-  "source_commit": "c2c9bbf5cdd086806fef89bffad1adc7803fece0"
+  "source_commit": "053d9ca2315c79c1af9ff92bc6cdca388b56794e"
 }

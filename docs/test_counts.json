@@ -1,8 +1,8 @@
 {
   "measured": "2026-10-09",
   "command": "cd libs/<name> && zig build test --summary all",
-  "total": 603,
-  "note": "The root `zig build test` runs the same 29 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`. Recent movements: `merkle` 20 -> 26 for the Bitcoin vectors, `poly` 32 -> 34 for the Horner parity test, `field` 91 -> 89 when its own Merkle tree was deleted and its four tests moved onto `zig-merkle`, `algebra-traits` 8 -> 9, `hash` 22 -> 23 and `rng` 27 -> 28 for three `pub` bodies that nothing called.",
+  "total": 606,
+  "note": "The root `zig build test` runs the same 29 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`. Recent movements: `merkle` 20 -> 26 for the Bitcoin vectors, `poly` 32 -> 34 for the Horner parity test, `field` 91 -> 89 when its own Merkle tree was deleted and its four tests moved onto `zig-merkle`, `algebra-traits` 8 -> 9, `hash` 22 -> 23 and `rng` 27 -> 28 for three `pub` bodies that nothing called, `pairing` 62 -> 65 for the BN254 py_ecc known-answer vector and the two conversion checks it rests on.",
   "per_library": {
     "algebra-traits": 9,
     "bigint": 28,
@@ -15,7 +15,7 @@
     "linalg": 13,
     "merkle": 26,
     "ntt": 16,
-    "pairing": 62,
+    "pairing": 65,
     "parallel": 7,
     "poly": 34,
     "rng": 28,
