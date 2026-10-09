@@ -648,30 +648,66 @@ test counts and cannot see any of it, because the workspace version is a string
 and not a number it models. A grep for the manifest's value covers it in a few
 lines, and until one exists the rule is read-the-manifest.
 
-### Before proposing performance work, name the consumer
+### "No consumer inside this repository" is not a finding — seven of seventeen are like that
 
-This is requirement 15 in `docs/requirements.md` and it is worth restating where
-an agent will actually meet it, because it was violated here in the same session
-that wrote it down.
+A first version of this section read: *before proposing performance work, name the
+consumer*. It then argued that `zig-poly`'s missing Karatsuba was not worth doing
+because nothing in this repository imports `zig-poly`. That argument is wrong, and
+the measurement that refutes it took one command:
 
-`zig-poly`'s `mul` is O(n²) with no Karatsuba, and an external formalized result
-now warrants sub-cubic over every positive characteristic. That looked like a
-clear piece of work. It is not: **`zig-poly` has no consumer in this repository.**
-Nothing outside its own `root.zig`, its own `main.zig` and its own `build.zig`
-names it, and the polynomial arithmetic the ecosystem actually performs is
-duplicated inline in at least four places, three of them over runtime-length
-slices while `zig-poly` exposes a comptime-sized array. Optimising it would have
-made nothing faster for anybody.
+| library | internal consumers |
+|---|---|
+| algebra-traits, field | 7 each |
+| hash | 3 |
+| merkle, curve, parallel | 2 each |
+| bigint, ntt, pairing, transcript | 1 each |
+| **rng, binary-field, poly, linalg, fri, kzg, serialization** | **0** |
 
-The measurement is in `docs/poly-mul-measurement.md` and it stands on its own —
-Karatsuba at crossover 32 is 1.2–1.4× from degree 64 and 1.9–2.4× at 256 — but the
-finding that decides the question was the consumer, not the arithmetic. This is
-the third time the shape has appeared: the `main.zig` files nobody compiled, a
-public precondition in `zig-bigint` nothing referenced, and `zig-rng` wired into
-the build at four places and imported nowhere, which the 0.6.0 changelog names
-outright: *"the wiring is not the consumer."* So the question is not "is this slow"
-but **"who calls it, and would they notice."** If the answer is nobody, the work is
-a convergence, not an optimisation.
+Seven of seventeen have none. `linalg` and `serialization` are in that set and
+nobody would argue they should be removed — they are general-purpose utilities
+whose consumers are outside this tree, which is the whole point of a modular
+ecosystem. So "no internal consumer" is the **design**, not a defect, and using it
+to decline work would decline half the repository on a criterion none of it
+signed up for.
+
+What the original argument got right by accident is the distinction below, and it
+is the stronger point: an internal-consumer count is a **symptom**, never a
+reason. The thing worth asking is whether the library's API covers the use it
+exists for.
+
+### The API is what the duplication is telling you
+
+`zig-poly` exposes `Polynomial(F, max_degree)` — a comptime-sized array, stack
+only, `max_degree` a compile-time parameter. Every real call site in this tree
+holds a runtime-length slice, so four of them wrote their own evaluation rather
+than force their data into a shape the library does not offer:
+
+| Site | Function | Operates on |
+|---|---|---|
+| `libs/algebra-traits/src/traits.zig:1066` | `evalPolyHorner` | `[]const F` |
+| `libs/binary-field/src/sumcheck.zig:244` | `evalPoly` | `[]const F`, private |
+| `libs/binary-field/src/pack.zig:59` | `evalPoly` | `[]const F`, private |
+| `libs/kzg/src/root.zig:106` | `evaluate` | `[]const Fr` |
+
+`libs/poly/tests/horner_parity.zig` runs the reachable ones against each other so
+they cannot drift apart unnoticed. They agree today, so this is latent divergence,
+not a live bug — but the fact that they exist at all is the finding: **for a
+general-purpose library, "callers route around you" is an API report, and it is
+louder than any internal-consumer count.** The four copies are three names for one
+operation, two of them private and therefore invisible to any cross-library test.
+
+So the question before optimising a general-purpose library is not "who calls it"
+but **"does the API cover the shapes its callers actually hold, and is the regime
+they hold them in the regime I am about to optimise for?"** `zig-poly` answers no
+to the first and "degrees up to 256 at 1.2–2.4×, if anyone holds them" to the
+second — which makes the convergence the prerequisite, not an alternative to it.
+
+The one place the internal-consumer question *does* bite is the opposite of the
+one first written: a library wired into the build at four places and imported
+nowhere is not a library with no consumers, it is a library whose wiring is not
+its consumer. That is the 0.6.0 changelog's finding for `zig-rng`, and it is about
+**wiring that looks like use**, not about general-purpose code with no internal
+caller.
 
 ### A measurement without a correctness control is not a measurement
 

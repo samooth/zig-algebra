@@ -61,6 +61,25 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- Docs: a correction to a rule this session added, which is worth keeping visible
+  rather than edited away. The rule read *before proposing performance work, name
+  the consumer*, and argued that `zig-poly`'s missing Karatsuba was not worth doing
+  because nothing here imports it. The refutation took one command: seven of the
+  seventeen libraries have **zero internal consumers** -- `rng`, `binary-field`,
+  `poly`, `linalg`, `fri`, `kzg`, `serialization` -- and `linalg` and
+  `serialization` are in that set with nobody arguing they should be removed. For a
+  modular ecosystem whose consumers are outside the tree, *no internal consumer* is
+  the design, not a defect, and the rule would have declined half the repository on
+  a criterion none of it signed up for.
+
+  What replaces it is stronger and was in the original argument by accident: an
+  internal-consumer count is a symptom, never a reason. The real finding is the
+  **API gap** the four duplicated Horner copies report -- `zig-poly` exposes a
+  comptime-sized array while every call site in this tree holds a runtime-length
+  slice, so four sites wrote their own evaluation rather than force their data into
+  a shape the library does not offer. For a general-purpose library, *callers route
+  around you* is an API report, and it is louder than any consumer count. The
+  measurement keeps its numbers and loses its conclusion.
 - Docs: `AGENTS.md` gains four rules, each from a failure in the session that
   wrote it rather than from a principle. **Before proposing performance work,
   name the consumer** -- `zig-poly` has no consumer in this repository and the

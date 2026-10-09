@@ -129,49 +129,68 @@ where four call sites already work, would not.
 at 64, 1.45× at 128, 1.96× at 256. Nothing here contradicts the sub-cubic
 warrant; the asymptotic case simply starts above what this library exercises.
 
-## The finding that decides the question
+## The finding that decides the question, restated
 
-**Nothing in this repository consumes `zig-poly`.** The only files that name it
-are its own `src/root.zig`, its own `src/main.zig` example, and its own
-`build.zig`. The polynomial arithmetic the ecosystem actually performs is
-duplicated inline in at least four places:
+The first version of this section concluded: *nothing in this repository consumes
+`zig-poly`, so do not optimise it.* That conclusion is wrong, and the reason is
+worth recording because the measurement that refuted it took one command.
 
-| Site | Function | Signature |
+Seven of the seventeen libraries have zero internal consumers:
+
+| library | internal consumers |
+|---|---|
+| algebra-traits, field | 7 each |
+| hash | 3 |
+| merkle, curve, parallel | 2 each |
+| bigint, ntt, pairing, transcript | 1 each |
+| rng, binary-field, **poly**, linalg, fri, kzg, serialization | **0** |
+
+`linalg` and `serialization` sit in the zero set alongside `poly`, and nobody
+would argue either should be removed: they are general-purpose utilities whose
+consumers are outside this tree, which is the design of a modular ecosystem. So
+*"no internal consumer"* is the **design**, not a defect, and citing it to decline
+work would decline half the repository on a criterion none of it signed up for.
+The measurement stands; the conclusion drawn from it was the wrong shape.
+
+**What the four copies actually report is an API gap, not an absence of
+consumers.** `zig-poly` exposes `Polynomial(F, max_degree)` on a comptime-sized
+array. Every real call site in this tree holds a runtime-length slice, so four of
+them wrote their own evaluation rather than force their data into a shape the
+library does not offer:
+
+| Site | Function | Operates on |
 |---|---|---|
 | `libs/algebra-traits/src/traits.zig:1066` | `evalPolyHorner` | `[]const F`, with `FieldTrait(F).assert()` |
 | `libs/binary-field/src/sumcheck.zig:244` | `evalPoly` | `[]const F`, private |
 | `libs/binary-field/src/pack.zig:59` | `evalPoly` | `[]const F`, private |
 | `libs/kzg/src/root.zig:106` | `evaluate` | `[]const Fr` |
 
-The four are functionally equivalent today — all low-first, all iterating down,
-all agreeing on `len == 0` — so this is latent divergence rather than a live bug.
-But they are three names for one operation, none of them tested against the
-others, and the reason they exist is the compatibility wall above: `zig-poly`
-exposes `Polynomial(F, max_degree)` on a comptime-sized array while every real
-caller holds a slice of runtime length.
-
-That is the same shape the 0.6.0 changelog records for `zig-rng` — *"the wiring
-is not the consumer"* — and the one `AGENTS.md` §0 records for `libs/hash`, where
-two copies of an interface had already diverged in their error set.
+They agree today (`libs/poly/tests/horner_parity.zig` checks the reachable three),
+so this is latent divergence rather than a live bug. The finding is that they
+exist at all: **for a general-purpose library, "callers route around you" is an
+API report, and it is louder than any internal-consumer count.** Four copies are
+three names for one operation, two of them private and therefore invisible to any
+cross-library test.
 
 ## Conclusion
 
-**The measurement does not justify the work, and the reason is not performance.**
-Karatsuba at crossover 32 is 1.3–2.0× at the degrees where it wins, and the
-warrant for it is externally verified. But:
+**The measurement stands on its own; what it does not do is settle whether the
+work is worth doing, because the arithmetic was never the question.**
 
-- `zig-poly` has no consumers, so no caller gets faster.
-- Its tests use degrees 0, 8, 16 and 64 — the range where the win is parity to
-  1.2×, with degree 64 the only clear case.
-- The gain that exists is mostly the representation, and harvesting it means
-  changing `Polynomial` for everyone, or giving `zig-poly` a slice-based entry
-  point that four other call sites would have to adopt.
+Karatsuba at crossover 32 is 1.13–1.23× against naive-over-slices from degree 64,
+1.34–1.45× at 128, and 1.86–2.04× at 256, against an externally verified warrant.
+Whether that matters depends entirely on the regime a general-purpose consumer
+would hold, and this repository does not know it — its own tests use degrees 0,
+8, 16 and 64, which is the range where the win is parity to 1.2×. So the honest
+statement is *conditional*: Karatsuba pays above degree ~64, and the crossover
+that pays is 32 rather than the textbook 8.
 
-The decision this measurement supports is therefore the opposite of the one it was
-run to test. If `zig-poly` is to be worth changing, the change is a slice-based
-evaluation (and product) with the four duplicated sites converging on it — which
-is requirement 15 in `docs/requirements.md`, *who consumes this, decided before it
-is written*. Optimising the multiplication is the second step, not the first.
+The prerequisite is therefore the API, not the optimisation: a slice-based
+evaluation and product, with the four duplicated sites converging on it, would
+make the measured regime reachable by anyone. That is a change to what `zig-poly`
+*offers*, and it is decided on its own merits — for a general-purpose library the
+question is whether the API covers the shapes its callers hold, not whether
+anybody inside this tree happens to hold them yet.
 
 ## How to re-derive these figures
 
