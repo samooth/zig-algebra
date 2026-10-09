@@ -1031,7 +1031,7 @@ carrying forward: **the wiring is not the consumer**, and a PRNG with no
 consumer is a PRNG that no test, review or downstream integration will ever
 look at, however correct it looks in isolation.
 
-## Advisory ZA-2026-008 — `zig-pairing`'s direct-ring BN254 `pairing()` is also not the pairing
+## Advisory ZA-2026-008 — `zig-pairing`'s direct-ring BN254 `pairing()` was also not the pairing (fixed 2026-10-09 at `85ad360`)
 
 **The second wrong answer, in the second file, found the same way.** Writing
 the known-answer vector for `libs/pairing/src/bn254_direct.zig` — which had
@@ -1083,11 +1083,34 @@ not, so the change was elsewhere in the file. At HEAD the file is
 `28964aca7a1d...` — it carries the tests, the marker and the corrected
 comments, and the function is unchanged.
 
-**Current state.** Unfixed. A test named `DEFECT MARKER` pins the wrong value
-on purpose and inverts to `expected.eql(actual)` when the loop and its extras
-are replaced; the vector it asserts against is from py_ecc 8.0.0, converted
-through an isomorphism checked as a ring homomorphism on random elements, with
-an in-test negative control. `AUDIT.md` row 15 carries the closing criterion.
+**Current state.** Fixed, at `85ad360` on 2026-10-09. The loop now runs `6x+2` and
+the two optimal-ate extra terms are present, in the same formulation
+`bn254_tower.zig` uses: the lines through `T` and `pi(Q)`, and through
+`T+pi(Q)` and `-pi^2(Q)`, computed densely on the embedded curve, with the
+Frobenius done by square-and-multiply over p's limbs because this ring's
+direct-degree-12 presentation has no cheap closed form for it (`pi(w)^12 =
+conj(9+u)`). What this module already had right, and what the advisory above
+was careful not to claim otherwise: the line factors sat in slots (0,2,6),
+exactly where its own untwist puts them, and its verticals were tracked. The
+missing pieces were the parameter and the two terms.
+
+The span this advisory named, *from `^pub fn pairing` to the first following
+line that is exactly `}`*, is byte-identical before and after the fix
+(`88931f6c53b0...`) — because that function is a one-line delegation, and the
+defect lived in what it called. The span that changed is the callee:
+
+```
+$ git show <rev>:libs/pairing/src/bn254_direct.zig \
+    | sed -n '/^pub fn millerLoopPairChecked/,/^}/p' | md5sum
+dda5142cbc9153dd05d49037bad7ecac   at v0.6.0, the defect
+1392b9ddd3a391a7a90e96c000c56687   at 85ad360, 2026-10-09, the fix
+a71b121246a03098ea937d64fa86f383   whole file at 85ad360, 2026-10-09
+```
+
+The DEFECT MARKER failed the day the fix landed, as its own comment said it
+would, and is now the assertion of the specification. All three BN254
+implementations in this tree are pinned to vectors from outside it, and
+`AUDIT.md` row 15 is closed on that basis.
 
 **The shape worth carrying.** ZA-2026-007 and this one are the same defect
 class in two files: a bilinear map into the right subgroup with the wrong
