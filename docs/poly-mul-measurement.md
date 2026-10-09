@@ -183,21 +183,3 @@ The crossover is a comptime constant at the top of that file; edit it and rebuil
 to reproduce the other two columns. The benchmark prints `NO` instead of a ratio
 if the Karatsuba result disagrees with the library's, so a green table is a table
 whose numbers meant something.
-
-## Committing this report
-
-`zig build counts-check` requires every tracked Markdown file to be either read
-by one of its patterns or named in `NOT_CHECKED` with a reason. This file is not
-currently tracked, so the entry naming it was reverted — the gate fails when
-`NOT_CHECKED` names a file that `git ls-files` does not return, which is the gate
-working in the second direction. The entry to add, in the same commit as this
-file:
-
-```python
-"docs/poly-mul-measurement.md": "a dated benchmark report; its figures are "
-"nanosecond timings and ratios from one machine, with their variability "
-"stated, and this gate models none of them",
-```
-
-`docs/relevance-scan-2026-10.md` needs the same treatment, with the reason given
-in that file's own closing section. Both entries and both files are one change.

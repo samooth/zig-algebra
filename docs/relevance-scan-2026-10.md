@@ -485,15 +485,6 @@ consumer.**"*
   retractions and an unreviewed catalogue. "Not formalized" is not "wrong"; it is
   "unverified by an instrument independent of its author" — the same distinction
   `AGENTS.md` §0 draws about a self-generated KAT.
-- If this file is committed, `zig build counts-check` will fail with
-  *"a tracked Markdown file that no pattern in this gate reads"*, and the fix is
-  one entry in `scripts/counts_verify.py`:
-  ```python
-  "docs/relevance-scan-2026-10.md": "a dated scan of an external corpus; its "
-  "figures are that corpus's own (manuscripts, formalizations, axioms) plus the "
-  "test count as measured on 2026-10-09, and this gate models none of them",
-  ```
-  That entry was written and then reverted, because the gate fails when
-  `NOT_CHECKED` names a file that is not tracked — which is the gate working in
-  the second direction, and worth recording rather than working around. The two
-  changes are one commit: the document and its reason.
+- `zig build counts-check` requires every tracked Markdown file to be either read
+  by one of its patterns or named in `NOT_CHECKED` with a reason. This file is the
+  second of those, for the reason printed on every passing run.

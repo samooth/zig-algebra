@@ -104,6 +104,18 @@ NOT_CHECKED = {
     "draft/INTEGRATOR-REPLY.md": "an unsent draft quoting release figures",
     "libs/field/CHANGELOG.md": "same reason as the root CHANGELOG.md; its two "
     "stale figures (85 tests) are entries about v0.3.0 and v0.4.0",
+    # Both entries below were written and then reverted before the files were
+    # tracked, because the gate fails when NOT_CHECKED names a file that
+    # `git ls-files` does not return. That is the gate working in the second
+    # direction, and working around it -- leaving the documents untracked and the
+    # skip list honest -- would have meant an index with no documents. The two
+    # halves are one commit.
+    "docs/poly-mul-measurement.md": "a dated benchmark report; its figures are "
+    "nanosecond timings and ratios from one machine, with their variability "
+    "stated, and this gate models none of them",
+    "docs/relevance-scan-2026-10.md": "a dated scan of an external corpus; its "
+    "figures are that corpus's own (manuscripts, formalizations, axioms) plus the "
+    "test count as measured on 2026-10-09, and this gate models none of them",
 }
 
 # Documents measured to cite no test count at all. Skipping them would be the weak
