@@ -52,6 +52,7 @@ var cross_step: ?*std.Build.Step = null;
 const non_test_sources = [_][2][]const u8{
     .{ "field", "benchmark.zig" },
     .{ "field", "fuzz.zig" },
+    .{ "poly", "horner_parity.zig" },
 };
 
 /// Wire every `tests/*.zig` of a library into `test_step`.
@@ -537,7 +538,7 @@ pub fn build(b: *std.Build) void {
     );
 
     // poly -> algebra-traits
-    _ = lib(
+    const poly_mod = lib(
         b,
         test_step,
         target,
@@ -546,6 +547,38 @@ pub fn build(b: *std.Build) void {
         "libs/poly/src/root.zig",
         &.{.{ "zig-algebra-traits", traits_mod }},
     );
+
+    // Does `zig-poly`'s O(n^2) product need Karatsuba, and at what degree?
+    //
+    // A step and not a test, for the reason `pow-bench` gives: a timing
+    // assertion in the suite is flaky by construction. Also a step rather than
+    // an unbuilt file, which is the whole point -- `bench/main.zig` is the one
+    // file in this tree that nothing opens, and adding a second would be
+    // repeating the mistake with the reason in the changelog.
+    //
+    // The benchmark needs `zig-field` (for the M31 and Goldilocks ends of the
+    // field-cost axis) and `zig-parallel` (for the portable clock), neither of
+    // which `zig-poly` itself depends on. They are attached here rather than
+    // added to `libs/poly`'s manifest so the library keeps the dependency edge
+    // it actually uses.
+    const poly_mul_bench_step = b.step("poly-mul-bench", "Measure Polynomial.mul naive vs Karatsuba (min of 7)");
+    {
+        const exe = b.addExecutable(.{
+            .name = "poly-mul-bench",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("libs/poly/bench/mul.zig"),
+                .target = target,
+                .optimize = .ReleaseFast,
+            }),
+        });
+        exe.root_module.addImport("zig-poly", poly_mod);
+        exe.root_module.addImport("zig-field", field_mod);
+        exe.root_module.addImport("zig-parallel", parallel_mod);
+        b.installArtifact(exe);
+        const run = b.addRunArtifact(exe);
+        run.step.dependOn(b.getInstallStep());
+        poly_mul_bench_step.dependOn(&run.step);
+    }
 
     // linalg -> algebra-traits, field
     _ = lib(
@@ -633,7 +666,7 @@ pub fn build(b: *std.Build) void {
     bench_step.dependOn(&run_bench.step);
 
     // kzg -> field, curve, pairing
-    _ = lib(
+    const kzg_mod = lib(
         b,
         test_step,
         target,
@@ -646,6 +679,27 @@ pub fn build(b: *std.Build) void {
             .{ "zig-pairing", pairing_mod },
         },
     );
+
+    // Four copies of Horner evaluation live in this tree, over two different
+    // representations. This is the test that keeps them from drifting apart:
+    // it runs every copy that is reachable over the same inputs. It cannot be
+    // wired by `wire_tests_roots`, which imports only the library a file lives
+    // in, so the module is built here with all four imports and the file is
+    // listed in `non_test_sources` so it is not also built as a `zig-poly`-only
+    // test that could not compile.
+    const horner_parity_mod = b.createModule(.{
+        .root_source_file = b.path("libs/poly/tests/horner_parity.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    horner_parity_mod.addImport("zig-poly", poly_mod);
+    horner_parity_mod.addImport("zig-algebra-traits", traits_mod);
+    horner_parity_mod.addImport("zig-kzg", kzg_mod);
+    horner_parity_mod.addImport("zig-curve", curve_mod);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .name = "horner-parity-tests",
+        .root_module = horner_parity_mod,
+    })).step);
 
     // Example: Schnorr signature over BLS12-381
     const example_step = b.step("example", "Run BLS12-381 Schnorr signature example");

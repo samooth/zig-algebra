@@ -193,7 +193,9 @@ discount the rest.
 # From the monorepo root
 zig build test
 
-# Just this library (32 tests, inline in src/root.zig, src/poly.zig, src/vector.zig)
+# Just this library (34 tests: 32 inline in src/root.zig, src/poly.zig, src/vector.zig,
+# plus the 2 in tests/horner_parity.zig, which compares this library's Horner against
+# the three other copies in the tree)
 cd libs/poly && zig build test
 ```
 

@@ -323,15 +323,15 @@ A gadget nobody invokes never fails.
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
-version 0.5.1) covering fields, curves, pairings, and STARK building blocks.
+version 0.6.0) covering fields, curves, pairings, and STARK building blocks.
 No independent cryptographic audit exists; see SECURITY.md before making
 security claims.
 
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (592 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 592 tests, seconds
+zig build test        # Run all library tests (594 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 594 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -346,7 +346,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (592 total across all 27 test binaries, and the per-library sum is 588: **the root step runs the `tests/` roots too**).
+tests (594 total across all 28 test binaries, and the per-library sum is 594: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -449,9 +449,14 @@ caller input can influence.
 - Root `build.zig` aggregates all libraries via the `lib()` helper.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
-- Counts (Zig 0.16.0, re-derived 2026-10-01): root `zig build test` = 592; per-library
-  `zig build test` totals sum to 592, which now **equals** the root total because the
-  root step runs the `tests/` roots as well. Per-library totals: algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22, kzg 8, linalg 13, merkle 20, ntt 16, pairing 58, parallel 7, poly 32, rng 27, serialization 20, transcript 13.
+- Counts (Zig 0.16.0, re-derived 2026-10-09 from the runner's own `--summary all`):
+  root `zig build test` = 594; per-library totals sum to 594, which now **equals** the
+  root total because the root step runs the `tests/` roots as well. Per library:
+  algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22,
+  kzg 8, linalg 13, merkle 20, ntt 16,
+  pairing 62, parallel 7, poly 34, rng 27, serialization 20, transcript 13.
+  `poly` is 34 and not 32 because `libs/poly/tests/horner_parity.zig` adds two, counted
+  there for the same reason `field`'s 89 includes its `tests/` roots.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
 - **A correct measurement can describe an invisible defect: "measured and right"
@@ -657,9 +662,9 @@ what happened to `binary-field` and its fork for three releases.
 
 ## Versioning
 
-Root `build.zig.zon` carries the workspace version (`0.5.1`); each library has
+Root `build.zig.zon` carries the workspace version (`0.6.0`); each library has
 its own independent semver in `libs/<name>/build.zig.zon` (currently
-`0.1.0`–`0.5.0`). Bump the library version for API changes, the workspace
+`0.1.3`–`0.5.0`). Bump the library version for API changes, the workspace
 version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 
 ## Known Gaps (do not paper over these in docs)

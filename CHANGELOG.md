@@ -61,6 +61,69 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Added: `libs/poly/tests/horner_parity.zig`, a test for the four copies of
+  Horner.** `zig-poly` has no consumer in this repository, and the polynomial
+  arithmetic the ecosystem performs is duplicated inline in at least four places:
+  `algebra-traits.evalPolyHorner` (generic over `F`), `kzg.evaluate` (over
+  `bn254.Fr`), `Polynomial.eval` (over a comptime-sized array), and **two private
+  `evalPoly`** in `libs/binary-field` (`sumcheck.zig:244`, `pack.zig:59`). The two
+  private ones cannot be compared from outside without changing their visibility,
+  which is part of why they could drift unseen: a private helper has no
+  cross-library test that could reach it. The test runs the three that are
+  reachable over the same random inputs -- lengths 0, 1, 2, 3, 7, 8, 9, 33, 64, 65,
+  chosen for the parity that broke the Karatsuba benchmark and for the empty case
+  -- and fails if any two disagree. They agree today, so this is latent divergence
+  rather than a live bug, and the test is what would make it a visible one.
+
+  Two notes on the representation difference this exposes. `zig-poly` cannot
+  represent an empty coefficient list at all: `Polynomial(F, 0).zero()` is a
+  constant, not an empty slice, so the array-based copy has no case corresponding
+  to the slice-based copies' `len == 0`, which both answer with zero. And the
+  reason the copies exist is that `zig-poly`'s API is fixed-size while every real
+  caller holds a runtime-length slice -- the same compatibility wall that
+  `docs/poly-mul-measurement.md` measures from the multiplication side.
+
+  Wired by an explicit module in the root `build.zig` rather than by
+  `wire_tests_roots`, because that helper imports only the library a file lives in
+  and this one needs four; the file is listed in `non_test_sources` for the same
+  reason `libs/field/tests/benchmark.zig` is. Test count 592 -> 594, `poly` 32 -> 34
+  counted under `poly` for the same reason `field`'s 89 includes its `tests/` roots.
+- **`zig build poly-mul-bench`- **`zig build poly-mul-bench`: measured whether `zig-poly` needs Karatsuba.**
+  The answer is no, and the reason is not the arithmetic. An external 2026 result
+  — ω < 2.371054886 over *every* fixed field including every positive
+  characteristic, formalized in Lean with `∀ (F : Type u) [Field F]` and no
+  extension field or interpolation — is the theoretical warrant the naive O(n²)
+  product never had. The measurement (`docs/poly-mul-measurement.md`,
+  `libs/poly/bench/mul.zig`) finds Karatsuba at crossover 32 is 1.2–1.4× from
+  degree 64 and 1.9–2.4× at degree 256, with the textbook crossover of 8 losing
+  at every degree up to 128. It is still not worth doing: `zig-poly` has **no
+  consumer in this repository** — nothing outside its own `root.zig`,
+  `main.zig` and `build.zig` names it — and the polynomial arithmetic the
+  ecosystem performs is duplicated inline in at least four sites
+  (`algebra-traits.evalPolyHorner`, `binary-field`'s two `evalPoly`, and
+  `kzg.evaluate`), all over runtime-length slices while `zig-poly` exposes
+  `Polynomial(F, max_degree)` on a comptime-sized array. The four copies are
+  equivalent today, which makes this latent divergence rather than a live bug.
+  The measurement also surfaced an undocumented constraint: `.mul` rejects with
+  `error.DegreeTooLarge` above `max_degree`, so multiplying degree-`d` operands
+  needs `max_degree >= 2d`.
+
+  Two things worth carrying forward from how the measurement went. The first
+  version of the benchmark printed "Karatsuba loses" in all twenty-one cells and
+  was wrong — an accumulator sized `half+1` overflows whenever the operand count
+  is odd, because the high half then has `half+1` elements and its product needs
+  `2*half+1` coefficients. Every figure was plausible and every figure measured a
+  broken routine; only the comparison against the library's own answer caught it,
+  so the harness now refuses to print a ratio when the two disagree. And the
+  figure that decided a 1.0× threshold moved 90% between two single runs at
+  degree 32, which is why the step reports the minimum of seven — the same reason
+  `pow-bench` gives.
+
+- Docs: `README.md` and `AGENTS.md` recorded the workspace version as `0.5.0` and
+  `0.5.1` respectively against a manifest at `0.6.0`, with library versions
+  between `0.1.3` and `0.5.0` rather than the documented `0.1.0`–`0.5.0`, and the
+  `Versioning` section had no `0.6.0` entry. Both now match the manifests. The
+  document index also gains the two dated reports above and `docs/relevance-scan-2026-10.md`.
 - **`zig-hash` (behaviour break): `Poseidon.hash()` now pads.** The sponge
   absorbed partial blocks over a zeroed state, so a message and its zero
   extension were the same message: `hash([a]) == hash([a, 0])`, and

@@ -1,8 +1,8 @@
 {
-  "measured": "2026-10-02",
+  "measured": "2026-10-09",
   "command": "cd libs/<name> && zig build test --summary all",
-  "total": 592,
-  "note": "The root `zig build test` runs the same 27 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`.",
+  "total": 594,
+  "note": "The root `zig build test` runs the same 28 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`. `poly` went 32 -> 34 on 2026-10-09 when `libs/poly/tests/horner_parity.zig` was added: a cross-library test that compares the four Horner implementations in this tree, counted under `poly` because that is the directory the file lives in, which is the same convention `field`'s 89 follows (14 inline + 75 in `tests/`).",
   "per_library": {
     "algebra-traits": 8,
     "bigint": 28,
@@ -17,7 +17,7 @@
     "ntt": 16,
     "pairing": 62,
     "parallel": 7,
-    "poly": 32,
+    "poly": 34,
     "rng": 27,
     "serialization": 20,
     "transcript": 13

@@ -5,7 +5,7 @@
 
 A modular ecosystem of 17 algebraic libraries for cryptography, zero-knowledge proofs, and high-performance computation in Zig 0.16.0.
 
-> **Status:** workspace version `0.5.1` (see [Versioning](#versioning)). No
+> **Status:** workspace version `0.6.0` (see [Versioning](#versioning)). No
 > independent cryptographic audit has been performed; "production candidate"
 > below means test-covered, not audited. Review `SECURITY.md` before use.
 >
@@ -85,7 +85,7 @@ parallel (no deps) · serialization (no deps)
 | [pairing](libs/pairing/) | Bilinear pairings: BLS12-381 optimal ate (EIP-197 vector), BN254 tower (sparse Miller + split final exp) and BN254 direct degree-12. **The BN254 `pairing()` in `bn254.zig` is not bilinear — see [ZA-2026-007](SECURITY.md); neither BN254 implementation has an external known-answer vector** | 62 |
 | [ntt](libs/ntt/) | Number-Theoretic Transform (iterative Cooley-Tukey, inverse NTT, twiddle cache) | 16 |
 | [merkle](libs/merkle/) | Merkle trees (binary, MMR, sparse) | 20 |
-| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 32 |
+| [poly](libs/poly/) | Dense univariate polynomials over finite fields | 34 |
 | [linalg](libs/linalg/) | Vectors, matrices, LU decomposition, linear system solving over fields | 13 |
 | [parallel](libs/parallel/) | Fork-join parallel executor (thread pool) | 7 |
 | [serialization](libs/serialization/) | Canonical wire encoding via comptime reflection | 20 |
@@ -93,23 +93,24 @@ parallel (no deps) · serialization (no deps)
 
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes, and every figure here was
-> re-derived from that step's own `--summary all` on 2026-09-30 rather than
-> carried forward. The root `zig build test` runs **592 tests** (verified on Zig
-> 0.16.0 in both Debug and ReleaseFast): the root step compiles **all 27 test
-> binaries** — every library's inline `src/` tests plus the separate `tests/`
-> roots of `field` (6 files, 75 tests; 89 including the 14 inline) and `curve`
-> (4 files, 44 tests; 98 including the 54 inline). The per-library steps sum to
-> **592, the same number**, and that equality is the check: a test added to one
+> re-derived from that step's own `--summary all` on 2026-10-09 rather than
+> carried forward. The root `zig build test` runs **594 tests** (verified on Zig
+> 0.16.0 in both Debug and ReleaseFast): the root step compiles **all 28 test
+> binaries** — every library's inline `src/` tests, the separate `tests/` roots of
+> `field` (6 files, 75 tests; 89 including the 14 inline), `curve`
+> (4 files, 44 tests; 98 including the 54 inline) and `poly` (1 file, 2 tests;
+> 34 including the 32 inline). The per-library steps sum to
+> **594, the same number**, and that equality is the check: a test added to one
 > list and not the other shows up as a table that no longer adds up.
 > `algebra-traits` shipped with zero tests before `0.5.0` and now has 8. `kzg`
 > was added in v0.2.2 as the 17th library.
 
 ## Documentation
 
-Thirty-three Markdown documents are tracked in this repository, and this table is
+Thirty-five Markdown documents are tracked in this repository, and this table is
 the only place all of them appear. It is derived from `git ls-files '*.md'` rather
 than maintained by hand, because the difference it removes is the difference
-between "sixteen libraries and here they are" and "thirty-three documents and go
+between "sixteen libraries and here they are" and "thirty-five documents and go
 looking for them".
 
 | Document | What it is for |
@@ -125,6 +126,8 @@ looking for them".
 | [docs/assert-ledger.md](docs/assert-ledger.md) | Every `std.debug.assert` in the tree and why it is allowed to stay |
 | [docs/pending-items.md](docs/pending-items.md) | Where each of the thirteen pre-rewrite items went, and the custody of the record branch |
 | [docs/roadmap-2026-09-25.md](docs/roadmap-2026-09-25.md) | The pre-rewrite roadmap, verbatim and checksummed. A record, not a live list |
+| [docs/poly-mul-measurement.md](docs/poly-mul-measurement.md) | Measured: does `Polynomial.mul` need Karatsuba, and at what degree. Reproduce with `zig build poly-mul-bench` |
+| [docs/relevance-scan-2026-10.md](docs/relevance-scan-2026-10.md) | A 2026-10-09 scan of an external mathematics corpus against this tree: which results touch objects here, and which only look like they do |
 | [draft/INTEGRATOR-REPLY.md](draft/INTEGRATOR-REPLY.md) | Unsent draft, quoting release figures |
 | [libs/field/TODO.md](libs/field/TODO.md) | Open work inside `zig-field` |
 | [libs/field/AGENTS.md](libs/field/AGENTS.md) | Working rules specific to `zig-field` |
@@ -233,8 +236,10 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 592 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 594 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
+| `zig build pow-bench` | `pow` against `powFast` per field, minimum of seven reps (`libs/field/bench/pow.zig`) |
+| `zig build poly-mul-bench` | `Polynomial.mul` naive vs Karatsuba per field and degree, minimum of seven reps; figures in `docs/poly-mul-measurement.md` |
 | `zig build example` | BLS12-381 Schnorr signature demo |
 | `zig build stark` | STARK prover/verifier demo: Fibonacci over **Goldilocks** with FRI |
 | `zig build wasm` | `examples/wasm_fp.zig` → wasm32-freestanding (`fp_add`, `fp_mul`, `fp_inv`) |
@@ -357,13 +362,21 @@ and print as `0 ns`.
 
 ## Versioning
 
-The workspace root manifest (`build.zig.zon`) is versioned as **`0.5.0`**, while
+The workspace root manifest (`build.zig.zon`) is versioned as **`0.6.0`**, while
 each library carries its own `build.zig.zon` with an independent semver
-(libraries currently between `0.1.0` (`transcript`) and `0.5.0` (`curve`)).
+(libraries currently between `0.1.3` (`merkle`) and `0.5.0` (`field`,
+`binary-field`, `curve`, `pairing`, `rng`)).
 Library count grew over time: 14 libraries at v0.1.0, 16 at v0.2.0
 (`fri` + `transcript`), 17 at v0.2.2 (`kzg`).
 
-- **`0.5.1`** (current) fixes the `zig build bench` compile error that shipped
+- **`0.6.0`** (current) fixes three defects, two of which shipped in published
+  tags: `ChaCha20Rng` was not ChaCha20 (advisory ZA-2026-006),
+  `QuadraticExtension.primitiveRootOfUnity` never returned on the real axis, and
+  the `fri` torus generator search had no usable bound. The last two are
+  breaking (new error values). See `CHANGELOG.md` for the release notes and for
+  why the PRNG went three releases without a look. Manifests in this release:
+  `rng` 0.5.0, `field` 0.5.0, `fri` 0.4.0.
+- **`0.5.1`** fixes the `zig build bench` compile error that shipped
   in `v0.5.0`, and carries the release gate whose absence let it: CI now
   triggers on `tags: ['v*']`, and AGENTS.md requires the tag to be pushed only
   after CI is green on that exact commit. `v0.5.0` is **not** moved — it is

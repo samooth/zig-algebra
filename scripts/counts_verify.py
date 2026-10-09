@@ -50,10 +50,10 @@ ROOT_TOTAL_PATTERNS = [
     ("README.md", r"Runs the (\d+) library tests"),
     ("AGENTS.md", r"all library tests \((\d+) tests,"),
     ("AGENTS.md", r"Same (\d+) tests, seconds"),
-    ("AGENTS.md", r"\((\d+) total across all 27 test binaries"),
+    ("AGENTS.md", r"\((\d+) total across all \d+ test binaries"),
     ("AGENTS.md", r"root `zig build test` = (\d+);"),
     ("AGENTS.md", r"totals sum to (\d+), which now"),
-    ("AGENTS.md", r"pairing 58, parallel 7, poly 32, rng 27, serialization (\d+),"),
+    ("AGENTS.md", r"pairing 62, parallel 7, poly 34, rng 27, serialization (\d+),"),
     # These two were missing from this list and were the worst in the tree:
     # DESIGN.md said the root step executes 391 tests, and docs/architecture.md
     # said 423 in one place and 583 in another, against a measurement of 588. A gate
