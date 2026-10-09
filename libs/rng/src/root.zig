@@ -137,6 +137,31 @@ test "ChaCha20Rng different seeds produce different output" {
     try std.testing.expect(rng1.randomU64() != rng2.randomU64());
 }
 
+test "ChaCha20Rng initOsRandom produces a usable, unpredictable seed" {
+    // The call that closes the gap: `initOsRandom` did not compile on Zig 0.16
+    // for this repository's whole life, and nothing called it, so no test could
+    // see it. A `pub` declaration with no call site is not analysed. This is the
+    // call site.
+    // `rng` at file scope is the `rng.zig` module, so these are not that name.
+    var chacha = ChaCha20Rng.initOsRandom();
+
+    // Usable: the stream is not constant, which is the property a CSPRNG seed
+    // is for. Not a determinism check -- two calls should differ, and that
+    // difference is the only thing observable about entropy.
+    var buf: [64]u8 = undefined;
+    chacha.randomBytes(&buf);
+    try std.testing.expect(!std.mem.allEqual(u8, &buf, buf[0]));
+
+    // Independent draws should not collide, which is what would fail first if
+    // the seed were constant or the keystream short-cycled.
+    var chacha2 = ChaCha20Rng.initOsRandom();
+    var a: [8]u8 = undefined;
+    var b: [8]u8 = undefined;
+    chacha.randomBytes(&a);
+    chacha2.randomBytes(&b);
+    try std.testing.expect(!std.mem.eql(u8, &a, &b));
+}
+
 test "ChaCha20Rng randomU64Bounded" {
     var chacha = ChaCha20Rng.initFromSeed(&[_]u8{0xAB} ** 32);
     for (0..100) |_| {

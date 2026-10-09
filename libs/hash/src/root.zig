@@ -41,19 +41,53 @@ pub const Hash = struct {
         return blake3.hash(msg);
     }
 
+    /// Pair two digests. The domain string keeps `hash2(a, b)` from colliding
+    /// with `hashBytes(a ++ b)`, which matters because a Merkle node and a pair
+    /// of children are not the same object.
+    ///
+    /// This body used to call `init(.{})` and `final(&out)` -- the pre-0.16
+    /// Blake3 API -- so the function did not compile. Nothing called it, which is
+    /// why nobody found out: a `pub` declaration with no call site is not
+    /// analysed, and `README.md` listed it under known gaps for that reason.
+    /// `hash2 matches the streaming API` below is the call that closes it.
     pub fn hash2(a: Digest, b: Digest) Digest {
-        var h = blake3.Blake3.init(.{});
+        var h = blake3.Blake3.init();
         h.update("zig-stark:pair");
         h.update(&a);
         h.update(&b);
         var out: Digest = undefined;
-        h.final(&out);
+        h.finalize(&out);
         return out;
     }
 };
 
 // ============================================================================
 // Tests
+// ============================================================================
+
+test "hash2 matches the streaming API and is domain-separated" {
+    const a = [_]u8{0xAA} ** 32;
+    const b = [_]u8{0xBB} ** 32;
+
+    // The closure: `Hash.hash2` must agree with the streaming hasher it wraps,
+    // byte for byte, or the two are different functions with the same name.
+    var h = blake3.Blake3.init();
+    h.update("zig-stark:pair");
+    h.update(&a);
+    h.update(&b);
+    var want: Hash.Digest = undefined;
+    h.finalize(&want);
+    try std.testing.expectEqual(want, Hash.hash2(a, b));
+
+    // Domain separation: hashing the pair is not hashing the concatenation.
+    var concat: [64]u8 = undefined;
+    @memcpy(concat[0..32], &a);
+    @memcpy(concat[32..], &b);
+    try std.testing.expect(!std.mem.eql(u8, &want, &Hash.hashBytes(&concat)));
+
+    // And order matters, which is the property a pair-hash exists to have.
+    try std.testing.expect(!std.mem.eql(u8, &Hash.hash2(a, b), &Hash.hash2(b, a)));
+}
 // ============================================================================
 
 /// The real field, imported. The algebraic-hash tests and the example each used

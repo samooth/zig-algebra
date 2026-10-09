@@ -115,6 +115,40 @@ const TestF7 = struct {
     pub const dimension: usize = 1;
 };
 
+/// A vector space over `TestF7` that is *not* the field itself, so exercising
+/// `VectorSpaceTrait.assert()` on it reaches the argument-order check rather
+/// than the V == F coincidence that `dotProduct`'s own tests use.
+const Vec2 = struct {
+    d: [2]TestF7,
+
+    pub fn zero() Vec2 {
+        return .{ .d = .{ TestF7.zero(), TestF7.zero() } };
+    }
+    pub fn add(a: Vec2, b: Vec2) Vec2 {
+        return .{ .d = .{ a.d[0].add(b.d[0]), a.d[1].add(b.d[1]) } };
+    }
+    pub fn neg(a: Vec2) Vec2 {
+        return .{ .d = .{ a.d[0].neg(), a.d[1].neg() } };
+    }
+    /// `scale(self, scalar)`, the order the trait requires.
+    pub fn scale(self: Vec2, s: TestF7) Vec2 {
+        return .{ .d = .{ self.d[0].mul(s), self.d[1].mul(s) } };
+    }
+    pub fn eql(a: Vec2, b: Vec2) bool {
+        return a.d[0].eql(b.d[0]) and a.d[1].eql(b.d[1]);
+    }
+};
+
+test "VectorSpaceTrait.assert accepts scale in (self, scalar) order" {
+    // Nothing in this tree called this `assert()` on a type where the order
+    // could be wrong, so the check that was added to it would never have run.
+    // `Vec2` is a real vector space -- V != F -- with the right order, so this
+    // passes for the right reason rather than by the V == F coincidence.
+    VectorSpaceTrait(Vec2, TestF7).assert();
+    try testing.expect(Vec2.scale(.{ .d = .{ TestF7.fromInt(3), TestF7.fromInt(5) } }, TestF7.fromInt(2))
+        .eql(.{ .d = .{ TestF7.fromInt(6), TestF7.fromInt(3) } }));
+}
+
 test "dotProduct rejects a length mismatch instead of reading out of bounds" {
     const a = [_]TestF7{ TestF7.fromInt(1), TestF7.fromInt(2) };
     const b = [_]TestF7{TestF7.fromInt(3)};

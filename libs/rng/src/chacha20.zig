@@ -12,6 +12,7 @@
 //! ```
 
 const std = @import("std");
+const csprng = @import("csprng.zig");
 
 /// Number of ChaCha rounds (20 for standard ChaCha20).
 const ROUNDS: u32 = 20;
@@ -109,9 +110,26 @@ pub const ChaCha20Rng = struct {
     }
 
     /// Initialize from an unpredictable OS entropy source.
-    pub fn initOsRandom() !Self {
+    ///
+    /// This called `std.crypto.random.bytes`, which Zig 0.16 removed, so for the
+    /// whole of this repository's life the function did not compile -- and
+    /// nothing called it, which is why no test found out. A `pub` declaration
+    /// with no call site is not analysed, and an unanalysed declaration can be
+    /// broken indefinitely behind a green suite.
+    ///
+    /// The replacement already exists one module over: `csprng` carries the
+    /// whole OS-entropy chain (arc4random_buf, getrandom, the syscall,
+    /// BCryptGenRandom, /dev/urandom) plus the testing hooks that go with it.
+    /// Routing through it means this function stops being the one place in the
+    /// library that could not compile, without duplicating that chain.
+    ///
+    /// Not an error union: `csprng.bytes` is total, so an `!Self` here would be
+    /// a declared failure no caller could ever handle -- a claim nothing can
+    /// test. This is a source-level break for anyone who wrote `try`, but
+    /// there cannot be such a caller, because the old body did not compile.
+    pub fn initOsRandom() Self {
         var seed: [32]u8 = undefined;
-        try std.crypto.random.bytes(&seed);
+        csprng.bytes(&seed);
         return initFromSeed(&seed);
     }
 

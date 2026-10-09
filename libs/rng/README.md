@@ -204,10 +204,15 @@ zr.csprng.bytes(&buf);
 
 ## Known limitations
 
-- `ChaCha20Rng.initOsRandom()` **does not compile on Zig 0.16.0** — it calls the
-  removed `std.crypto.random.bytes`. It is not covered by any test, so the
-  breakage is latent. Use `zr.csprng.bytes()` (which has its own OS-entropy
-  path) or supply your own seed for now.
+- ~~`ChaCha20Rng.initOsRandom()` does not compile on Zig 0.16.0~~ — **fixed.**
+  It used to call `std.crypto.random.bytes`, which 0.16 removed, and no test
+  called it, so the breakage sat latent behind a green suite for this
+  repository's whole life. It now routes through `csprng`, which already carries
+  the full OS-entropy chain (`arc4random_buf`, `getrandom`, the syscall,
+  `BCryptGenRandom`, `/dev/urandom`) together with the testing hooks that go with
+  it. The signature is `initOsRandom() Self` and not `!Self`: `csprng.bytes` is
+  total, and an error union there would declare a failure no caller could handle.
+  `zig-rng`'s tests call it, so it is compiled on every run from here on.
 - `ChaCha20Rng.refill` **panics** with "ChaCha20 counter exhausted" when the
   32-bit block counter wraps. At 64 bytes per block that is 256 GiB of keystream;
   re-seed before then.
@@ -241,7 +246,7 @@ zr.csprng.bytes(&buf);
 cd libs/rng && zig build test
 ```
 
-27 tests: ChaCha20 determinism across two instances, distinct outputs for
+28 tests: ChaCha20 determinism across two instances, distinct outputs for
 distinct seeds, `randomU64Bounded`, `randomBytes` non-repetition, SHAKE256
 determinism and seed sensitivity, allocation-free `squeezeInto`, Fisher-Yates
 permutation validity, `randomPermutation`, `randomFieldElement` on an in-file

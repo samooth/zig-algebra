@@ -429,6 +429,30 @@ pub fn VectorSpaceTrait(comptime V: type, comptime F: type) type {
             if (!has_zero) @compileError("VectorSpace trait: missing 'zero' on " ++ @typeName(V));
             if (!has_scale) @compileError("VectorSpace trait: missing 'scale' on " ++ @typeName(V));
             if (!has_eq) @compileError("VectorSpace trait: missing 'eql' on " ++ @typeName(V));
+
+            // `scale` is checked for its argument order and not only for its
+            // existence, because existence was all this checked for years and it
+            // let a mistake through: `dotProduct` below calls `V.scale(ai, bi)`,
+            // which is only meaningful when the second argument is a scalar, so
+            // an implementation written `scale(s: F, v: V)` compiles here and
+            // fails inside the loop with an error that points at the caller
+            // rather than at the type that got it backwards.
+            //
+            // `self` is the first parameter and is not checked: some types take
+            // it by value and some by pointer, and neither is wrong. The scalar
+            // in second position is what the contract is.
+            comptime {
+                const scale_fn = @TypeOf(V.scale);
+                if (@typeInfo(scale_fn) != .@"fn") {
+                    @compileError("VectorSpace trait: 'scale' on " ++ @typeName(V) ++ " is not a function");
+                }
+                const params = @typeInfo(scale_fn).@"fn".params;
+                if (params.len != 2 or params[1].type != F) {
+                    @compileError("VectorSpace trait: 'scale' on " ++ @typeName(V) ++
+                        " must take (self, scalar: " ++ @typeName(F) ++ "); it takes " ++
+                        @typeName(scale_fn) ++ ". Argument order matters -- see dotProduct");
+                }
+            }
         }
     };
 }
@@ -1027,11 +1051,23 @@ pub fn egcd(comptime T: type, a: T, b: T) struct { gcd: T, x: T, y: T } {
 /// # Constraints
 /// `V` must satisfy `VectorSpaceTrait(V, F)`.
 ///
+/// # Scope, stated because it was left implicit for years
+/// This is defined only for **`V == F`** -- the field regarded as a vector space
+/// over itself -- and `README.md` used to call it unusable without saying why.
+/// The reason is that a general vector space's `scale` takes a whole vector and a
+/// scalar, so there is no way to reach the individual products a dot product is
+/// made of. `V.scale(ai, bi)` here multiplies component `ai` by component `bi`,
+/// which only types when the components *are* the field.
+///
+/// For a real vector space use `libs/linalg`'s `Vector(F, n).dot`, which has the
+/// components. The `assert()` above now also checks `scale`'s argument order, so
+/// a type with it backwards fails here rather than inside the loop.
+///
 /// # Example
 /// ```zig
 /// const a = [_]F7{ F7.fromInt(1), F7.fromInt(2) };
 /// const b = [_]F7{ F7.fromInt(3), F7.fromInt(4) };
-/// const d = try dotProduct(V2, F7, &a, &b); // 1*3 + 2*4 = 11 mod 7 = 4
+/// const d = try dotProduct(F7, F7, &a, &b); // 1*3 + 2*4 = 11 mod 7 = 4
 /// ```
 ///
 /// # Errors

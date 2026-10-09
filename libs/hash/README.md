@@ -180,7 +180,7 @@ try std.testing.expectError(error.SeedTooLong, MiMCF.initFromSeed(too_long));
 # From the monorepo root
 zig build test
 
-# Just this library (22 tests, all inline in src/root.zig)
+# Just this library (23 tests, all inline in src/root.zig)
 cd libs/hash && zig build test
 ```
 

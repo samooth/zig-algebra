@@ -61,6 +61,31 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Fixed three `pub` bodies that did not compile, each closed by the call that
+  was missing.** All three are the same defect: a public declaration nobody
+  called, which Zig therefore never analysed, so it could be broken indefinitely
+  behind a green suite. `Hash.hash2` used the pre-0.16 Blake3 API (`init(.{})`,
+  `final`). `ChaCha20Rng.initOsRandom` called `std.crypto.random.bytes`, removed
+  in 0.16 -- and now routes through `csprng`, which already carries the whole
+  OS-entropy chain and its testing hooks, so the library stops being the one
+  place that could not build. `VectorSpaceTrait.assert()` checked that `scale`
+  exists but not its argument order, which is what let `dotProduct`'s
+  `V.scale(ai, bi)` look fine and fail inside the loop; it now names the
+  expected and actual signatures, and a build with a backwards `scale` was
+  observed failing with that message rather than assumed to.
+
+  Each fix added the test that calls it, which is the whole point: a `pub`
+  declaration with no call site is not exercised, and the third one in particular
+  was listed under known limitations for the repository's entire life. Test count
+  596 -> 599 (`+1` each in `algebra-traits`, `hash`, `rng`).
+- **Added: `zig-field.BLS12_381_Fp2`.** A re-export chain that ended at a file
+  defining only the base field, so the name did not resolve -- and nothing
+  referenced it, so no compiler ever looked at the line. It is now
+  `QuadraticExtension(BLS12_381_Fp, -1)`, matching
+  `libs/curve/src/bls12_381.zig:16` so the two definitions denote the same field
+  rather than two isomorphic ones, and `libs/field/tests/field_test.zig` reaches
+  it and asserts `v^2 + 1 == 0`. The design question that deferred this -- which
+  non-residue -- was already answered one library over.
 - **Found: two Merkle trees in this tree, and they do not agree.** The comment at
   `libs/field/src/lib.zig:139` opened with *"wrapper around zig-merkle with
   SHA-256"*. It is not a wrapper: `libs/field` declares one dependency,

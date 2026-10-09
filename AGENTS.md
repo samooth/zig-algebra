@@ -330,8 +330,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (596 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 596 tests, seconds
+zig build test        # Run all library tests (599 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 599 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -346,7 +346,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (596 total across all 29 test binaries, and the per-library sum is 596: **the root step runs the `tests/` roots too**).
+tests (599 total across all 29 test binaries, and the per-library sum is 599: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -450,7 +450,7 @@ caller input can influence.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
 - Counts (Zig 0.16.0, re-derived 2026-10-09 from the runner's own `--summary all`):
-  root `zig build test` = 596; per-library totals sum to 596, which now **equals** the
+  root `zig build test` = 599; per-library totals sum to 599, which now **equals** the
   root total because the root step runs the `tests/` roots as well. Per library:
   algebra-traits 8, bigint 28, binary-field 97, curve 98, field 91, fri 32, hash 22,
   kzg 8, linalg 13, merkle 20, ntt 16,

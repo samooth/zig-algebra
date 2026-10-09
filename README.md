@@ -73,12 +73,12 @@ parallel (no deps) · serialization (no deps)
 
 | Library | Description | Tests |
 |---------|-------------|-------|
-| [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | 8 |
+| [algebra-traits](libs/algebra-traits/) | Type contracts (traits) for computational algebra | 9 |
 | [bigint](libs/bigint/) | Arbitrary-precision integer arithmetic | 28 |
-| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 22 |
+| [hash](libs/hash/) | Cryptographic hash functions (Blake3, Blake2b/2s, Keccak/SHA3, Poseidon, MiMC) | 23 |
 | [transcript](libs/transcript/) | Fiat-Shamir transcripts over stdlib Blake3 (no internal deps) | 13 |
 | [fri](libs/fri/) | Fast Reed-Solomon IOP of Proximity (STARK low-degree testing, Merkle-committed) | 32 |
-| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 27 |
+| [rng](libs/rng/) | Cryptographically secure PRNGs (ChaCha20, SHAKE256; OS entropy incl. Windows `BCryptGenRandom`) | 28 |
 | [field](libs/field/) | Prime field arithmetic (Montgomery for ≥ 2^64, Mersenne fast path for small fields), tower extensions, Vec8 SIMD, IPA, field-element Merkle | 91 |
 | [binary-field](libs/binary-field/) | Binary Galois fields GF(2^n), towers, CLMUL, packed MLE, sum-check, MLE polynomial commitments | 97 |
 | [curve](libs/curve/) | Elliptic curves (Weierstrass affine/projective, BN254, BLS12-381, Pasta, stdlib curves, hash-to-curve, MSM) | 98 |
@@ -94,15 +94,15 @@ parallel (no deps) · serialization (no deps)
 > **Test counts.** The `Tests` column is what each library's own
 > `cd libs/<name> && zig build test` executes, and every figure here was
 > re-derived from that step's own `--summary all` on 2026-10-09 rather than
-> carried forward. The root `zig build test` runs **596 tests** (verified on Zig
+> carried forward. The root `zig build test` runs **599 tests** (verified on Zig
 > 0.16.0 in both Debug and ReleaseFast): the root step compiles **all 28 test
 > binaries** — every library's inline `src/` tests, the separate `tests/` roots of
 > `field` (7 files, 77 tests; 91 including the 14 inline), `curve`
 > (4 files, 44 tests; 98 including the 54 inline) and `poly` (1 file, 2 tests;
 > 34 including the 32 inline). The per-library steps sum to
-> **596, the same number**, and that equality is the check: a test added to one
+> **599, the same number**, and that equality is the check: a test added to one
 > list and not the other shows up as a table that no longer adds up.
-> `algebra-traits` shipped with zero tests before `0.5.0` and now has 8. `kzg`
+> `algebra-traits` shipped with zero tests before `0.5.0` and now has 9. `kzg`
 > was added in v0.2.2 as the 17th library.
 
 ## Documentation
@@ -236,7 +236,7 @@ const three_g = two_g.add(g);     // 3G
 
 | Step | What it does |
 |------|--------------|
-| `zig build test` | Runs the 596 library tests (also the default step under `-Doptimize=ReleaseFast`) |
+| `zig build test` | Runs the 599 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
 | `zig build pow-bench` | `pow` against `powFast` per field, minimum of seven reps (`libs/field/bench/pow.zig`) |
 | `zig build poly-mul-bench` | `Polynomial.mul` naive vs Karatsuba per field and degree, minimum of seven reps; figures in `docs/poly-mul-measurement.md` |

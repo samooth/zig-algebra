@@ -133,14 +133,25 @@ test "public hash() is reachable and is a stable, input-dependent digest" {
     // The extension towers carry their own copies of the same function, and the
     // cubic one is not instantiated anywhere as a predefined -- which is part of
     // why it was never analysed. Instantiate it here to reach the body.
-    // `zf.BLS12_381_Fp2` is *not* used here: lib.zig:31 re-exports
-    // `predef.BLS12_381_Fp2`, which that file does not define. Same family as
-    // the four bodies -- declared surface, never reached -- except this one
-    // fails loudly. Reported, not fixed: which non-residue BLS12-381's Fp2
-    // should use is a design decision, not a patch.
+    //
+    // `zf.BLS12_381_Fp2` used to be skipped here, with a note that which
+    // non-residue it should use was a design decision rather than a patch. The
+    // decision turned out to be already made, one library over:
+    // `libs/curve/src/bls12_381.zig:16` builds its Fp2 over -1, so matching it
+    // makes the two denote the same field instead of two isomorphic ones. The
+    // missing definition is in `predef/bls12_381.zig`, the reachability claim is
+    // now exercised like the others, and `lib.zig:31`'s re-export resolves.
     const Sq = zf.BN254_Fp2;
+    const Sq381 = zf.BLS12_381_Fp2;
     try std.testing.expect(Sq.fromInt(1).hash() != Sq.fromInt(2).hash());
     try std.testing.expectEqual(Sq.fromInt(5).hash(), Sq.fromInt(5).hash());
+    // Same for the 381-bit quadratic tower, and same non-residue (-1) as the
+    // curve library uses, so u^2 == -1 holds in the extension under test.
+    try std.testing.expect(Sq381.fromInt(1).hash() != Sq381.fromInt(2).hash());
+    try std.testing.expectEqual(Sq381.fromInt(5).hash(), Sq381.fromInt(5).hash());
+    // v^2 + 1 == 0: the extension really is F_p[u]/(u^2+1), which is what
+    // makes it the same field `libs/curve` builds rather than an isomorphic one.
+    try std.testing.expect(Sq381.EXT_NON_RESIDUE.sqr().add(Sq381.fromInt(1)).isZero());
     // A cubic tower over a 381-bit prime needs heavy comptime work, which is
     // why no predefined instantiates one. The quota is the one AGENTS.md
     // prescribes for exactly this case.
