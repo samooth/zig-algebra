@@ -63,6 +63,14 @@ pub fn TowerField(comptime level: u8) type {
             return a.add(b);
         }
 
+        /// Alias for the additive inverse, which in characteristic two is the
+        /// element itself: `x + x == 0` for every x, so `-x == x`. Present because
+        /// the workspace's `FieldTrait` requires `neg` and this family did not
+        /// name it -- one more reason no generic helper could be used here.
+        pub fn neg(a: Self) Self {
+            return a;
+        }
+
         const FULL_MASK: u128 = if (BITS == 128) std.math.maxInt(u128) else (@as(u128, 1) << BITS) - 1;
 
         /// Runtime-lazily-built fast-multiply tables, only meaningful for
@@ -263,6 +271,13 @@ pub fn TowerField(comptime level: u8) type {
             return invChecked(a) catch zero();
         }
 
+        /// Alias for `inv`, for the same reason as `eql` above: the trait
+        /// names this operation `inverse`. Points at the total wrapper, which is
+        /// what the contract expects; `invChecked` remains the one new code calls.
+        pub fn inverse(a: Self) Self {
+            return inv(a);
+        }
+
         /// Checked inverse: `error.InverseOfZero` when `a == 0`, and also when
         /// `a` is not a unit at the GF(2) base case (`a != 1`).
         pub fn invChecked(a: Self) error{InverseOfZero}!Self {
@@ -283,6 +298,14 @@ pub fn TowerField(comptime level: u8) type {
             const lo = a0.add(a1.mul(beta_e)).mul(inv_n);
             const hi = a1.mul(inv_n);
             return .{ .value = lo.value | (hi.value << half) };
+        }
+
+        /// Alias-equivalent division, for the same reason as `neg`: the trait
+        /// requires `div` and this family named only the pieces. Total by the
+        /// legacy convention -- `x / 0` is zero, and zero is not an inverse -- so
+        /// `divChecked` is what new code should call.
+        pub fn div(a: Self, b: Self) Self {
+            return a.mul(b.inv());
         }
 
         /// Norm down to the direct subfield T_{level-1} (multiplicative).
@@ -309,6 +332,15 @@ pub fn TowerField(comptime level: u8) type {
 
         pub fn eq(a: Self, b: Self) bool {
             return a.value == b.value;
+        }
+
+        /// Alias for `eq`, named as the workspace's `FieldTrait` spells it.
+        /// A field that does not expose `eql` fails that trait's assert, which
+        /// is why no generic helper in `algebra-traits` could be used with a
+        /// binary field at all -- the wall that made this library keep its own
+        /// copies of the operations every other field shares.
+        pub fn eql(a: Self, b: Self) bool {
+            return eq(a, b);
         }
 
         pub fn zero() Self {

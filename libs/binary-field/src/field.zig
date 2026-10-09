@@ -38,6 +38,14 @@ pub fn BinaryField(comptime bits: u8, comptime reduction_constant: u128) type {
             return a.add(b);
         }
 
+        /// Alias for the additive inverse, which in characteristic two is the
+        /// element itself: `x + x == 0` for every x, so `-x == x`. Present because
+        /// the workspace's `FieldTrait` requires `neg` and this family did not
+        /// name it -- one more reason no generic helper could be used here.
+        pub fn neg(a: @This()) @This() {
+            return a;
+        }
+
         /// Carry-less multiply followed by reduction mod the field polynomial.
         pub fn mul(a: @This(), b: @This()) @This() {
             // Carry-less product into a (hi, lo) u128 pair.
@@ -110,6 +118,13 @@ pub fn BinaryField(comptime bits: u8, comptime reduction_constant: u128) type {
             return invChecked(a) catch zero();
         }
 
+        /// Alias for `inv`, for the same reason as `eql` above: the trait
+        /// names this operation `inverse`. Points at the total wrapper, which is
+        /// what the contract expects; `invChecked` remains the one new code calls.
+        pub fn inverse(a: @This()) @This() {
+            return inv(a);
+        }
+
         /// Checked inverse: `error.InverseOfZero` when `a == 0`.
         pub fn invChecked(a: @This()) error{InverseOfZero}!@This() {
             if (a.value == 0) return error.InverseOfZero;
@@ -118,8 +133,25 @@ pub fn BinaryField(comptime bits: u8, comptime reduction_constant: u128) type {
             @compileError("inv: unsupported field size");
         }
 
+        /// Alias-equivalent division, for the same reason as `neg`: the trait
+        /// requires `div` and this family named only the pieces. Total by the
+        /// legacy convention -- `x / 0` is zero, and zero is not an inverse -- so
+        /// `divChecked` is what new code should call.
+        pub fn div(a: @This(), b: @This()) @This() {
+            return a.mul(b.inv());
+        }
+
         pub fn eq(a: @This(), b: @This()) bool {
             return a.value == b.value;
+        }
+
+        /// Alias for `eq`, named as the workspace's `FieldTrait` spells it.
+        /// A field that does not expose `eql` fails that trait's assert, which
+        /// is why no generic helper in `algebra-traits` could be used with a
+        /// binary field at all -- the wall that made this library keep its own
+        /// copies of the operations every other field shares.
+        pub fn eql(a: @This(), b: @This()) bool {
+            return eq(a, b);
         }
 
         pub fn zero() @This() {

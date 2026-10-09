@@ -1,4 +1,5 @@
 const std = @import("std");
+const traits = @import("zig-algebra-traits");
 const Polynomial = @import("polynomial.zig");
 
 /// Packing of a multilinear polynomial into a univariate polynomial over a
@@ -56,14 +57,11 @@ pub fn PackedMle(comptime F: type) type {
         }
 
         /// Evaluate a polynomial (Horner).
+        ///
+        /// Converged onto `algebra-traits.evalPolyHorner`; was a private copy,
+        /// one of four. See `evalPoly` in `sumcheck.zig`.
         fn evalPoly(g: []const F, x: F) F {
-            var acc = F.zero();
-            var i: usize = g.len;
-            while (i > 0) {
-                i -= 1;
-                acc = acc.mul(x).add(g[i]);
-            }
-            return acc;
+            return traits.evalPolyHorner(F, g, x);
         }
 
         /// Vanishing polynomial Z_H(x) = ∏_{y∈H}(x + y) of the low-bits

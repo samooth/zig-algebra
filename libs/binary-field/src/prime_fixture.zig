@@ -176,6 +176,13 @@ pub const Prime31 = struct {
         return pow(a, PRIME - 2);
     }
 
+    /// Alias for `inv`, for the same reason as `eql` above: the trait
+    /// names this operation `inverse`. Points at the total wrapper, which is
+    /// what the contract expects; `invChecked` remains the one new code calls.
+    pub fn inverse(a: Self) Self {
+        return inv(a);
+    }
+
     /// # Errors
     /// `error.InverseOfZero` when `a` is zero.
     pub fn invChecked(a: Self) error{InverseOfZero}!Self {

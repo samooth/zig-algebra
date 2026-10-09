@@ -61,6 +61,32 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **`zig-binary-field` now satisfies the workspace's `FieldTrait`, and its two
+  remaining Horner copies are gone.** Until this commit *no* generic helper in
+  `algebra-traits` could be called with a binary field: `FieldTrait.assert()`
+  requires `eql`, `neg`, `div` and `inverse`, and this family names them `eq`,
+  nothing, nothing and `inv`. That is the wall that made it keep private copies of
+  operations every other field in the workspace shares -- four in total, counted by
+  `libs/poly/tests/horner_parity.zig`.
+
+  Six additive aliases close it: `eql` on `BinaryField` and `TowerField`, `inverse`
+  on all four types including the `Prime31` and `Prime128` test fixtures, `neg`
+  (which in characteristic two is the element itself, since `x + x == 0`), and
+  `div` (`x / 0` is zero by the legacy total convention, with `divChecked` still
+  what new code calls). The count went to zero copies via `eql` -> `neg` -> `div`,
+  discovered by iterating against the assert rather than by reading the trait.
+
+  `sumcheck.evalPoly` and `pack.evalPoly` now call `algebra-traits.evalPolyHorner`.
+  They were the last independent copies; `kzg.evaluate` converged earlier, and the
+  comptime-degree form in `zig-poly` is the only remaining shape and is a different
+  representation rather than a duplicate.
+
+  The test that closes it is not a round trip: it instantiates `FieldTrait(F).assert()`
+  over nine types, so a future field that drops a required name stops the file
+  compiling rather than failing a test at runtime. `refAllDecls` cannot catch this --
+  it only checks that tests are collected, and a comptime claim needs a call.
+
+  Test count 606 -> 607, `binary-field` 97 -> 98.
 - **Added: the last two examples, `zig-fri` and `zig-kzg`, completing all
   seventeen.** Both check properties rather than printing values, and both pair
   every negative with the honest case -- a test that only checks the tamper would

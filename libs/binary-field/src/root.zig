@@ -31,6 +31,7 @@ pub const prime_fixture = @import("prime_fixture.zig");
 pub const prime128 = @import("prime128.zig");
 
 // Re-export common types
+pub const FieldTrait = traits.FieldTrait;
 pub const BinaryField = field.BinaryField;
 pub const Gf16 = field.Gf16;
 pub const Gf128 = field.Gf128;
@@ -58,6 +59,36 @@ pub const CommittedMlePcs = pcs.CommittedMlePcs;
 pub const SumcheckUnsafe = sumcheck.SumcheckUnsafe;
 pub const MlePcsUnsafe = pcs.MlePcsUnsafe;
 pub const CommittedMlePcsUnsafe = pcs.CommittedMlePcsUnsafe;
+
+// Every field this library exposes satisfies the workspace's `FieldTrait`.
+//
+// This is the test that closes the wall. Until `eql` and `inverse` existed as
+// names, `FieldTrait(F).assert()` failed for `BinaryField`, `TowerField` and both
+// test fixtures -- which meant no generic helper in `algebra-traits` could be
+// called with a binary field at all, and this library kept its own copies of
+// operations every other field in the workspace shares. `horner_parity.zig` in
+// `zig-poly` measured four such copies converging on three.
+//
+// `refAllDecls` cannot catch this: it only checks that the tests are collected.
+// An assert over a trait is a comptime claim, and a comptime claim needs a call
+// -- here, an instantiation. If any of these four stops satisfying the contract,
+// this file stops compiling, which is louder than a red test and the right
+// failure mode for a contract violation.
+test "every binary-field type satisfies the workspace's FieldTrait" {
+    inline for (.{
+        prime_fixture.Prime31,
+        prime128.Prime128,
+        field.BinaryField(4, 0x3), // Gf16
+        field.BinaryField(8, 0x11b), // AES field
+        field.BinaryField(128, 0x87), // GCM field
+        tower.Gf2,
+        tower.Gf4,
+        tower.Gf256,
+        tower.Gf2_32,
+    }) |F| {
+        FieldTrait(F).assert();
+    }
+}
 
 test {
     std.testing.refAllDecls(@This());

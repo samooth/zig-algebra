@@ -1,4 +1,5 @@
 const std = @import("std");
+const traits = @import("zig-algebra-traits");
 const Polynomial = @import("polynomial.zig");
 const Pool = @import("zig-parallel").Pool;
 const Accel = @import("accel.zig");
@@ -242,14 +243,14 @@ fn SumcheckWith(comptime F: type, comptime allow_small_field: bool) type {
         }
 
         /// Horner evaluation of a low-first coefficient array.
+        ///
+        /// Converged onto `algebra-traits.evalPolyHorner`, which this library now
+        /// satisfies `FieldTrait` for and so can call. This was a private copy --
+        /// one of four in this tree -- and `libs/poly/tests/horner_parity.zig` is
+        /// what compared them. A private copy has no cross-library test that can
+        /// see it drift, which is the whole reason the count mattered.
         pub fn evalPoly(coeffs: []const F, x: F) F {
-            var acc = F.zero();
-            var i = coeffs.len;
-            while (i > 0) {
-                i -= 1;
-                acc = acc.mul(x).add(coeffs[i]);
-            }
-            return acc;
+            return traits.evalPolyHorner(F, coeffs, x);
         }
 
         /// Hypercube sum of the product of the tables (the claimed value H).

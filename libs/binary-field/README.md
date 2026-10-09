@@ -256,9 +256,20 @@ does not alter what is proved.
 # From the monorepo root
 zig build test
 
-# Just this library (97 tests, all inline)
+# Just this library (98 tests, all inline)
 cd libs/binary-field && zig build test
 ```
+
+- **These fields now satisfy the workspace's `FieldTrait`.** Before 0.6.x they did
+  not: the trait requires `eql`, `neg`, `div` and `inverse`, and this family named
+  them `eq`, nothing, nothing and `inv`. So no generic helper in `algebra-traits`
+  could be called with a binary field, which is why this library carried private
+  copies of operations other fields share. `eql`, `inverse`, `neg` and `div` are
+  aliases -- `neg` is the element itself, since `x + x == 0` in characteristic two,
+  and `div` follows the legacy total convention (`x / 0 == 0`), so `divChecked`
+  remains what new code should call.
+- **Legacy totals, for the same reason as in `zig-field`:** `inv(0) == 0` and
+  `x / 0 == 0`. Zero is not an inverse. Use `invChecked` / `divChecked`.
 
 ## Known limitations
 

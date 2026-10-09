@@ -6,7 +6,7 @@
 //! half: it runs every Horner implementation that is *reachable* over the same
 //! inputs and fails if any two disagree.
 //!
-//! Reachable is five of the six, and one of the unreachable is blocked:
+//! All of them are reachable now, and five of the six are the same code:
 //!
 //! | Site | Name | Reachable from here |
 //! |---|---|---
@@ -14,13 +14,16 @@
 //! | `libs/kzg/src/root.zig:106` | `evaluate` | yes, `pub`, over `bn254.Fr` |
 //! | `libs/poly/src/root.zig` | `evalCoeffs` | yes — an alias for the first, added so a caller holding a slice does not write a fifth copy |
 //! | `libs/poly/src/poly.zig:215` | `Polynomial.eval` | yes, over a comptime-sized array |
-//! | `libs/binary-field/src/sumcheck.zig:244` and `pack.zig:59` | `evalPoly` | **blocked**, and the block is the point: see below |
+//! | `libs/binary-field/src/sumcheck.zig:244` and `pack.zig:59` | `evalPoly` | converged onto (1); were the last two independent copies |
 //!
-//! `kzg.evaluate` converged onto `algebra-traits.evalPolyHorner` in the commit
-//! that added these notes, so the count of independent copies is down to the two
-//! in `binary-field` plus the comptime-degree form.
+//! `kzg.evaluate` and `binary-field`'s two `evalPoly` have since converged onto
+//! `algebra-traits.evalPolyHorner`, so the count of independent copies is down to
+//! the comptime-degree form in `zig-poly` and nothing else. What made that possible
+//! was not a rewrite: it was `binary-field` gaining the names `FieldTrait` requires,
+//! after which a generic helper from the base library could be called with a binary
+//! field at all.
 //!
-//! ## Why those two cannot converge yet
+//! ## Why that was blocked for so long
 //!
 //! They are private, but that is the smaller half. The larger half is that
 //! `FieldTrait(F).assert()` -- which `evalPolyHorner` runs on its `F` -- fails for
