@@ -238,6 +238,7 @@ const three_g = two_g.add(g);     // 3G
 |------|--------------|
 | `zig build test` | Runs the 609 library tests (also the default step under `-Doptimize=ReleaseFast`) |
 | `zig build bench` | Field/curve/pairing/MSM/NTT benchmarks; the benchmark harness is ReleaseFast |
+| `zig build examples` | Runs all seventeen library examples (ReleaseFast); an example that asserts a property fails this step |
 | `zig build pow-bench` | `pow` against `powFast` per field, minimum of seven reps (`libs/field/bench/pow.zig`) |
 | `zig build poly-mul-bench` | `Polynomial.mul` naive vs Karatsuba per field and degree, minimum of seven reps; figures in `docs/poly-mul-measurement.md` |
 | `zig build example` | BLS12-381 Schnorr signature demo |

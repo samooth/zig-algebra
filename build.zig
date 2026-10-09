@@ -524,7 +524,7 @@ pub fn build(b: *std.Build) void {
     // module, and the duplicate was only reachable because nothing outside
     // this block could name it. Two modules for one library is two things to
     // keep in step, and the shadowing made the outer name unusable.
-    _ = lib(
+    const fri_mod = lib(
         b,
         test_step,
         target,
@@ -582,7 +582,7 @@ pub fn build(b: *std.Build) void {
     }
 
     // linalg -> algebra-traits, field
-    _ = lib(
+    const linalg_mod = lib(
         b,
         test_step,
         target,
@@ -596,7 +596,7 @@ pub fn build(b: *std.Build) void {
     );
 
     // serialization (no deps)
-    _ = lib(
+    const serialization_mod = lib(
         b,
         test_step,
         target,
@@ -885,6 +885,58 @@ pub fn build(b: *std.Build) void {
     wp_exe.entry = .disabled;
     const install_wp = b.addInstallArtifact(wp_exe, .{});
     wp_step.dependOn(&install_wp.step);
+
+    // Run all seventeen library examples.
+    //
+    // `cross-check` compiles them for two foreign targets, which is requirement 11
+    // and is what stopped `libs/hash/src/main.zig` from carrying an interface
+    // nobody had compiled for the repository's whole life. Compiling is not
+    // running: an example that prints "NO" and exits zero is indistinguishable
+    // from one that passes, which is how a demonstration becomes decoration. This
+    // step runs them, so an example that asserts a property fails the build when
+    // the property stops holding.
+    //
+    // Wired here rather than in each library's `build.zig` because the imports are
+    // already resolved in this scope.
+    const examples_step = b.step("examples", "Run all seventeen library examples (ReleaseFast)");
+    {
+        const Ex = struct {
+            name: []const u8,
+            root: []const u8,
+            imports: []const std.Build.Module.Import,
+        };
+        const exes = [_]Ex{
+            .{ .name = "algebra-traits-example", .root = "libs/algebra-traits/src/main.zig", .imports = &.{.{ .name = "zig-algebra-traits", .module = traits_mod }} },
+            .{ .name = "bigint-example", .root = "libs/bigint/src/main.zig", .imports = &.{} },
+            .{ .name = "hash-example", .root = "libs/hash/src/main.zig", .imports = &.{ .{ .name = "zig-field", .module = field_mod }, .{ .name = "zig-algebra-traits", .module = traits_mod } } },
+            .{ .name = "rng-example", .root = "libs/rng/src/main.zig", .imports = &.{ .{ .name = "zig-hash", .module = hash_mod }, .{ .name = "zig-algebra-traits", .module = traits_mod } } },
+            .{ .name = "merkle-example", .root = "libs/merkle/src/main.zig", .imports = &.{ .{ .name = "zig-algebra-traits", .module = traits_mod }, .{ .name = "zig-hash", .module = hash_mod } } },
+            .{ .name = "field-example", .root = "libs/field/src/main.zig", .imports = &.{ .{ .name = "zig-field", .module = field_mod }, .{ .name = "zig-bigint", .module = bigint_mod } } },
+            .{ .name = "binary-field-example", .root = "libs/binary-field/src/main.zig", .imports = &.{.{ .name = "zig-binary-field", .module = binary_field_mod }} },
+            .{ .name = "curve-example", .root = "libs/curve/src/main.zig", .imports = &.{ .{ .name = "zig-curve", .module = curve_mod }, .{ .name = "zig-field", .module = field_mod } } },
+            .{ .name = "ntt-example", .root = "libs/ntt/src/main.zig", .imports = &.{ .{ .name = "zig-ntt", .module = ntt_mod }, .{ .name = "zig-field", .module = field_mod } } },
+            .{ .name = "poly-example", .root = "libs/poly/src/main.zig", .imports = &.{.{ .name = "zig-algebra-traits", .module = traits_mod }} },
+            .{ .name = "linalg-example", .root = "libs/linalg/src/main.zig", .imports = &.{ .{ .name = "zig-linalg", .module = linalg_mod }, .{ .name = "zig-field", .module = field_mod } } },
+            .{ .name = "pairing-example", .root = "libs/pairing/src/main.zig", .imports = &.{ .{ .name = "zig-pairing", .module = pairing_mod }, .{ .name = "zig-curve", .module = curve_mod } } },
+            .{ .name = "transcript-example", .root = "libs/transcript/src/main.zig", .imports = &.{ .{ .name = "zig-transcript", .module = transcript_mod }, .{ .name = "zig-field", .module = field_mod } } },
+            .{ .name = "fri-example", .root = "libs/fri/src/main.zig", .imports = &.{ .{ .name = "zig-fri", .module = fri_mod }, .{ .name = "zig-transcript", .module = transcript_mod }, .{ .name = "zig-field", .module = field_mod } } },
+            .{ .name = "kzg-example", .root = "libs/kzg/src/main.zig", .imports = &.{ .{ .name = "zig-kzg", .module = kzg_mod }, .{ .name = "zig-curve", .module = curve_mod } } },
+            .{ .name = "parallel-example", .root = "libs/parallel/src/main.zig", .imports = &.{.{ .name = "zig-parallel", .module = parallel_mod }} },
+            .{ .name = "serialization-example", .root = "libs/serialization/src/main.zig", .imports = &.{.{ .name = "zig-serialization", .module = serialization_mod }} },
+        };
+        for (exes) |ex| {
+            const exe = b.addExecutable(.{
+                .name = ex.name,
+                .root_module = b.createModule(.{
+                    .root_source_file = b.path(ex.root),
+                    .target = target,
+                    .optimize = .ReleaseFast,
+                    .imports = ex.imports,
+                }),
+            });
+            examples_step.dependOn(&b.addRunArtifact(exe).step);
+        }
+    }
 
     if (optimize == .ReleaseFast) b.default_step = test_step;
 }
