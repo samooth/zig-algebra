@@ -53,7 +53,7 @@ const non_test_sources = [_][2][]const u8{
     .{ "field", "benchmark.zig" },
     .{ "field", "fuzz.zig" },
     .{ "poly", "horner_parity.zig" },
-    .{ "field", "merkle_parity.zig" },
+    .{ "field", "merkle_test.zig" },
 };
 
 /// Wire every `tests/*.zig` of a library into `test_step`.
@@ -710,16 +710,16 @@ pub fn build(b: *std.Build) void {
     // builds both over the same leaves and asserts the divergence, which is
     // the only assertion available here -- aligning them is a behaviour change
     // to a public root, not something a test can do.
-    const merkle_parity_mod = b.createModule(.{
-        .root_source_file = b.path("libs/field/tests/merkle_parity.zig"),
+    const merkle_via_test = b.createModule(.{
+        .root_source_file = b.path("libs/field/tests/merkle_test.zig"),
         .target = target,
         .optimize = optimize,
     });
-    merkle_parity_mod.addImport("zig-field", field_mod);
-    merkle_parity_mod.addImport("zig-merkle", merkle_mod);
+    merkle_via_test.addImport("zig-field", field_mod);
+    merkle_via_test.addImport("zig-merkle", merkle_mod);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{
-        .name = "merkle-parity-tests",
-        .root_module = merkle_parity_mod,
+        .name = "field-merkle-via-tests",
+        .root_module = merkle_via_test,
     })).step);
 
     // Example: Schnorr signature over BLS12-381

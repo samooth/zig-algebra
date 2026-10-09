@@ -136,150 +136,15 @@ pub const Vec8NttM31 = struct {
     }
 };
 
-// Merkle tree over field elements.
+// Merkle trees over field elements are `zig-merkle`'s job, not this library's.
 //
-// NOT a wrapper around `zig-merkle`, whatever an earlier version of this comment
-// said: this library declares one dependency, `zig-bigint`, and imports no
-// `zig-merkle`. The tree below is its own implementation over SHA-256, and it
-// disagrees with `zig-merkle` in the padding for leaves beyond the caller's
-// list -- `hashLeaf(F.zero())` here against `H.hashBytes(&.{})` there -- so the
-// two produce different roots for the same leaves and their proofs do not
-// cross-verify. `libs/field/tests/merkle_parity.zig` asserts the disagreement,
-// because every test of this tree alone is a round trip and cannot see it.
-//
-// Aligning the two is a behaviour change to a public root and is not decided
-// here. Until it is, do not read this tree as interoperable with `zig-merkle`.
-pub fn MerkleTree(comptime F: type) type {
-    const std = @import("std");
-    const Hash = [32]u8;
+// This used to carry its own tree, and the two did not agree: this one padded a
+// short leaf list with `hashLeaf(F.zero())` where `zig-merkle` pads with
+// `H.hashBytes(&.{})`, so the same leaves gave different roots and the proofs did
+// not cross-verify. No test could see it, because every test of either tree alone
+// is a round trip. The copy is gone; use `zig-merkle` directly, serialising each
+// element to bytes for its leaves. `libs/field/src/main.zig` shows the shape.
 
-    const MerkleTreeImpl = struct {
-        const Self = @This();
-
-        allocator: std.mem.Allocator,
-        leaves: []const F,
-        nodes: []Hash,
-        num_leaves: usize,
-
-        fn hashLeaf(leaf: F) Hash {
-            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-            const bytes = leaf.toBytes();
-            hasher.update(&bytes);
-            var out: Hash = undefined;
-            hasher.final(&out);
-            return out;
-        }
-
-        fn hashPair(left: Hash, right: Hash) Hash {
-            var hasher = std.crypto.hash.sha2.Sha256.init(.{});
-            hasher.update(&left);
-            hasher.update(&right);
-            var out: Hash = undefined;
-            hasher.final(&out);
-            return out;
-        }
-
-        pub fn init(allocator: std.mem.Allocator, leaves: []const F) !Self {
-            if (leaves.len == 0) return error.EmptyLeaves;
-            const num_leaves = std.math.ceilPowerOfTwo(usize, leaves.len) catch @as(usize, 0);
-            const total_nodes = 2 * num_leaves - 1;
-            const nodes = try allocator.alloc(Hash, total_nodes);
-            errdefer allocator.free(nodes);
-
-            const leaf_copy = try allocator.alloc(F, leaves.len);
-            errdefer allocator.free(leaf_copy);
-            @memcpy(leaf_copy, leaves);
-
-            var tree = Self{
-                .allocator = allocator,
-                .leaves = leaf_copy,
-                .nodes = nodes,
-                .num_leaves = num_leaves,
-            };
-            tree.build();
-            return tree;
-        }
-
-        pub fn deinit(self: *Self) void {
-            self.allocator.free(self.nodes);
-            self.allocator.free(@constCast(self.leaves));
-        }
-
-        pub fn rootHash(self: Self) Hash {
-            return self.nodes[0];
-        }
-
-        pub fn proof(self: Self, allocator: std.mem.Allocator, index: usize) ![]Hash {
-            if (index >= self.leaves.len) return error.IndexOutOfBounds;
-            const depth = @ctz(self.num_leaves) + 1;
-            var path = try allocator.alloc(Hash, depth - 1);
-            errdefer allocator.free(path);
-
-            var idx = index;
-            var level_size = self.num_leaves;
-            var node_offset = level_size - 1;
-            var i: usize = 0;
-            while (level_size > 1) {
-                const sibling = if (idx % 2 == 0) idx + 1 else idx - 1;
-                path[i] = self.nodes[node_offset + sibling];
-                idx /= 2;
-                level_size /= 2;
-                node_offset -= level_size;
-                i += 1;
-            }
-            return path;
-        }
-
-        pub fn verify(root: Hash, index: usize, proof_path: []const Hash, leaf: F) bool {
-            var current = Self.hashLeaf(leaf);
-            var idx = index;
-            for (proof_path) |sibling| {
-                if (idx % 2 == 0) {
-                    current = Self.hashPair(current, sibling);
-                } else {
-                    current = Self.hashPair(sibling, current);
-                }
-                idx /= 2;
-            }
-            return std.mem.eql(u8, &current, &root);
-        }
-
-        /// Batch verification of Merkle openings.
-        ///
-        /// Fail-closed on a length mismatch: the old `std.debug.assert` was
-        /// compiled out in ReleaseFast, where the multi-slice `for` then
-        /// verified only the first `min(len)` entries and still returned `true`.
-        pub fn verifyBatch(
-            root: Hash,
-            indices: []const usize,
-            proofs: []const []const Hash,
-            leaves: []const F,
-        ) bool {
-            if (indices.len != proofs.len or proofs.len != leaves.len) return false;
-            for (indices, proofs, leaves) |idx, prf, leaf| {
-                if (!verify(root, idx, prf, leaf)) return false;
-            }
-            return true;
-        }
-
-        fn build(self: *Self) void {
-            const n = self.num_leaves;
-            for (0..self.leaves.len) |i| {
-                self.nodes[n - 1 + i] = Self.hashLeaf(self.leaves[i]);
-            }
-            for (self.leaves.len..n) |i| {
-                self.nodes[n - 1 + i] = Self.hashLeaf(F.zero());
-            }
-            var i: usize = n - 1;
-            while (i > 0) {
-                i -= 1;
-                self.nodes[i] = Self.hashPair(self.nodes[2 * i + 1], self.nodes[2 * i + 2]);
-            }
-        }
-    };
-
-    return MerkleTreeImpl;
-}
 
 // IPA (Inner Product Argument)
 pub const Ipa = ipa_.Ipa;

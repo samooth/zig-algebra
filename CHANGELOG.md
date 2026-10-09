@@ -61,6 +61,34 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Removed: `zig-field`'s own Merkle tree, deleted rather than aligned.** It was
+  one of two implementations of the same thing and the two did not agree -- this one
+  padded a short leaf list with `hashLeaf(F.zero())`, SHA-256 of the zero element,
+  where `zig-merkle` pads with `H.hashBytes(&.{})`, SHA-256 of nothing. Same leaves,
+  different roots, proofs that do not cross-verify.
+
+  Its four tests move onto `zig-merkle`, rewritten to serialise field elements into
+  the byte slices that library wants. What replaces `merkle_parity.zig` -- which
+  asserted the two trees disagreed -- is a test that pins the *join*: the leaf hash
+  must be SHA-256 of the element's own bytes, checked by verifying a proof for a
+  serialised element and failing it for a different one. A round trip against the old
+  implementation was not available, because its roots were different.
+
+  The two-tree state was itself found the same way, and that is the part worth
+  keeping: `field`'s tree had four tests and all four were round trips -- build, prove,
+  verify against the root the same implementation produced. A round trip is
+  consistent by construction and cannot tell one tree from another, which is how a
+  tree can be wrong and green at once. Deleted rather than aligned, because aligning
+  only the padding leaves two implementations that can diverge on the next detail;
+  there is now one.
+
+  Test count 605 -> 603: the four tests moved libraries of ownership and the two
+  parity tests went away with the thing they were measuring.
+- **Found: `zig-merkle`'s `actualLeafCount()` returns capacity, not the actual
+  count.** Its own comment says the real number is the caller's to track, so the
+  behaviour is honest and the name is not -- a caller reading the name gets the
+  padded count. Recorded in the rewritten test, where the shape is pinned rather
+  than assumed, and left alone: renaming a public method is an API break.
 - **Added: `zig-merkle.BitcoinMerkle`, and vectors from outside this tree.** Bitcoin's
   Merkle shape is not a padding variant of the tree `zig-merkle` already had, it is a
   different tree, so it is a separate type rather than a flag. Two differences do
