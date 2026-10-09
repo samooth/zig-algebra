@@ -61,6 +61,25 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Added: `zig-curve` example**, the eighth of seventeen. It checks the property a
+  curve library actually has to satisfy rather than printing points: the windowed
+  Jacobian ladder, repeated addition, and the affine formulas must all land on the
+  same point for the same scalar. A ladder that is fast and wrong agrees with itself
+  perfectly, so agreement *across* paths is the claim.
+
+  Both boundaries a random sample never reaches are asserted too: `0 * G` is the
+  identity, and `[r]G` is the identity for the group order `r` -- the curve
+  analogue of `[p]x == 0` in a field. And MSM is checked against the sum of the
+  individual products, because Pippenger's failure mode is a dropped or
+  double-counted bucket, which produces a point rather than an error.
+
+  Writing it needed the group order as bytes, and `fromBytes` takes big-endian
+  while `toBytes` produces little-endian -- an asymmetry that is easy to get
+  backwards and produces `error.ValueOutOfRange` rather than a wrong answer, which
+  is at least loud. Recorded in the example so the next reader does not have to
+  rediscover it.
+
+  Remaining without an example: `fri`, `kzg`.
 - **Removed: `zig-field`'s own Merkle tree, deleted rather than aligned.** It was
   one of two implementations of the same thing and the two did not agree -- this one
   padded a short leaf list with `hashLeaf(F.zero())`, SHA-256 of the zero element,

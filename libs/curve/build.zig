@@ -95,4 +95,17 @@ pub fn build(b: *std.Build) void {
     const fmt_check = b.addFmt(.{ .paths = &.{"."}, .check = true });
     const fmt_step = b.step("fmt", "Check code formatting");
     fmt_step.dependOn(&fmt_check.step);
+
+    // A consumer, so the public surface is exercised rather than declared.
+    const example = b.addExecutable(.{
+        .name = "curve-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    example.root_module.addImport("zig-curve", lib);
+    example.root_module.addImport("zig-field", b.dependency("zig_field", .{ .target = target, .optimize = optimize }).module("zig-field"));
+    b.installArtifact(example);
 }

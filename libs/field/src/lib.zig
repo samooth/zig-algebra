@@ -145,7 +145,6 @@ pub const Vec8NttM31 = struct {
 // is a round trip. The copy is gone; use `zig-merkle` directly, serialising each
 // element to bytes for its leaves. `libs/field/src/main.zig` shows the shape.
 
-
 // IPA (Inner Product Argument)
 pub const Ipa = ipa_.Ipa;
 
