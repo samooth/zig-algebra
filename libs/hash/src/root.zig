@@ -111,59 +111,63 @@ test "Blake3 basic hash" {
     try std.testing.expect(!std.mem.eql(u8, &out, &out3));
 }
 
-test "cryptographic hash known-answer vectors" {
-    // Was `bd214b44...`, which is not BLAKE3 at all: that digest was produced by
-    // this repository's own broken Blake3, so the vector pinned the bug. The
-    // real BLAKE3("hello world") is d74981ef..., from an independent
-    // implementation. The blake2b/blake2s/keccak/sha3 vectors below were
-    // already correct and are unchanged.
-    const blake3_expected = [_]u8{
+/// Known-answer vectors, from implementations independent of this tree.
+///
+/// A hash is never checked against itself: a test written against the
+/// implementation passes by construction. These are shared by the test below
+/// and by `main.zig` so that the example cannot drift away from the vectors the
+/// suite asserts -- and so that an example that prints a digest is also one that
+/// would notice if it stopped being the right digest.
+pub const kat = struct {
+    pub const blake3_hello_world = [_]u8{
         0xd7, 0x49, 0x81, 0xef, 0xa7, 0x0a, 0x0c, 0x88,
         0x0b, 0x8d, 0x8c, 0x19, 0x85, 0xd0, 0x75, 0xdb,
         0xcb, 0xf6, 0x79, 0xb9, 0x9a, 0x5f, 0x99, 0x14,
         0xe5, 0xaa, 0xf9, 0x6b, 0x83, 0x1a, 0x9e, 0x24,
     };
-    try std.testing.expectEqualSlices(u8, &blake3_expected, &blake3.hash("hello world"));
-
-    const blake2b_expected = [_]u8{
+    pub const blake2b256_abc = [_]u8{
         0xbd, 0xdd, 0x81, 0x3c, 0x63, 0x42, 0x39, 0x72,
         0x31, 0x71, 0xef, 0x3f, 0xee, 0x98, 0x57, 0x9b,
         0x94, 0x96, 0x4e, 0x3b, 0xb1, 0xcb, 0x3e, 0x42,
         0x72, 0x62, 0xc8, 0xc0, 0x68, 0xd5, 0x23, 0x19,
     };
-    try std.testing.expectEqualSlices(u8, &blake2b_expected, &blake2.blake2b256("abc"));
-
-    const blake2s_expected = [_]u8{
+    pub const blake2s256_abc = [_]u8{
         0x50, 0x8c, 0x5e, 0x8c, 0x32, 0x7c, 0x14, 0xe2,
         0xe1, 0xa7, 0x2b, 0xa3, 0x4e, 0xeb, 0x45, 0x2f,
         0x37, 0x45, 0x8b, 0x20, 0x9e, 0xd6, 0x3a, 0x29,
         0x4d, 0x99, 0x9b, 0x4c, 0x86, 0x67, 0x59, 0x82,
     };
-    try std.testing.expectEqualSlices(u8, &blake2s_expected, &blake2.blake2s256("abc"));
-
-    const keccak_expected = [_]u8{
+    pub const keccak256_abc = [_]u8{
         0x4e, 0x03, 0x65, 0x7a, 0xea, 0x45, 0xa9, 0x4f,
         0xc7, 0xd4, 0x7b, 0xa8, 0x26, 0xc8, 0xd6, 0x67,
         0xc0, 0xd1, 0xe6, 0xe3, 0x3a, 0x64, 0xa0, 0x36,
         0xec, 0x44, 0xf5, 0x8f, 0xa1, 0x2d, 0x6c, 0x45,
     };
-    try std.testing.expectEqualSlices(u8, &keccak_expected, &keccak.keccak256("abc"));
-
-    const sha3_expected = [_]u8{
+    pub const sha3_256_abc = [_]u8{
         0x3a, 0x98, 0x5d, 0xa7, 0x4f, 0xe2, 0x25, 0xb2,
         0x04, 0x5c, 0x17, 0x2d, 0x6b, 0xd3, 0x90, 0xbd,
         0x85, 0x5f, 0x08, 0x6e, 0x3e, 0x9d, 0x52, 0x5b,
         0x46, 0xbf, 0xe2, 0x45, 0x11, 0x43, 0x15, 0x32,
     };
-    try std.testing.expectEqualSlices(u8, &sha3_expected, &keccak.sha3_256("abc"));
+    /// Poseidon(F7, 3, 8, 57, 5) over (1, 2), and MiMC(F7, 91, 5) over (1, 2).
+    pub const poseidon_f7_1_2: u64 = 3;
+    pub const mimc_f7_1_2: u64 = 5;
+};
+
+test "cryptographic hash known-answer vectors" {
+    try std.testing.expectEqualSlices(u8, &kat.blake3_hello_world, &blake3.hash("hello world"));
+    try std.testing.expectEqualSlices(u8, &kat.blake2b256_abc, &blake2.blake2b256("abc"));
+    try std.testing.expectEqualSlices(u8, &kat.blake2s256_abc, &blake2.blake2s256("abc"));
+    try std.testing.expectEqualSlices(u8, &kat.keccak256_abc, &keccak.keccak256("abc"));
+    try std.testing.expectEqualSlices(u8, &kat.sha3_256_abc, &keccak.sha3_256("abc"));
 
     const PoseidonF7 = poseidon.Poseidon(F7, 3, 8, 57, 5);
     const poseidon_hash = try PoseidonF7.initFromSeed("demo");
-    try std.testing.expectEqual(@as(u64, 3), poseidon_hash.hash2(F7.fromInt(1), F7.fromInt(2)).value);
+    try std.testing.expectEqual(kat.poseidon_f7_1_2, poseidon_hash.hash2(F7.fromInt(1), F7.fromInt(2)).value);
 
     const MiMCF7 = mimc.MiMC(F7, 91, 5);
     const mimc_hash = try MiMCF7.initFromSeed("demo");
-    try std.testing.expectEqual(@as(u64, 5), mimc_hash.hash2(F7.fromInt(1), F7.fromInt(2)).value);
+    try std.testing.expectEqual(kat.mimc_f7_1_2, mimc_hash.hash2(F7.fromInt(1), F7.fromInt(2)).value);
 }
 
 test "Blake3 known-answer vectors, canonical (BLAKE3 KAT, not self-generated)" {

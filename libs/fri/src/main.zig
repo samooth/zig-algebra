@@ -15,6 +15,7 @@
 //! typed errors -- they used to be undefined behaviour in `ReleaseFast`.
 
 const std = @import("std");
+const testing = std.testing;
 const fri = @import("zig-fri");
 const zt = @import("zig-transcript");
 const zf = @import("zig-field");
@@ -77,6 +78,7 @@ pub fn main() !void {
         const proof = try fri.prove(Goldilocks, alloc, &prover, evals, cfg);
         var verifier = zt.Transcript.init("fri:example");
         const ok = try fri.verify(Goldilocks, &verifier, &proof, cfg);
+        try std.testing.expect(ok);
         std.debug.print("  honest proof verifies:        {s}\n", .{if (ok) "yes" else "NO"});
     }
 
@@ -90,6 +92,7 @@ pub fn main() !void {
         const proof = try fri.prove(Goldilocks, alloc, &prover, tampered, cfg);
         var verifier = zt.Transcript.init("fri:example");
         const ok = try fri.verify(Goldilocks, &verifier, &proof, cfg);
+        try std.testing.expect(!ok);
         std.debug.print("  one evaluation changed:       {s}\n", .{if (!ok) "yes" else "NO"});
     }
 
@@ -99,6 +102,7 @@ pub fn main() !void {
         const proof = try fri.prove(Goldilocks, alloc, &prover, evals, cfg);
         var verifier = zt.Transcript.init("fri:other");
         const ok = try fri.verify(Goldilocks, &verifier, &proof, cfg);
+        try std.testing.expect(!ok);
         std.debug.print("  different domain label:       {s}\n", .{if (!ok) "yes" else "NO"});
     }
 

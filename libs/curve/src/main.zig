@@ -12,6 +12,7 @@
 //! is checked against the sum of the individual products.
 
 const std = @import("std");
+const testing = std.testing;
 const zc = @import("zig-curve");
 const zf = @import("zig-field");
 
@@ -41,7 +42,9 @@ pub fn main() !void {
 
     std.debug.print("zig-curve: one group, three paths\n\n", .{});
     std.debug.print("=== the generator is on the curve, and the group is closed ===\n", .{});
+    try std.testing.expect(gen.isOnCurve());
     std.debug.print("  generator on y^2 = x^3 + 3: {s}\n", .{if (gen.isOnCurve()) "yes" else "NO"});
+    try std.testing.expect(gen.scalarMul(2).eql(gen.add(gen)));
     std.debug.print("  2G == G + G (affine vs ladder): {s}\n", .{if (gen.scalarMul(2).eql(gen.add(gen))) "yes" else "NO"});
 
     // The ladder must agree with repeated addition, which is the reference the
@@ -61,11 +64,13 @@ pub fn main() !void {
     // Zero and the group order are the two boundaries a random sample misses:
     // 0*G is the identity, and r*G is too.
     std.debug.print("\n=== boundaries ===\n", .{});
+    try std.testing.expect(gen.scalarMul(0).infinity);
     std.debug.print("  0 * G is the identity: {s}\n", .{if (gen.scalarMul(0).infinity) "yes" else "NO"});
     try std.testing.expect(gen.scalarMul(0).infinity);
 
     // The group order, as a field element. [r]G is the identity for the same reason
     // [p]x is zero in a field: it is the modulus of the scalar group.
+    try std.testing.expect(gen.scalarMul(R_ORDER_AS_U512).infinity);
     std.debug.print("  [r]G is the identity (r = the group order): {s}\n", .{if (gen.scalarMul(R_ORDER_AS_U512).infinity) "yes" else "NO"});
 
     // Projective and affine are the same point in different coordinates.

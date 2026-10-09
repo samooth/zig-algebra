@@ -1,6 +1,7 @@
 //! zig-bigint example
 
 const std = @import("std");
+const testing = std.testing;
 const bigint = @import("root.zig");
 
 pub fn main() !void {
@@ -53,6 +54,16 @@ pub fn main() !void {
     const composite = Big.fromU64(91);
     const is_comp = try Prime.millerRabin(composite, 7);
     std.debug.print("91 is prime: {}\n", .{is_comp});
+
+    // Every expected value below is mathematics, worked out independently of this
+    // library: 12345678901234567890 + 9876543210987654321 = 22222222112222222211,
+    // 3 * 4 = 12 = 1 (mod 11), 2^10 = 1024, 104729 is the 10000th prime, and
+    // 91 = 7 * 13. None of them was produced by running this code.
+    try testing.expect((try a.add(b)).eql((try Big.fromString("22222222112222222211"))));
+    try testing.expect((try Gcd.modInv(Big.fromU64(3), Big.fromU64(11))).eql(Big.fromU64(4)));
+    try testing.expect((try ModExp.modExpU64(Big.fromU64(2), 10, Big.fromU64(1000))).eql(Big.fromU64(24)));
+    try testing.expect(try Prime.millerRabin(Big.fromU64(104729), 7));
+    try testing.expect(!try Prime.millerRabin(Big.fromU64(91), 7));
 
     // Negative numbers
     const neg = Big.fromI64(-42);

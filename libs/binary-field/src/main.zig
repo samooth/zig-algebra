@@ -11,6 +11,7 @@
 //! a silent wrong answer rather than a failure.
 
 const std = @import("std");
+const testing = std.testing;
 const zbf = @import("zig-binary-field");
 
 pub fn main() !void {
@@ -31,9 +32,11 @@ pub fn main() !void {
         const same = a.add(b).eq(a.sub(b));
         std.debug.print("=== {s} ===\n", .{name});
         std.debug.print("  BITS: {d}\n", .{F.BITS});
+        try std.testing.expect(same);
         std.debug.print("  a + b == a - b: {s}\n", .{if (same) "yes" else "NO"});
 
         // a + a == 0, which is the same fact seen from the other side.
+        try std.testing.expect(a.add(a).isZero());
         std.debug.print("  a + a == 0:    {s}\n", .{if (a.add(a).isZero()) "yes" else "NO"});
 
         // Trace is F_2-valued: trace(x) is 0 or 1 for every x, and
@@ -41,16 +44,19 @@ pub fn main() !void {
         // check; what is checkable is additivity, which in characteristic two is
         // trace(a+b) == trace(a) XOR trace(b).
         const t_ok = (a.add(b).trace() == (a.trace() ^ b.trace()));
+        try std.testing.expect(t_ok);
         std.debug.print("  trace additive (XOR): {s}\n", .{if (t_ok) "yes" else "NO"});
 
         // Norm lands in the base, and is multiplicative.
         const n1 = F.fromInt(3).norm();
         const n2 = F.fromInt(5).norm();
         const n_ok = F.fromInt(3).mul(F.fromInt(5)).norm().eq(n1.mul(n2));
+        try std.testing.expect(n_ok);
         std.debug.print("  norm multiplicative: {s}\n", .{if (n_ok) "yes" else "NO"});
 
         // The checked inverse, and the trap beside it.
         const inv = try a.invChecked();
+        try std.testing.expect(a.mul(inv).eq(F.one()));
         std.debug.print("  a * a^-1 == 1:  {s}\n", .{if (a.mul(inv).eq(F.one())) "yes" else "NO"});
         std.debug.print("  LEGACY inv(0) is zero, and zero is not an inverse: {s}\n", .{
             if (F.zero().inv().isZero()) "yes (use invChecked)" else "no",
@@ -65,8 +71,11 @@ pub fn main() !void {
     const x = Gcm.fromInt(0x0123456789abcdef);
     std.debug.print("=== Gf128, x^128 + x^7 + x^2 + x + 1 (GCM) ===\n", .{});
     const inv = try x.invChecked();
+    try std.testing.expect(x.mul(inv).eq(Gcm.one()));
     std.debug.print("  x * x^-1 == 1: {s}\n", .{if (x.mul(inv).eq(Gcm.one())) "yes" else "NO"});
     const y = Gcm.fromInt(0xfedcba9876543210);
+    try std.testing.expect(y.mul(try y.invChecked()).eq(Gcm.one()));
     std.debug.print("  y * y^-1 == 1: {s}\n", .{if (y.mul(try y.invChecked()).eq(Gcm.one())) "yes" else "NO"});
+    try std.testing.expect(x.add(x).isZero());
     std.debug.print("  x + x == 0:    {s}\n", .{if (x.add(x).isZero()) "yes" else "NO"});
 }

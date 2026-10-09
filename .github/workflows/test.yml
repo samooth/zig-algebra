@@ -185,6 +185,29 @@ jobs:
       # about what it had verified.
       - run: zig build cross-check --summary all
 
+  examples:
+    # `zig build examples` *runs* all seventeen `libs/*/src/main.zig`. Until it
+    # existed, the examples were compiled (by `cross-check`, for two foreign
+    # targets) and executed by nobody: no root build step, no CI job. Compiling
+    # is not running, and most of these examples printed a verdict and exited
+    # zero regardless of it -- so an example that stopped being true went on
+    # being green. They now assert, and this runs them.
+    #
+    # It is a separate job rather than a line in `test` because the examples are
+    # executables, not test roots: they are not in `zig build test`'s graph, so
+    # folding them in there would have left them exactly where they were.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: 0.16.0
+      # `--summary all` so the log names the seventeen executables it ran. A
+      # silent green step is indistinguishable from one that did nothing, which
+      # is the failure mode this job is here to close.
+      - run: zig build examples --summary all
+
   fuzz:
     # `zig build fuzz` was never in CI, so the randomized property runner was
     # only ever exercised by whoever happened to run it locally. It is ~40s in

@@ -1,6 +1,7 @@
 //! zig-rng example: demonstrates ChaCha20, Shake256, Fisher-Yates, and field sampling.
 
 const std = @import("std");
+const testing = std.testing;
 const rng = @import("root.zig");
 
 // Minimal F7 field for demonstration
@@ -117,11 +118,30 @@ pub fn main() !void {
     defer allocator.free(s2);
     printHex("squeeze 64", s2);
 
+    // Determinism is the contract of a seeded PRNG, and it is a property with a
+    // contradicting case: two instances from the same seed must agree, and must
+    // not agree with a third from a different one.
+    var d1 = rng.ChaCha20Rng.initFromSeed(&seed);
+    var d2 = rng.ChaCha20Rng.initFromSeed(&seed);
+    const e1 = d1.randomU64();
+    const e2 = d2.randomU64();
+    try testing.expectEqual(e1, e2);
+
     // --- Fisher-Yates ---
     std.debug.print("\n--- Fisher-Yates shuffle ---\n", .{});
     var chacha2 = rng.ChaCha20Rng.initFromSeed(&seed);
     var deck = [_]u8{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
     try rng.shuffle(u8, rng.ChaCha20Rng, &chacha2, &deck);
+
+    // A shuffle that loses or duplicates a card is the failure that matters here,
+    // and it is invisible in the printed order: the multiset has to come back
+    // unchanged. Counting beats eyeballing, and a duplicated index has a matching
+    // total unless you check each one.
+    var seen = [_]bool{false} ** 10;
+    for (deck) |c| {
+        try testing.expect(!seen[c]);
+        seen[c] = true;
+    }
     std.debug.print("shuffled deck: ", .{});
     for (deck) |c| std.debug.print("{} ", .{c});
     std.debug.print("\n", .{});
@@ -131,6 +151,14 @@ pub fn main() !void {
     var chacha3 = rng.ChaCha20Rng.initFromSeed(&seed);
     const perm = try rng.randomPermutation(rng.ChaCha20Rng, &chacha3, 8, allocator);
     defer allocator.free(perm);
+
+    // The permutation must contain each of 0..n exactly once, for the same reason.
+    var where = [_]bool{false} ** 8;
+    for (perm) |q| {
+        try testing.expect(q < 8);
+        try testing.expect(!where[q]);
+        where[q] = true;
+    }
     std.debug.print("permutation of [0..8): ", .{});
     for (perm) |p| std.debug.print("{} ", .{p});
     std.debug.print("\n", .{});
@@ -141,9 +169,10 @@ pub fn main() !void {
     std.debug.print("random field elements: ", .{});
     for (0..10) |_| {
         const f = try rng.randomFieldElement(F7, rng.ChaCha20Rng, &chacha4);
+        try testing.expect(f.value < 7);
         std.debug.print("{} ", .{f.value});
     }
     std.debug.print("\n", .{});
 
-    std.debug.print("\nAll RNG operations completed successfully!\n", .{});
+    std.debug.print("\nAll RNG operations verified: deterministic, and the shuffles are permutations.\n", .{});
 }

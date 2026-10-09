@@ -1,6 +1,7 @@
 //! zig-merkle example: demonstrates MerkleTree, MMR, and SparseMerkleTree.
 
 const std = @import("std");
+const testing = std.testing;
 const merkle = @import("root.zig");
 const Blake3 = @import("zig-hash").Blake3;
 
@@ -38,6 +39,29 @@ pub fn main() !void {
     const serialized = try proof.serialize(allocator);
     defer allocator.free(serialized);
     std.debug.print("Serialized proof size: {} bytes\n", .{serialized.len});
+
+    // An honest proof must verify, and tampered ones must not: a different leaf,
+    // a different root, or a proof belonging to a different index. Checking only
+    // the honest case cannot tell a verifier from a rubber stamp, because the
+    // property that matters is that the wrong answer is *rejected*.
+    try testing.expect(ok);
+    try testing.expect(!Tree.verify(root, 2, "tx4", proof));
+    var bad_root = root;
+    bad_root[0] ^= 0x01;
+    try testing.expect(!Tree.verify(bad_root, 2, "tx3", proof));
+    const other = try tree.prove(3, allocator);
+    defer other.deinit(allocator);
+    try testing.expect(!Tree.verify(root, 2, "tx3", other));
+
+    // NOT ASSERTED, and the reason is a defect rather than caution: `verify`
+    // takes an `index` and uses it only for a range check (`validPathIndex`).
+    // Inside the loop the decision of "sibling on the left or on the right" comes
+    // from `proof.is_left_sibling[i]`, which is a field *of the proof itself* --
+    // so the verifier is told which side each sibling is on by the party offering
+    // the proof, and `idx` is shifted but never read. `verify(root, 2, "tx3",
+    // proof)` and `verify(root, 1, "tx3", proof)` therefore return the same
+    // answer, and an honest inclusion proof for one position is accepted at
+    // another. The direction has to come from the index bits, not the proof.
 
     // --- Merkle Mountain Range ---
     std.debug.print("\n--- Merkle Mountain Range ---\n", .{});

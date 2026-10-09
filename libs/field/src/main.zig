@@ -12,6 +12,7 @@
 //! `fromBytes` rejects a value at or above the modulus instead of reducing it.
 
 const std = @import("std");
+const testing = std.testing;
 const zf = @import("zig-field");
 
 fn checkField(comptime F: type, comptime name: []const u8) !void {
@@ -32,6 +33,7 @@ fn checkField(comptime F: type, comptime name: []const u8) !void {
         const back = a.mul(try a.invChecked());
         if (!back.isOne()) ok = false;
     }
+    try std.testing.expect(ok);
     std.debug.print("  a * a^-1 == 1 at boundary values: {s}\n", .{if (ok) "yes" else "NO"});
     try std.testing.expect(ok);
 
@@ -52,6 +54,7 @@ fn checkField(comptime F: type, comptime name: []const u8) !void {
     const x = F.fromInt(12345);
     var acc = F.one();
     for (0..5) |_| acc = acc.mul(x);
+    try std.testing.expect(x.pow(5).eql(acc));
     std.debug.print("  pow(5) == five multiplications: {s}\n", .{if (x.pow(5).eql(acc)) "yes" else "NO"});
     try std.testing.expect(x.pow(5).eql(acc));
 }
@@ -82,12 +85,14 @@ pub fn main() !void {
     const Sq = zf.BN254_Fp2;
     const v = Sq.EXT_NON_RESIDUE;
     std.debug.print("\n=== BN254_Fp2 (quadratic tower) ===\n", .{});
+    try std.testing.expect(v.sqr().add(Sq.fromInt(1)).isZero());
     std.debug.print("  v^2 + 1 == 0 (u^2 = -1): {s}\n", .{if (v.sqr().add(Sq.fromInt(1)).isZero()) "yes" else "NO"});
     try std.testing.expect(v.sqr().add(Sq.fromInt(1)).isZero());
 
     // And the inverse of an extension element is norm-based, so the same
     // a * a^-1 == 1 invariant holds there too.
     const e = Sq.new(zf.BN254_Fp.fromInt(7), zf.BN254_Fp.fromInt(11));
+    try std.testing.expect(e.mul(try e.invChecked()).isOne());
     std.debug.print("  extension a * a^-1 == 1: {s}\n", .{if (e.mul(try e.invChecked()).isOne()) "yes" else "NO"});
     try std.testing.expect(e.mul(try e.invChecked()).isOne());
 }

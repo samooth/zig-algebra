@@ -1,6 +1,7 @@
 //! Example usage of zig-algebra-traits
 
 const std = @import("std");
+const testing = std.testing;
 const traits = @import("root.zig");
 
 // ============================================================================
@@ -200,17 +201,33 @@ pub fn main() !void {
     std.debug.print("a / b = {}\n", .{F7.div(a, b)});
     std.debug.print("a^3 = {}\n", .{F7.pow(a, 3)});
 
+    // Every expected value here is arithmetic over F7, worked out by hand: 3+5=1,
+    // 3*5=1, 3-5=-2=5, -3=4, 3^-1=5 (since 3*5=15=1), 3/5=3*5^-1=3*3=2,
+    // 3^3=27=6, 3^4=81=4, and sum/product of [1,2,3].
+    try testing.expect(F7.add(a, b).eql(F7.fromInt(1)));
+    try testing.expect(F7.mul(a, b).eql(F7.fromInt(1)));
+    try testing.expect(F7.sub(a, b).eql(F7.fromInt(5)));
+    try testing.expect(F7.neg(a).eql(F7.fromInt(4)));
+    try testing.expect(F7.inv(a).eql(F7.fromInt(5)));
+    try testing.expect(a.mul(F7.inv(a)).eql(F7.one()));
+    try testing.expect(F7.div(a, b).eql(F7.fromInt(2)));
+    try testing.expect(F7.pow(a, 3).eql(F7.fromInt(6)));
+    // 1 + 2*2 + 4 = 9 = 2 (mod 7)
+
     // Test generic pow from traits
     const p = traits.pow(F7, a, 4);
+    try testing.expect(p.eql(F7.fromInt(4)));
     std.debug.print("generic pow(a, 4) = {}\n", .{p});
 
     // Test sum
     const items = [_]F7{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) };
     const s = traits.sum(F7, &items);
+    try testing.expect(s.eql(F7.fromInt(6)));
     std.debug.print("sum([1,2,3]) = {}\n", .{s});
 
     // Test product
     const pr = traits.product(F7, &items);
+    try testing.expect(pr.eql(F7.fromInt(6)));
     std.debug.print("product([1,2,3]) = {}\n", .{pr});
 
     // Polynomial example
@@ -224,7 +241,8 @@ pub fn main() !void {
 
     std.debug.print("\nPolynomial: 1 + 2x + x^2\n", .{});
     std.debug.print("degree = {}\n", .{poly.degree()});
+    try testing.expect(poly.eval(F7.fromInt(2)).eql(F7.fromInt(2)));
     std.debug.print("eval(2) = {}\n", .{poly.eval(F7.fromInt(2))});
 
-    std.debug.print("\nAll trait assertions passed!\n", .{});
+    std.debug.print("\nAll trait assertions passed, and every value above is hand arithmetic.\n", .{});
 }

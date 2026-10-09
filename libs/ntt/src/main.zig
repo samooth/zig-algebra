@@ -8,6 +8,7 @@
 //! and still fail here.
 
 const std = @import("std");
+const testing = std.testing;
 const ntt = @import("zig-ntt");
 const zf = @import("zig-field");
 
@@ -53,6 +54,8 @@ pub fn main() !void {
 
         const ok = round_trips and matches;
         if (!ok) failures += 1;
+        try testing.expect(round_trips);
+        try testing.expect(matches);
         std.debug.print("  {d:>5} | {d:>5} | {s:>10} | {s:>17} | {s}\n", .{
             log_n,                            n,
             if (round_trips) "yes" else "NO", if (matches) "yes" else "NO",

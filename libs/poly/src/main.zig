@@ -1,6 +1,7 @@
 //! zig-poly example: polynomial arithmetic over a finite field.
 
 const std = @import("std");
+const testing = std.testing;
 const poly = @import("root.zig");
 
 // Minimal F7 field for demonstration
@@ -109,6 +110,9 @@ pub fn main() !void {
     std.debug.print("\n--- Evaluation ---\n", .{});
     const x = F7.fromInt(2);
     const y = p.eval(x);
+    // p = 1 + 2x + 3x^2, so p(2) = 1 + 4 + 12 = 17 = 3 (mod 7). Worked out
+    // over the field, not read from this output.
+    try testing.expect(y.eql(F7.fromInt(3)));
     std.debug.print("p({}) = {}\n", .{ x.value, y.value });
 
     // --- Division ---
@@ -116,12 +120,20 @@ pub fn main() !void {
     const dividend = try Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(0), F7.fromInt(1) }); // x^2 - 1
     const divisor = try Poly.fromCoeffs(&.{ F7.fromInt(6), F7.fromInt(1) }); // x - 1
     const qr = try dividend.divRem(divisor);
+    // x^2 - 1 = (x - 1)(x + 1), exactly: no remainder, and the quotient is
+    // x + 1. Checking the quotient by evaluating it at two points is stronger
+    // than comparing a coefficient vector this library produced.
+    try testing.expect(qr.r.isZero());
+    try testing.expect(qr.q.eval(F7.fromInt(0)).eql(F7.fromInt(1)));
+    try testing.expect(qr.q.eval(F7.fromInt(1)).eql(F7.fromInt(2)));
     std.debug.print("(x^2 - 1) / (x - 1) = {}\n", .{qr.q});
     std.debug.print("remainder = {}\n", .{qr.r});
 
     // --- Derivative ---
     std.debug.print("\n--- Derivative ---\n", .{});
     const deriv = p.derivative();
+    // p'(x) = 2 + 6x, so p'(2) = 14 = 0 (mod 7).
+    try testing.expect(deriv.eval(x).eql(F7.fromInt(0)));
     std.debug.print("p'(x) = {}\n", .{deriv});
 
     // --- Composition ---
@@ -142,6 +154,7 @@ pub fn main() !void {
     std.debug.print("Interpolated: {}\n", .{interp});
     for (xs, ys) |xi, yi| {
         const yi_calc = interp.eval(xi);
+        try testing.expect(yi_calc.eql(yi));
         std.debug.print("  f({}) = {} (expected {})\n", .{ xi.value, yi_calc.value, yi.value });
     }
 
@@ -151,8 +164,9 @@ pub fn main() !void {
     const vanish = try poly.vanishingPolynomial(F7, 16, points);
     std.debug.print("V(x) = {}\n", .{vanish});
     for (points) |pt| {
+        try testing.expect(vanish.eval(pt).isZero());
         std.debug.print("  V({}) = {}\n", .{ pt.value, vanish.eval(pt).value });
     }
 
-    std.debug.print("\nAll polynomial operations completed successfully!\n", .{});
+    std.debug.print("\nAll polynomial operations verified against arithmetic over F7.\n", .{});
 }

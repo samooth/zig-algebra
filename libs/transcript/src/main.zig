@@ -13,6 +13,7 @@
 //! because a non-canonical challenge is a different field element than it looks.
 
 const std = @import("std");
+const testing = std.testing;
 const transcript = @import("zig-transcript");
 const zf = @import("zig-field");
 
@@ -38,6 +39,7 @@ pub fn main() !void {
     t_same.absorbBytes("the statement being proved");
     var c1_again: [32]u8 = undefined;
     t_same.challengeBytes(&c1_again);
+    try std.testing.expect(std.mem.eql(u8, &c1, &c1_again));
     std.debug.print("  reproducible: {s}\n", .{if (std.mem.eql(u8, &c1, &c1_again)) "yes" else "NO"});
 
     // One bit different, and every challenge after it must move.
@@ -76,6 +78,7 @@ pub fn main() !void {
             if (!back.eql(f)) in_range = false;
         } else |_| in_range = false;
     }
+    try std.testing.expect(in_range);
     std.debug.print("  64 field challenges all canonical: {s}\n", .{if (in_range) "yes" else "NO"});
 
     // Sequential challenges differ, which is what stops a prover reusing one.
@@ -83,6 +86,7 @@ pub fn main() !void {
     t5.absorbU64(1);
     const a = t5.challengeU64();
     const b = t5.challengeU64();
+    try std.testing.expect(a != b);
     std.debug.print("  sequential challenges differ:  {s}\n", .{if (a != b) "yes" else "NO"});
 }
 

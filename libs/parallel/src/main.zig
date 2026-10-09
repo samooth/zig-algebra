@@ -7,6 +7,7 @@
 //! down, so the equality is the property rather than a demonstration of it.
 
 const std = @import("std");
+const testing = std.testing;
 const parallel = @import("zig-parallel");
 
 const Ctx = struct {
@@ -56,6 +57,7 @@ pub fn main() !void {
             // with a matching total is still a bug.
             const ok = total == count and (count == 0 or (lo == 1 and hi == 1));
             if (!ok) failures += 1;
+            try testing.expect(ok);
 
             std.debug.print("  {d:>5} | {d:>7} | {d:>5} | {d}/{d:<14} | {s}\n", .{
                 count, nw, total, lo, hi, if (ok) "yes" else "NO",

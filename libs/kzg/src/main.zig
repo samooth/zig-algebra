@@ -15,6 +15,7 @@
 //! recorded as dead code; nothing in the tree called them.
 
 const std = @import("std");
+const testing = std.testing;
 const kzg = @import("zig-kzg");
 const zc = @import("zig-curve");
 
@@ -38,6 +39,7 @@ pub fn main() !void {
     const commitment = try kzg.commit(&setup, alloc, &coeffs);
 
     std.debug.print("zig-kzg over BN254, max_degree={d}\n\n", .{max_degree});
+    try std.testing.expect(commitment.isOnCurve());
     std.debug.print("  commitment on curve: {s}\n", .{if (commitment.isOnCurve()) "yes" else "NO"});
 
     const z = Fr.fromInt(11);
@@ -49,6 +51,7 @@ pub fn main() !void {
         const opening = try kzg.prove(&setup, alloc, &coeffs, z);
         const witness = opening.witness;
         const ok = kzg.verify(&setup, commitment, z, y, witness);
+        try std.testing.expect(ok);
         std.debug.print("\n  correct opening verifies:        {s}\n", .{if (ok) "yes" else "NO"});
     }
 
@@ -58,6 +61,7 @@ pub fn main() !void {
         const opening = try kzg.prove(&setup, alloc, &coeffs, z);
         const witness = opening.witness;
         const ok = kzg.verify(&setup, commitment, z, y_wrong, witness);
+        try std.testing.expect(!ok);
         std.debug.print("  wrong claimed value rejected:   {s}\n", .{if (!ok) "yes" else "NO"});
     }
 
@@ -70,6 +74,7 @@ pub fn main() !void {
         const opening = try kzg.prove(&setup, alloc, &coeffs, z);
         const witness = opening.witness;
         const ok = kzg.verify(&setup, bad, z, y, witness);
+        try std.testing.expect(!ok);
         std.debug.print("  off-curve commitment rejected:  {s}\n", .{if (!ok) "yes" else "NO"});
     }
 
@@ -80,6 +85,7 @@ pub fn main() !void {
         const opening = try kzg.prove(&setup, alloc, &coeffs, z);
         const witness = opening.witness;
         const ok = kzg.verify(&setup, infinity, z, y, witness);
+        try std.testing.expect(!ok);
         std.debug.print("  identity commitment rejected:   {s}\n", .{if (!ok) "yes" else "NO"});
     }
 
@@ -91,6 +97,7 @@ pub fn main() !void {
         const opening0 = try kzg.prove(&setup, alloc, &zero_coeffs, z);
         const w0 = opening0.witness;
         const ok = kzg.verify(&setup, c0, z, Fr.zero(), w0);
+        try std.testing.expect(ok);
         std.debug.print("  zero polynomial verifies:       {s}\n", .{if (ok) "yes" else "NO"});
     }
 
@@ -99,6 +106,7 @@ pub fn main() !void {
         var big: [max_degree + 2]Fr = undefined; // degree 17, one past the setup
         for (&big) |*c| c.* = Fr.one();
         const e = kzg.commit(&setup, alloc, &big);
+        try std.testing.expect(e == error.DegreeExceedsSetup);
         std.debug.print("  degree beyond setup rejected:   {s}\n", .{if (e == error.DegreeExceedsSetup) "yes" else "NO"});
     }
 
