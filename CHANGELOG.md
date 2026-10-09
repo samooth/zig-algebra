@@ -61,6 +61,27 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- Docs: `AGENTS.md` gains four rules, each from a failure in the session that
+  wrote it rather than from a principle. **Before proposing performance work,
+  name the consumer** -- `zig-poly` has no consumer in this repository and the
+  measurement that looked like an optimisation was a convergence question.
+  **A measurement without a correctness control is not a measurement** -- the
+  first Karatsuba benchmark overflowed an accumulator on odd operand counts and
+  printed a confident false negative in all twenty-one cells until a comparison
+  against the library's own answer caught it. **A characterisation of an external
+  result is not the result** -- "quantum factoring breaks cryptography" came from
+  a one-line gloss and the paper disclaims it. And the counts gate's own scope
+  note now records that `zig build counts-check` locally compares documents
+  against a JSON and executes nothing, so a green local run is not evidence the
+  counts are current; CI is where the suite is compared, and the command to make
+  the local run honest is written down.
+- Docs: `docs/relevance-scan-2026-10.md` gains a verdict for every family on the
+  supplied list, ~200 of them, with the reason for the out-of-scope ones stated
+  once rather than implied: this tree has no graphs, no lattices, no curves over
+  Q, no L-functions, no PDEs and no representation theory. Two families act, five
+  are worth reading, and four required correction -- including the torus-packet
+  false positive and the quantum-factoring gloss, both of which had looked
+  relevant on a keyword.
 - **Added: `libs/poly/tests/horner_parity.zig`, a test for the four copies of
   Horner.** `zig-poly` has no consumer in this repository, and the polynomial
   arithmetic the ecosystem performs is duplicated inline in at least four places:

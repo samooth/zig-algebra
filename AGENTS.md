@@ -623,6 +623,94 @@ it is not "what does it assert" but **"what does it look at, and how would I kno
 if that list went stale"**. If the answer involves a filename, the answer is a
 list someone typed.
 
+**And the gate that derives its scope correctly can still not look at the thing
+when run by hand.** `zig build counts-check` on its own compares the documents
+against `docs/test_counts.json` and nothing else — the build step at `build.zig:332`
+passes `--root .` and no measurement, because it cannot run the suite as a
+prerequisite. CI passes `--summary-file suite-summary.txt` (`test.yml:131`) and
+then all three are compared. So two new tests were added and the local gate stayed
+green, and the same command in CI failed immediately with *"total says 592 and the
+suite just reported 594"*. A green local run of this gate is not evidence that the
+counts are current; it is evidence that the documents agree with a JSON someone
+updated by hand. When the counts matter, run the suite first:
+
+```bash
+zig build test -Doptimize=ReleaseFast --summary all > s.txt 2>&1
+python3 scripts/counts_verify.py --summary-file s.txt
+```
+
+**The version of the workspace is not a count, so no gate holds it.** Three
+documents carried three different values — `AGENTS.md` said 0.5.1, `README.md`
+said 0.5.0, and the manifest said 0.6.0 — with the library range wrong too
+(`0.1.0`–`0.5.0` documented against an actual `0.1.3`–`0.5.0`), and `Versioning`
+had no entry for the release the CHANGELOG described. `counts_verify.py` holds
+test counts and cannot see any of it, because the workspace version is a string
+and not a number it models. A grep for the manifest's value covers it in a few
+lines, and until one exists the rule is read-the-manifest.
+
+### Before proposing performance work, name the consumer
+
+This is requirement 15 in `docs/requirements.md` and it is worth restating where
+an agent will actually meet it, because it was violated here in the same session
+that wrote it down.
+
+`zig-poly`'s `mul` is O(n²) with no Karatsuba, and an external formalized result
+now warrants sub-cubic over every positive characteristic. That looked like a
+clear piece of work. It is not: **`zig-poly` has no consumer in this repository.**
+Nothing outside its own `root.zig`, its own `main.zig` and its own `build.zig`
+names it, and the polynomial arithmetic the ecosystem actually performs is
+duplicated inline in at least four places, three of them over runtime-length
+slices while `zig-poly` exposes a comptime-sized array. Optimising it would have
+made nothing faster for anybody.
+
+The measurement is in `docs/poly-mul-measurement.md` and it stands on its own —
+Karatsuba at crossover 32 is 1.2–1.4× from degree 64 and 1.9–2.4× at 256 — but the
+finding that decides the question was the consumer, not the arithmetic. This is
+the third time the shape has appeared: the `main.zig` files nobody compiled, a
+public precondition in `zig-bigint` nothing referenced, and `zig-rng` wired into
+the build at four places and imported nowhere, which the 0.6.0 changelog names
+outright: *"the wiring is not the consumer."* So the question is not "is this slow"
+but **"who calls it, and would they notice."** If the answer is nobody, the work is
+a convergence, not an optimisation.
+
+### A measurement without a correctness control is not a measurement
+
+The first version of the Karatsuba benchmark printed "Karatsuba loses" in all
+twenty-one cells, and it was wrong. An accumulator was sized `half + 1`, and
+whenever the operand count is odd the high half has `half + 1` elements and their
+product needs `2*half + 1` coefficients, so two of the three buffers overflowed
+and every figure measured a broken routine. The numbers were plausible; the
+table was confident; the conclusion would have been false.
+
+What caught it was a comparison against the library's own answer, computed once
+outside the timed region and checked before any ratio was printed. So the rule is
+the §0 rule applied to a benchmark: **a timing figure for a computation that has
+not been shown to compute the right thing is decoration**, and the control has to
+be the thing that fails, not the thing that is measured. `libs/poly/bench/mul.zig`
+now refuses to print a ratio when the two disagree, and prints `NO` instead.
+
+The second half of the same lesson is variance. A figure that decided a 1.0×
+threshold came out at 3170 ns in one run and 6116 ns in the next — 90% scheduler
+noise on the number the whole question rested on. Report the minimum of several
+runs, which is what `libs/field/bench/pow.zig` already does for `pow` and what the
+comment there says about it.
+
+### A characterisation of an external result is not the result
+
+A first pass of `docs/relevance-scan-2026-10.md` repeated, from a one-line summary,
+that a quantum-factoring result "breaks cryptography". The paper says nothing of
+the kind: it is Shor's algorithm with the Fourier transform replaced, in a
+perfect-gate model where "fault", "noise" and "error correction" appear nowhere in
+twenty-four pages, and its own closing caveat reads *"its large polynomial
+parameters are not intended as practical resource improvements."* The strings
+"RSA", "elliptic curve" and "ECDLP" do not occur in it at all.
+
+That is §0's own rule wearing different clothes: **the value of a claim is not what
+it asserts, it is what its source actually measured**, and a summary is a check
+that cannot fail because it cannot disagree. Before repeating a characterisation
+of anything outside this tree, open the thing. It took one `pdftotext` and the
+claim inverted.
+
 ### Property-Based Testing Pattern
 For ring/field axioms, generate random elements and verify:
 ```zig

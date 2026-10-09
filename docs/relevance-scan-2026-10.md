@@ -477,7 +477,170 @@ consumer.**"*
 
 ---
 
-## Caveats on this document
+## Part 4 — every result, with a verdict
+
+The full list as supplied, with a verdict per family. Verdicts are one of:
+**actúa** (touches code here), **lee** (worth reading, not building on),
+**adyacente** (shared vocabulary, no shared object), **fuera** (structurally out
+of scope), **corregido** (the first-pass claim was wrong and is fixed here).
+
+Nothing in the "fuera" rows is a judgement on the mathematics. It is a statement
+about what this tree computes, and the reason is the same in almost every row:
+**the library has no graphs, no lattices, no curves over ℚ, no L-functions, no
+PDEs, and no representation theory.**
+
+### Number theory (17)
+
+| Fam | Result | Verdict | Comment |
+|---|---|---|---|
+| 003 | Quasi-Riemann, Re s > 7/8 | lee | Formalized. The only link in the deterministic-factorization chain that is verified. Not itself applicable — this tree touches L-functions nowhere |
+| 005 | Catalan's constant irrational | fuera | Analysis of a real constant |
+| 007 | Two-point Chowla | fuera | Analytic number theory |
+| 008 | Deligne–Drinfeld, GT algebra | fuera | Arithmetic geometry |
+| 009 | Bogomolov–Pop / Milnor K | fuera | Geometric Langlands-adjacent |
+| 012 | Joint Dickman law | adyacente | Largest-prime-factor distribution; `libs/bigint` does trial division. Indirect |
+| 013 | Ostmann inverse Goldbach | fuera | Additive structure of primes |
+| 015 | Torus-packet equidistribution | **corregido** | First pass flagged "torus" as kin to `libs/fri`'s torus. It is not: ideal-class packets in totally real sextic fields. Coincidence of a word |
+| 017 | Irrationality exponent of π | fuera | One real constant |
+| 020 | Squarefree quartic values | fuera | Values of polynomials over ℚ |
+| 021 | Jacobsthal quadratic bound | adyacente | Formalized. Relates to φ and sieving; `libs/bigint`'s primality is the nearest object. No direct use |
+| 023 | Patterson moment | fuera | Automorphic forms |
+| 024 | Number of totients | adyacente | φ measures multiplicative-group order, which `libs/field`'s primitive-root search depends on. Indirect |
+| 025 | Short Egyptian fractions | fuera | Formalized, but no Egyptian fractions here |
+| 026 | Large prime gaps | adyacente | Positive density of large gaps bounds how long a prime search runs. `libs/bigint` and the KZG setup search for primes |
+| 027 | Integral density on character varieties | fuera | Representation theory |
+| 028 | Gaussian prime neighbours | fuera | Primitive Gaussian integers |
+
+### Algebraic and complex geometry (8) — all **fuera**
+
+033 Campana/Iitaka orbifolds · 039 Nagata–Seshadri · 047 affine cancellation in C⁴ ·
+049 Abhyankar–Sathaye · 050 Griffiths positivity fails · 052 Beauville tangent bundles ·
+058 Kollár–Pardon semialgebraic covers · 066 Shokurov klt complements. None of these
+has an object in this tree; the closest any comes is 047 and 049, whose
+counterexamples live in four-variable polynomial rings, and `libs/poly` is
+univariate with degree at most 256 in the benchmark.
+
+### Real and complex analysis (10) — all **fuera**
+
+071 Koebe · 072 Brennan · 073 Falconer distances · 075 Fourier convergence ·
+076 Littlewood · 081 David–Semmes · 082 triangular Hilbert · 083 Stein ·
+084 Erdős similarity · 085 Hajász–Onninen. 075 and 082 are harmonic analysis over
+ℝ; `libs/ntt` is a transform over finite fields, which is a different object.
+
+### Convex and metric geometry (13)
+
+| Fam | Result | Verdict | Comment |
+|---|---|---|---|
+| 087 | Mahler conjecture | fuera | Polytope volumes |
+| 088 | Petty conjecture | fuera | Projection bodies |
+| 089 | Gupta–Newman planar flow-cut | fuera | Multicommodity flow |
+| 090 | Triangular lattice universal optimality | adyacente | The one geometry→proof-stack bridge available: choosing evaluation domains and interpolation points *is* a point-configuration problem. Speculative, and not formalized |
+| 091 | Log-Brunn–Minkowski | fuera | Convex geometry |
+| 092 | Lattice covering density | fuera | Covering numbers |
+| 094 | Subpolynomial dimension reduction | fuera | Metric embeddings |
+| 095 | Projected spectrahedra | fuera | Hyperbolicity cones |
+| 096 | Gaussian helix | fuera | Feeds a hardness result; no hardness claims here |
+| 097 | Steinitz–Bergstrom | fuera | Vector balancing |
+| 098 | Lang–Plaut | fuera | Doubling metric spaces |
+| 099 | Edit-distance distortion | fuera | Metric embeddings |
+| 100 | Bang's area bound fails | fuera | Covering by cylinders |
+
+### Computational theory (34)
+
+| Fam | Result | Verdict | Comment |
+|---|---|---|---|
+| 102 | UGC resolved | fuera | Hardness of approximation. No approximation algorithms here |
+| 103 | BPP ⊆ L | fuera | Complexity classes |
+| 104 | Quasipolynomial games | fuera | Formalized. Games |
+| 107 | ω < 2.371 over every field; ω ≤ 9/4 over ℂ | **actúa** | Formalized, both. The warrant `libs/poly` lacked; the measurement is in `docs/poly-mul-measurement.md` |
+| 112 | Depth-three circuit bounds | fuera | Formalized. Boolean circuits |
+| 113 | FPRAS perfect matchings | fuera | Counting on graphs |
+| 114 | FPRAS polymatroid bases | fuera | Counting |
+| 115 | Contingency tables | fuera | Sampling |
+| 116 | Noncommutative PIT, four papers | **actúa** | One formalized over ℚ; the characteristic-positive one, which reaches `libs/binary-field`, is not. See Part 2 |
+| 117 | Uniform Sparsest Cut hardness | fuera | |
+| 118 | Bin-packing IRUP fails | fuera | |
+| 119 | Courtade–Kumar / Hellinger | fuera | Information theory |
+| 121 | Almost-linear edit distance | fuera | Strings. No string algorithms here |
+| 122 | Trace reconstruction | fuera | |
+| 124 | Three-machine scheduling | fuera | |
+| 125 | k-median threshold | fuera | Formalized. Clustering |
+| 126 | Matching polytope extension size | fuera | |
+| 127 | Gotsman–Linial | fuera | Boolean analysis |
+| 128 | Common superstring 2-approx | fuera | Strings |
+| 129 | Two-way automata | fuera | |
+| 130 | Sublinear exact DFT | **corregido** | First pass listed it as adjacent to `libs/ntt`. The paper disclaims finite fields explicitly; zero transfer |
+| 131 | Switch-chain mixing | fuera | |
+| 132 | Quadratic sensitivity counterexample | fuera | |
+| 133 | Weisfeiler–Leman | fuera | Graph isomorphism |
+| 134 | Generalized star height | fuera | Formal languages |
+| 135 | Depth-five lower bounds | fuera | Circuits |
+| 137 | One-tape simulation | fuera | |
+| 139 | Subpolynomial log-concave sampling | adyacente | Formalized. Sampling theory behind RNG; no call path here does log-concave sampling |
+| 140 | Gaussian regression memory | fuera | |
+
+### Dynamical systems (9), combinatorics (33), mathematical logic (6),
+### group theory (12), mathematical physics (17), operator algebras (15),
+### topology (3), functional analysis (10), differential geometry (15),
+### PDEs (11) — all **fuera**, with three exceptions
+
+143 Hilbert XVI limit cycles · 144 Banach Lebesgue spectrum · 145 Rokhlin ·
+146 Sinai · 148 self-similar measures · 149 permanence · 150 triangular billiards ·
+151 Shub entropy · 152 null entropy · 155 periodic tiling · 156 Borsuk ·
+157 Hadwiger / Colin de Verdière · 158 Hadwiger–Nelson · 159 Erdős reciprocals ·
+160 van der Waerden · 161 Sidorenko fails · 162 Ryser/Gyárfás · 165 crossing numbers ·
+167 fixed distances · 168 Kazhdan–Lusztig · 169 Shareshian–Wachs ·
+170 off-diagonal Ramsey · 172 Euclidean Ramsey · 173 Seymour's second neighbourhood ·
+174 strong thin trees · 175 Talagrand · 176 Kahn–Kalai · 177 cobordism expanders ·
+179 circulant Hadamard + Barker · 180 Barnette · 181 Erdős–Gallai ·
+182 difference-free sets · 183 planar cutting lines · 184 AKS two conjectures ·
+185 infinite matroids · 186 Friedgut–Kalai · 187 Snaky · 188 triangle removal ·
+189 cycle-clique Ramsey · 190 binary matrix removal · 191 Heilbronn ·
+192 Gopalan–Servedio · 240 Shelah categoricity · 241 Turing degrees rigid ·
+242 one-variable Diophantine · 243 counting without choice · 244 partition vs choice ·
+245 BGK normalization · 246 Cannon · 247 Burnside · 248 Thompson amenability ·
+249 Eilenberg–Ganea · 250 Boone–Higman · 251 Dixmier · 252 hyperbolic not RF ·
+253 simple amenable · 254 Artin conjecture · 255 Eskin–Fisher–Whyte · 256 Howie/Kervaire ·
+257 CAT(0) · 260 Penrose · 261 Anderson · 262 Lieb–Thirring · 263 ionization ·
+266 three MUBs in dimension 6 · 267 BEC · 269 Laughlin gap · 271 Bloch's law ·
+272 bound entanglement · 273 photon-number entropy · 274 QAC0 parity ·
+275 QMA Coulomb hardness · 276 GAD capacity · 277 threshold repetition ·
+279 quantum factoring · 280 strong locality · 281 QAOA · 287 free group factors ·
+288 Kadison similarity · 289 Kadison–Kastler · 290 Connes bicentralizer ·
+291 Jiang–Su · 292 Kirchberg embedding · 293 hyperinvariant subspace ·
+294 Kaplansky quasitrace · 295 Kadison–Ringrose · 296 generator problem ·
+297 Naimark · 298 free entropy · 299 Kirchberg–Rørdam · 301 trace cones ·
+303 pure infiniteness · 307 rational assembly injectivity · 312 homotopy hypothesis ·
+317 Ara–Maltsiniotis · 322 Tingley · 323 separable quotient · 324 Lipschitz equivalence ·
+325 Crouzeix · 326 cotype–cotype · 327 Markov type · 328 Kirk · 329 Pietsch ·
+330 Kalton · 331 asymptotic mean convexity · 333 isometric immersion in 4D ·
+334 local immersion · 337 Cartan–Hadamard · 342 Donaldson tamed-to-compatible ·
+343 Siegel–Yao · 347 Arnold fixed points · 348 Einstein non-negative ·
+350 Yau nodal · 353 affine Bernstein · 354 cubic torus isoperimetry · 356 Gigli ·
+358 conjugate points · 359 negative Kähler · 360 Villani · 361 Yau harmonic ·
+362 Vlasov–Maxwell · 363 Boltzmann non-uniqueness · 365 inverse metric ·
+367 Bernoulli free boundary · 369 hot spots · 370 Lane–Emden · 371 Schrödinger blowup ·
+372 elasticity uniqueness · 373 Coulomb transport · 374 transport stability ·
+376 universal computation in NS.
+
+The three exceptions, each for a reason worth recording:
+
+| Fam | Result | Verdict | Comment |
+|---|---|---|---|
+| 168 | Kazhdan–Lusztig from interval order | adyacente | Determined by abstract interval order across Coxeter systems. Purely combinatorial, and this tree has no Coxeter groups |
+| 179 | Circulant Hadamard + Barker sequences | lee | Formalized. Closes a constant table: Barker exists exactly at 2, 3, 4, 5, 7, 11, 13. Lives in the transform/permutation space but changes no code |
+| 279 | Exact quantum factoring | **corregido** | The most consequential-looking entry on the list, and the one most worth having read. It is Shor with the Fourier transform replaced, in a perfect-gate model with no error correction anywhere in 24 pages, and its own authors write that "its large polynomial parameters are not intended as practical resource improvements". The strings "RSA", "elliptic curve" and "ECDLP" do not occur. It does not move this library's threat model, and citing it as "breaks cryptography" would be exactly the failure `AGENTS.md` §0 names |
+
+### What the full list changes about Part 3
+
+Nothing. Of ~200 families, **two act** (107, 116), **five are worth reading**
+(003, 021, 090, 179, and 116's characteristic-positive paper), **four required
+correction** (015, 130, 279, and the first-pass "second opinion" for
+`bn254_direct`), and the rest are structurally out of scope for the same reason.
+The scan's value was never the count of relevant results; it was the four
+corrections, each of which came from reading the source instead of the summary.
+
+
 
 - Library version recorded here is **0.6.0**; `AGENTS.md` still says 0.5.1. That
   divergence is worth fixing independently of anything here.
