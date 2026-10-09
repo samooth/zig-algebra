@@ -61,6 +61,39 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Found: two Merkle trees in this tree, and they do not agree.** The comment at
+  `libs/field/src/lib.zig:139` opened with *"wrapper around zig-merkle with
+  SHA-256"*. It is not a wrapper: `libs/field` declares one dependency,
+  `zig-bigint`, and `@import("zig-merkle")` appears nowhere in its `src/`. The one
+  occurrence of the string "zig-merkle" in that library was the comment itself.
+
+  The two trees differ in the padding for leaves beyond the caller's list, which
+  is load-bearing whenever that list is not a power of two:
+  `hashLeaf(F.zero())` in `field` against `H.hashBytes(&.{})` in `zig-merkle`.
+  SHA-256 of thirty-two zero bytes is not SHA-256 of nothing, so the same leaves
+  produce different roots and the proofs do not cross-verify.
+
+  No test saw it, for the reason `AGENTS.md` already records for the leaf-hashing
+  interoperability bug: all four tests of `field`'s tree are round trips — build,
+  prove, verify against the root that same implementation produced. A round trip
+  is consistent by construction and cannot tell one tree from another.
+  `libs/field/tests/merkle_parity.zig` now builds both over the same five leaves
+  and asserts the disagreement, which is the only assertion available here:
+  aligning the padding is a change to a public root, not something a test can do,
+  and a test asserting the desirable property would fail on every run and be
+  deleted. It fails the day somebody aligns them, which is also the day the
+  comment stops being false.
+
+- **Fixed: two docstrings named members the code never calls.**
+  `libs/field/src/lib.zig:139` described a wrapper that does not exist, replaced
+  with what the code does and a pointer to the test that measures the
+  disagreement. `libs/merkle/src/merkle_tree.zig:90` told readers the hasher must
+  expose `hash(input: []const u8) [32]u8`; the file calls `H.hashBytes` ten times
+  and `H.hash` never. Both are the same failure — a document asserting a shape —
+  and both were found by trying to use what they described.
+- Docs: `AGENTS.md` gains *"callers route around you" is an API report*, replacing
+  the consumer rule that a later commit retracted. Test count 594 -> 596, `field`
+  89 -> 91, binaries 28 -> 29.
 - Docs: a correction to a rule this session added, which is worth keeping visible
   rather than edited away. The rule read *before proposing performance work, name
   the consumer*, and argued that `zig-poly`'s missing Karatsuba was not worth doing

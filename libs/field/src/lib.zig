@@ -136,7 +136,19 @@ pub const Vec8NttM31 = struct {
     }
 };
 
-// Merkle tree over field elements (wrapper around zig-merkle with SHA-256)
+// Merkle tree over field elements.
+//
+// NOT a wrapper around `zig-merkle`, whatever an earlier version of this comment
+// said: this library declares one dependency, `zig-bigint`, and imports no
+// `zig-merkle`. The tree below is its own implementation over SHA-256, and it
+// disagrees with `zig-merkle` in the padding for leaves beyond the caller's
+// list -- `hashLeaf(F.zero())` here against `H.hashBytes(&.{})` there -- so the
+// two produce different roots for the same leaves and their proofs do not
+// cross-verify. `libs/field/tests/merkle_parity.zig` asserts the disagreement,
+// because every test of this tree alone is a round trip and cannot see it.
+//
+// Aligning the two is a behaviour change to a public root and is not decided
+// here. Until it is, do not read this tree as interoperable with `zig-merkle`.
 pub fn MerkleTree(comptime F: type) type {
     const std = @import("std");
     const Hash = [32]u8;

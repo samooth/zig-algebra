@@ -53,6 +53,7 @@ const non_test_sources = [_][2][]const u8{
     .{ "field", "benchmark.zig" },
     .{ "field", "fuzz.zig" },
     .{ "poly", "horner_parity.zig" },
+    .{ "field", "merkle_parity.zig" },
 };
 
 /// Wire every `tests/*.zig` of a library into `test_step`.
@@ -699,6 +700,25 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{
         .name = "horner-parity-tests",
         .root_module = horner_parity_mod,
+    })).step);
+
+    // Two Merkle trees exist in this tree and they do not agree. The comment at
+    // `libs/field/src/lib.zig:139` calls `field`'s tree a wrapper around
+    // `zig-merkle`; it is not, and the padding rule differs. Every test of
+    // `field`'s tree is a round trip, so none of them can see it. This one
+    // builds both over the same leaves and asserts the divergence, which is
+    // the only assertion available here -- aligning them is a behaviour change
+    // to a public root, not something a test can do.
+    const merkle_parity_mod = b.createModule(.{
+        .root_source_file = b.path("libs/field/tests/merkle_parity.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    merkle_parity_mod.addImport("zig-field", field_mod);
+    merkle_parity_mod.addImport("zig-merkle", merkle_mod);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{
+        .name = "merkle-parity-tests",
+        .root_module = merkle_parity_mod,
     })).step);
 
     // Example: Schnorr signature over BLS12-381

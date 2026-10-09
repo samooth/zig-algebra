@@ -330,8 +330,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (594 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 594 tests, seconds
+zig build test        # Run all library tests (596 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 596 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -346,7 +346,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (594 total across all 28 test binaries, and the per-library sum is 594: **the root step runs the `tests/` roots too**).
+tests (596 total across all 29 test binaries, and the per-library sum is 596: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -450,13 +450,13 @@ caller input can influence.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
 - Counts (Zig 0.16.0, re-derived 2026-10-09 from the runner's own `--summary all`):
-  root `zig build test` = 594; per-library totals sum to 594, which now **equals** the
+  root `zig build test` = 596; per-library totals sum to 596, which now **equals** the
   root total because the root step runs the `tests/` roots as well. Per library:
-  algebra-traits 8, bigint 28, binary-field 97, curve 98, field 89, fri 32, hash 22,
+  algebra-traits 8, bigint 28, binary-field 97, curve 98, field 91, fri 32, hash 22,
   kzg 8, linalg 13, merkle 20, ntt 16,
   pairing 62, parallel 7, poly 34, rng 27, serialization 20, transcript 13.
   `poly` is 34 and not 32 because `libs/poly/tests/horner_parity.zig` adds two, counted
-  there for the same reason `field`'s 89 includes its `tests/` roots.
+  there for the same reason `field`'s 91 includes its `tests/` roots.
 - Re-derive a count by running the suite and reading the runner's own summary
   (`zig build test --summary all`); do not carry a figure forward from a doc.
 - **A correct measurement can describe an invisible defect: "measured and right"
@@ -708,6 +708,29 @@ nowhere is not a library with no consumers, it is a library whose wiring is not
 its consumer. That is the 0.6.0 changelog's finding for `zig-rng`, and it is about
 **wiring that looks like use**, not about general-purpose code with no internal
 caller.
+
+### A document that asserts a shape is a claim, like any other
+
+Two docstrings in this tree describe an interface the code does not have, and both
+were found the same way — by trying to use what they said.
+
+`libs/field/src/lib.zig:139` opened *"Merkle tree over field elements (wrapper
+around zig-merkle with SHA-256)"*. It is not a wrapper: `libs/field` declares one
+dependency, `zig-bigint`, and imports no `zig-merkle`; the only occurrence of that
+string in the library was the comment. The two trees even disagree, in the padding
+for leaves beyond a non-power-of-two list — `hashLeaf(F.zero())` here against
+`H.hashBytes(&.{})` there — so the same leaves give different roots and the proofs
+do not cross-verify. `libs/merkle/src/merkle_tree.zig:90` told readers the hasher
+needs `hash(input: []const u8) [32]u8` while the file calls `H.hashBytes` ten times
+and `H.hash` never.
+
+This is the same failure §0 records for `libs/hash`'s hand-rolled field interface,
+wearing doc-comment clothes: a reader who trusts it builds against something that
+is not there. The instrument that finds it is not a grep for the name — grep finds
+the comment and stops — it is **compiling a caller that follows the document**. So
+when a docstring names a member, a dependency or a wrapper, the next test written
+against it should exercise the thing it names. If that is impossible, the
+docstring is describing an intention and should say so.
 
 ### A measurement without a correctness control is not a measurement
 

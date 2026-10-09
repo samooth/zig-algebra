@@ -87,7 +87,10 @@ pub const MerkleProof = struct {
 /// nodes[2*i] = left child, nodes[2*i+1] = right child.
 ///
 /// `H` must be a hash function type with:
-/// - `hash(input: []const u8) [HASH_LEN]u8` (one-shot)
+/// - `hashBytes(input: []const u8) [HASH_LEN]u8` (one-shot). This line used to
+///   name `hash`, which appears nowhere in this file; the ten call sites all
+///   use `hashBytes`. A docstring that names a member the code never calls
+///   sends a reader looking for an interface that does not exist.
 pub fn MerkleTree(comptime H: type) type {
     return struct {
         const Self = @This();
