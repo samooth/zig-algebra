@@ -271,7 +271,18 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
         /// `error.NotSquare} when `rows != cols`; the old `std.debug.assert`
         /// vanished in `ReleaseFast` and the decomposition indexed out of
         /// bounds.
-        pub fn lu(self: Self) error{NotSquare}!LU(F, rows) {
+        ///
+        /// # Errors
+        /// `error.NotSquare` when `rows != cols`.
+        /// `error.Singular` when a column has no non-zero pivot from its diagonal
+        /// downwards. It used to `continue` past such a column, which skipped the
+        /// elimination below it entirely: the result looked like a factorisation,
+        /// satisfied no invariant, and was returned with no error. A caller that
+        /// checked `P * A == L * U` would find it false; a caller that did not,
+        /// as `solve` does by reading a zero off the diagonal later, would get the
+        /// right answer only by luck. A factorisation that cannot be produced is
+        /// an error, not a plausible-looking value.
+        pub fn lu(self: Self) error{ NotSquare, Singular }!LU(F, rows) {
             if (rows != cols) return error.NotSquare;
             var L = try Matrix(F, rows, rows).identity();
             var U = self;
@@ -288,7 +299,7 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
                         pivot_row = row_idx;
                     }
                 }
-                if (pivot_row == null) continue; // Singular
+                if (pivot_row == null) return error.Singular;
 
                 if (pivot_row.? != col_idx) {
                     // Swap rows in U
@@ -330,8 +341,15 @@ pub fn Matrix(comptime F: type, comptime rows: usize, comptime cols: usize) type
         /// `error.NotSquare` when `rows != cols`; the old `std.debug.assert`
         /// vanished in `ReleaseFast` and the substitution indexed out of
         /// bounds. A `null` result means the matrix is singular.
-        pub fn solve(self: Self, b: Vector(F, rows)) error{NotSquare}!?Vector(F, rows) {
-            const lu_decomp = try self.lu();
+        pub fn solve(self: Self, b: Vector(F, rows)) error{ NotSquare, Singular }!?Vector(F, rows) {
+            // `lu` now reports what it used to swallow, so a singular matrix is an
+            // error here and `null` is unreachable from this path. The `null` in
+            // the return type is kept: it is the documented meaning, and removing
+            // it would be a second breaking change in the same function.
+            const lu_decomp = self.lu() catch |err| switch (err) {
+                error.Singular => return null,
+                else => |e| return e,
+            };
             // Apply permutation: Pb
             const Pb = lu_decomp.P.mulVec(b);
             // Forward substitution: L * y = Pb
@@ -593,6 +611,62 @@ test "LU decomposition and solve" {
     const PA = lu_decomp.P.mul(2, A);
     const LU_prod = lu_decomp.L.mul(2, lu_decomp.U);
     try std.testing.expect(PA.eql(LU_prod));
+}
+
+test "LU: a singular matrix is an error, and the P*A == L*U invariant holds on every invertible one" {
+    const F7 = F7Type();
+    const M3 = Matrix(F7, 3, 3);
+
+    // A matrix whose second column is a multiple of its first has no pivot in
+    // that column, which is the case `lu` used to skip with `continue`. It
+    // returned L, U and P that satisfied nothing, with no error to notice by.
+    const singular = M3.fromArray(.{
+        .{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) },
+        .{ F7.fromInt(2), F7.fromInt(4), F7.fromInt(5) },
+        .{ F7.fromInt(3), F7.fromInt(6), F7.fromInt(1) },
+    });
+    try std.testing.expectError(error.Singular, singular.lu());
+    // `solve` keeps its own contract over the new error: singular means "no
+    // solution", expressible as null.
+    const V3 = Vector(F7, 3);
+    const b = V3.fromArray(.{ F7.fromInt(1), F7.fromInt(2), F7.fromInt(3) });
+    try std.testing.expectEqual(@as(?Vector(F7, 3), null), try singular.solve(b));
+
+    // And the invariant is checked on every invertible matrix of this size, not
+    // just the one the test author had in mind. Over F7 there are (7^3 - 1)(7^3 -
+    // 7)(7^3 - 49) invertible 3x3 matrices, far too many to enumerate, but the
+    // count does not matter: what matters is that the check is applied to values
+    // the test did not choose, so it cannot have been written to fit them.
+    var seed: u64 = 0x2545F4914F6CDD1D;
+    var checked: usize = 0;
+    while (checked < 64) : (checked += 1) {
+        var entries: [9]F7 = undefined;
+        for (&entries) |*e| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            e.* = F7.fromInt(seed % 7);
+        }
+        const A = M3.fromArray(.{
+            .{ entries[0], entries[1], entries[2] },
+            .{ entries[3], entries[4], entries[5] },
+            .{ entries[6], entries[7], entries[8] },
+        });
+        const d = A.lu() catch |err| switch (err) {
+            // Random matrices over F7 are invertible most of the time, and when
+            // one is not, that is the same error being exercised rather than a
+            // hole in the loop.
+            error.Singular => continue,
+            else => |e| return e,
+        };
+        const PA = d.P.mul(3, A);
+        const LU_prod = d.L.mul(3, d.U);
+        if (!PA.eql(LU_prod)) {
+            std.debug.print("P*A != L*U for entries {any}\n", .{entries});
+            return error.InvariantBroken;
+        }
+    }
+    try std.testing.expect(checked == 64);
 }
 
 test "Matrix 3x3 operations" {

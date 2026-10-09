@@ -340,9 +340,9 @@ cd libs/field && zig build test
 `cd libs/field && zig build test` runs eight binaries — `zig-field-tests` (14
 inline), `field-tests` (49), `extension-tests` (11), `merkle-tests` (4),
 `merkle_parity-tests` (2), `ipa-tests` (2), `simd-tests` (7) and `ext_quick-tests`
-(2) — 89 tests total, plus the 4 in `merkle_test.zig` driven through `zig-merkle`,
+(2) — 90 tests total, plus the 4 in `merkle_test.zig` driven through `zig-merkle`,
 measured with `--summary all` on 2026-10-09. The root `zig build test` runs those
-`tests/` roots as well as the inline ones, so it also counts 89 for this library:
+`tests/` roots as well as the inline ones, so it also counts 90 for this library:
 the root total and the per-library sum are the same number, which is what makes
 the second one checkable against the first.
 

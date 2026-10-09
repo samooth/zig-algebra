@@ -189,7 +189,7 @@ and `eql`.
 cd libs/linalg && zig build test
 ```
 
-13 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
+14 tests: vector basics, matrix basics, `identity`, matrix-vector multiply, LU +
 solve, 3×3 operations including a computed inverse, singular detection,
 partial pivoting on a matrix needing a row swap, a Goldilocks multiply, the
 `error.NotSquare` rejections for non-square shapes, the total-vs-checked
