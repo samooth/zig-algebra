@@ -482,12 +482,28 @@ direct (bn254_direct.zig)  e(2P,Q) == e(P,Q)^2   -> true
 this file                  e(2P,Q) == e(P,Q)^2   -> false
 ```
 
-So `bn254_tower.zig` and `bn254_direct.zig` are bilinear and `bn254.zig` is not,
-and the defect is one file rather than a curve. That also corrects an earlier
-sentence of this advisory: it says below that neither BN254 implementation has an
-external known-answer vector, which is true and is *not* the same as saying both
-are wrong. Two of the three satisfy the property; what none of the three has is a
-vector from outside this repository.
+So `bn254_tower.zig` and `bn254_direct.zig` satisfy the property and `bn254.zig` does
+not, and the defect is one file rather than a curve. **And satisfying the property is
+not the same as being correct, which this paragraph has to say rather than leave
+implied.** The three pairings do not even live in the same field:
+
+```
+py_ecc FQ12      degree 12 over Fp, direct over Fq     -- the external vector
+bn254_tower Fp12 degree 12 over Fp, tower 2 -> 6 -> 12  -- the one that matches it
+bn254_direct     degree 24 over Fp, direct over Fp2     -- a deliberately larger ring
+```
+
+`bn254_direct.zig` says so in its own header, above the code and before this
+advisory: the ring is degree 24 on purpose, because `mu_r` sits inside `Fp12` which
+sits inside `Fp24`, so a value computed there *is* the Fp12 pairing value in a
+larger representation. Bilinearity holds there. It does not by itself say the value
+is the right one, because a bilinear map into the wrong group is still a bilinear
+map. That is what an external vector settles and what none of the three has.
+
+That also corrects an earlier sentence of this advisory: it said neither BN254
+implementation has an external known-answer vector, which is true and is *not* the
+same as saying all three are wrong. Two satisfy the property; none has a vector
+from outside this repository.
 
 **Who this reaches.** Only a caller that calls `bn254.zig`'s `pairing()` directly.
 Nothing in this workspace calls it: `bls12_381.zig` has its own `pairing`, and
