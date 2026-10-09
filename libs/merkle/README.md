@@ -159,7 +159,7 @@ rather than indexing anything it has not validated:
 # From the monorepo root
 zig build test
 
-# Just this library (26 tests: 20 inline in src/root.zig, 6 in tests/bitcoin_merkle_test.zig)
+# Just this library (27 tests: 20 inline in src/root.zig, 6 in tests/bitcoin_merkle_test.zig)
 cd libs/merkle && zig build test
 ```
 

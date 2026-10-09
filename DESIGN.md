@@ -144,7 +144,7 @@ leak, an out-of-bounds access or an unbounded allocation behind. See the
 "Total vs checked" section above.
 
 Counts (Zig 0.16.0, re-derived 2026-10-01): the root `zig build test` step
-executes **609** tests in both Debug and ReleaseFast, and the per-library steps
+executes **610** tests in both Debug and ReleaseFast, and the per-library steps
 sum to the same 609 because the root step compiles the `tests/` roots of `field`
 (89) and `curve` (98) as well as every library's inline `src/` tests. This line
 said 391, and the per-library sum it quoted, 507, is a number from a tree that

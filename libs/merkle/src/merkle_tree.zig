@@ -239,8 +239,23 @@ pub fn MerkleTree(comptime H: type) type {
             var idx = index;
 
             for (0..proof.siblings.len) |i| {
+                // The side each sibling sits on comes from the index, not from the
+                // proof. It used to be read out of `proof.is_left_sibling[i]`,
+                // which is a field of the proof itself: the verifier was told which
+                // side to concatenate on by whoever handed it the proof, and `idx`
+                // was shifted but never read. `verify(root, 2, leaf, proof)` and
+                // `verify(root, 1, leaf, proof)` therefore agreed, so an honest
+                // inclusion proof for one position was accepted at another.
+                //
+                // `idx & 1 == 1` means the node at this level is a right child, so
+                // its sibling is on the left. This is what `prove` records
+                // (`pos % 2 != 0`) and what `verifyPath` already did; this function
+                // now agrees with both.
+                const sibling_on_left = (idx & 1) == 1;
+                if (proof.is_left_sibling[i] != sibling_on_left) return false;
+
                 var concat: [HASH_LEN * 2]u8 = undefined;
-                if (proof.is_left_sibling[i]) {
+                if (sibling_on_left) {
                     @memcpy(concat[0..HASH_LEN], &proof.siblings[i]);
                     @memcpy(concat[HASH_LEN..], &current);
                 } else {
@@ -261,8 +276,23 @@ pub fn MerkleTree(comptime H: type) type {
             var idx = index;
 
             for (0..proof.siblings.len) |i| {
+                // The side each sibling sits on comes from the index, not from the
+                // proof. It used to be read out of `proof.is_left_sibling[i]`,
+                // which is a field of the proof itself: the verifier was told which
+                // side to concatenate on by whoever handed it the proof, and `idx`
+                // was shifted but never read. `verify(root, 2, leaf, proof)` and
+                // `verify(root, 1, leaf, proof)` therefore agreed, so an honest
+                // inclusion proof for one position was accepted at another.
+                //
+                // `idx & 1 == 1` means the node at this level is a right child, so
+                // its sibling is on the left. This is what `prove` records
+                // (`pos % 2 != 0`) and what `verifyPath` already did; this function
+                // now agrees with both.
+                const sibling_on_left = (idx & 1) == 1;
+                if (proof.is_left_sibling[i] != sibling_on_left) return false;
+
                 var concat: [HASH_LEN * 2]u8 = undefined;
-                if (proof.is_left_sibling[i]) {
+                if (sibling_on_left) {
                     @memcpy(concat[0..HASH_LEN], &proof.siblings[i]);
                     @memcpy(concat[HASH_LEN..], &current);
                 } else {
@@ -437,4 +467,52 @@ pub fn BitcoinMerkle(comptime H: type) type {
             return cur[0];
         }
     };
+}
+
+test "merkle: the concatenation side comes from the index, not from the proof" {
+    // `verify` used to decide which side each sibling sat on by reading
+    // `proof.is_left_sibling[i]` -- a field of the proof itself -- and shifted
+    // `idx` without ever reading it. The index was therefore only a range check,
+    // and an honest inclusion proof for one position was accepted at every other
+    // position of the same depth.
+    //
+    // With four leaves, positions 1 and 2 differ in one bit: exactly the bit that
+    // says "am I the left or the right child at the bottom level". A proof
+    // generated for position 2 must not verify at position 1.
+    //
+    // Uses this library's own hash rather than std's, so the test does not depend
+    // on a second Blake3 spelling being in scope.
+    const H = hash.Blake3;
+    const Tree = MerkleTree(H);
+    const leaves = [_][]const u8{ "aaaa", "bbbb", "cccc", "dddd" };
+
+    var tree = try Tree.init(std.testing.allocator, &leaves);
+    defer tree.deinit();
+
+    const root = tree.root();
+    var proof2 = try tree.prove(2, std.testing.allocator);
+    defer proof2.deinit(std.testing.allocator);
+
+    try std.testing.expect(Tree.verify(root, 2, leaves[2], proof2));
+    // The defect: same proof, different index, and it used to pass.
+    try std.testing.expect(!Tree.verify(root, 1, leaves[2], proof2));
+    try std.testing.expect(!Tree.verify(root, 3, leaves[2], proof2));
+
+    // A proof is also refused when its own flags contradict the index, so a
+    // tampered proof is rejected rather than silently repaired.
+    const original = proof2.is_left_sibling;
+    const flipped = try std.testing.allocator.alloc(bool, original.len);
+    defer std.testing.allocator.free(flipped);
+    for (original, 0..) |f, i| flipped[i] = !f;
+    proof2.is_left_sibling = flipped;
+    try std.testing.expect(!Tree.verify(root, 2, leaves[2], proof2));
+    proof2.is_left_sibling = original;
+
+    // And every position still verifies with its own honest proof, so tightening
+    // this did not cost completeness.
+    for (leaves, 0..) |leaf, i| {
+        var p = try tree.prove(i, std.testing.allocator);
+        defer p.deinit(std.testing.allocator);
+        try std.testing.expect(Tree.verify(root, i, leaf, p));
+    }
 }

@@ -53,15 +53,11 @@ pub fn main() !void {
     defer other.deinit(allocator);
     try testing.expect(!Tree.verify(root, 2, "tx3", other));
 
-    // NOT ASSERTED, and the reason is a defect rather than caution: `verify`
-    // takes an `index` and uses it only for a range check (`validPathIndex`).
-    // Inside the loop the decision of "sibling on the left or on the right" comes
-    // from `proof.is_left_sibling[i]`, which is a field *of the proof itself* --
-    // so the verifier is told which side each sibling is on by the party offering
-    // the proof, and `idx` is shifted but never read. `verify(root, 2, "tx3",
-    // proof)` and `verify(root, 1, "tx3", proof)` therefore return the same
-    // answer, and an honest inclusion proof for one position is accepted at
-    // another. The direction has to come from the index bits, not the proof.
+    // And the index is now binding: `verify` used to take it only for a range
+    // check, deciding the concatenation side from `proof.is_left_sibling[i]`
+    // -- a field of the proof itself. An honest proof for position 2 was
+    // therefore accepted at position 1. The side now comes from the index bits.
+    try testing.expect(!Tree.verify(root, 1, "tx3", proof));
 
     // --- Merkle Mountain Range ---
     std.debug.print("\n--- Merkle Mountain Range ---\n", .{});
