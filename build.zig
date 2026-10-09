@@ -678,6 +678,7 @@ pub fn build(b: *std.Build) void {
             .{ "zig-field", field_mod },
             .{ "zig-curve", curve_mod },
             .{ "zig-pairing", pairing_mod },
+            .{ "zig-algebra-traits", traits_mod },
         },
     );
 

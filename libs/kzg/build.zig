@@ -10,6 +10,12 @@ pub fn build(b: *std.Build) void {
     });
     const field_mod = field_dep.module("zig-field");
 
+    const traits_dep = b.dependency("zig_algebra_traits", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const traits_mod = traits_dep.module("zig-algebra-traits");
+
     const curve_dep = b.dependency("zig_curve", .{
         .target = target,
         .optimize = optimize,
@@ -30,6 +36,7 @@ pub fn build(b: *std.Build) void {
     kzg_mod.addImport("zig-field", field_mod);
     kzg_mod.addImport("zig-curve", curve_mod);
     kzg_mod.addImport("zig-pairing", pairing_mod);
+    kzg_mod.addImport("zig-algebra-traits", traits_mod);
 
     const test_module = b.createModule(.{
         .root_source_file = b.path("src/root.zig"),

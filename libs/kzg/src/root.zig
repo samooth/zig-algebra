@@ -9,6 +9,7 @@ const std = @import("std");
 const zf = @import("zig-field");
 const zc = @import("zig-curve");
 const tp = @import("zig-pairing").bn254_tower_pairing;
+const traits = @import("zig-algebra-traits");
 
 pub const Fr = zc.bn254.Fr;
 pub const Fp = zf.BN254_Fp;
@@ -103,14 +104,14 @@ pub fn commit(
 }
 
 /// Evaluate polynomial at z via Horner's method.
+///
+/// Converged onto `algebra-traits.evalPolyHorner`, which is the canonical copy in
+/// this tree. This used to be its own -- one of four, alongside one in
+/// `algebra-traits`, two private ones in `binary-field`, and the comptime-degree
+/// form in `zig-poly`. `libs/poly/tests/horner_parity.zig` compares the reachable
+/// ones; they agreed, so this is convergence rather than a bug fix.
 pub fn evaluate(coeffs: []const Fr, z: Fr) Fr {
-    var acc = Fr.zero();
-    var k = coeffs.len;
-    while (k > 0) {
-        k -= 1;
-        acc = acc.mul(z).add(coeffs[k]);
-    }
-    return acc;
+    return traits.evalPolyHorner(Fr, coeffs, z);
 }
 
 /// Compute witness/quotient q(x) = (p(x) - p(z)) / (x - z)

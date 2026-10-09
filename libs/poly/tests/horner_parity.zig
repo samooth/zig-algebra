@@ -6,7 +6,7 @@
 //! half: it runs every Horner implementation that is *reachable* over the same
 //! inputs and fails if any two disagree.
 //!
-//! Reachable is three of the four, and the fourth is the finding:
+//! Reachable is five of the six, and one of the unreachable is blocked:
 //!
 //! | Site | Name | Reachable from here |
 //! |---|---|---
@@ -14,13 +14,28 @@
 //! | `libs/kzg/src/root.zig:106` | `evaluate` | yes, `pub`, over `bn254.Fr` |
 //! | `libs/poly/src/root.zig` | `evalCoeffs` | yes — an alias for the first, added so a caller holding a slice does not write a fifth copy |
 //! | `libs/poly/src/poly.zig:215` | `Polynomial.eval` | yes, over a comptime-sized array |
-//! | `libs/binary-field/src/sumcheck.zig:244` and `pack.zig:59` | `evalPoly` | **no, both private** |
+//! | `libs/binary-field/src/sumcheck.zig:244` and `pack.zig:59` | `evalPoly` | **blocked**, and the block is the point: see below |
 //!
-//! Five sites now, four compared below. The two in `binary-field` cannot be
-//! compared without changing their visibility, which is itself part of why they
-//! could drift unnoticed: a private helper has no cross-library test that could
-//! see it. The four that are public agree on every input below, which makes this
-//! latent divergence rather than a live bug.
+//! `kzg.evaluate` converged onto `algebra-traits.evalPolyHorner` in the commit
+//! that added these notes, so the count of independent copies is down to the two
+//! in `binary-field` plus the comptime-degree form.
+//!
+//! ## Why those two cannot converge yet
+//!
+//! They are private, but that is the smaller half. The larger half is that
+//! `FieldTrait(F).assert()` -- which `evalPolyHorner` runs on its `F` -- fails for
+//! `binary-field`'s types: it requires `eql` and `inverse`, and this family names
+//! them `eq` and (only some of them) `inv`. So a generic helper from
+//! `algebra-traits` cannot be called with `BinaryField` or `TowerField` at all,
+//! which is the structural reason this library kept its own copies rather than
+//! anyone forgetting to share them.
+//!
+//! Converging means standardising the trait first: either `FieldTrait` accepts
+//! `eq` as well as `eql`, or `binary-field` grows aliases. That is a decision
+//! about the workspace's field contract and not a patch to two loops, so it is
+//! recorded here and left open. The two copies still agree with the canonical on
+//! every input below -- which is why the tests they appear in pass -- and this
+//! file is what would tell us if they stopped.
 //!
 //! Wired by an explicit test module in the root `build.zig` rather than by
 //! `wire_tests_roots`, because that helper imports only the library a file lives

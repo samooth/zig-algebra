@@ -61,6 +61,24 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Converged `kzg.evaluate` onto the canonical Horner, and recorded why the other
+  two copies cannot be yet.** `evaluate` now calls `algebra-traits.evalPolyHorner`,
+  which is one implementation in the base instead of a fourth copy. Four Horner
+  evaluations existed in this tree: one in `algebra-traits`, two private in
+  `binary-field`, and this one. They agreed on every input `horner_parity.zig`
+  tries, so this is convergence rather than a bug fix.
+
+  The two in `binary-field` stay, and the reason is not that they were forgotten.
+  `evalPolyHorner` runs `FieldTrait(F).assert()` on its field, and that assert
+  fails for `BinaryField` and `TowerField`: it requires `eql` and `inverse` where
+  this family names them `eq` and `inv`. A generic helper from the base library
+  cannot be called with a binary field at all, which is the structural reason this
+  library kept its own copies. Standardising that needs either `FieldTrait` to
+  accept `eq`, or `binary-field` to grow aliases -- and aliases on the test fixtures
+  too, since `Prime31` and `Prime128` are missing `inverse` as well. That is a
+  decision about the workspace's field contract, so it is written down rather than
+  patched. Both copies still agree with the canonical, and the parity test is what
+  would say otherwise.
 - **Added: five library examples, which is half of the missing ones.** Five of the
   seventeen libraries had no `src/main.zig` at all: `parallel`, `serialization`,
   `transcript`, `ntt` and `binary-field`. `field` had a `main.zig` but its
