@@ -1,10 +1,18 @@
 //! BN254 pairing on Fp2[w]/(w¹² − (9+u)) — NOTE: this ring has degree 24
 //! over Fp, not 12! A degree-12 extension of Fp2 IS degree-24 over Fp; the
 //! true Fp12 used by pairings lives in bn254_tower.zig via the standard
-//! 2→6→12 tower. This module is kept because:
-//!   1. Its pairing is fully verified bilinear (the tower path is WIP).
-//!   2. The larger ring is mathematically sound for pairing computation:
-//!      values land in μ_r ⊂ Fp12 ⊂ Fp24 regardless of ambient ring.
+//! 2→6→12 tower.
+//!
+//! The pairing computed here is bilinear and its value is in μ_r, and it is
+//! **not the pairing value**: measured 2026-10-09 against py_ecc, the output
+//! is an element of μ_r that no isomorphism to py_ecc's tower maps onto
+//! e(P,Q), and it is not a Frobenius power of it either. The likely cause is
+//! the loop parameter below, which is 6x² rather than the 6x+2 that py_ecc
+//! and the verified tower use; setting it to 6x+2 breaks bilinearity, so the
+//! loop and its extra terms were built for each other and both are wrong
+//! together. A test named DEFECT MARKER pins this, and the history is in
+//! SECURITY.md advisory ZA-2026-008.
+//!
 //! Cost: ~4× larger multiplies than the tower would need.
 //!
 //! Untwist here: ψ(x', y') = (x'·w⁴, y'·w⁶), absorbing b' = 3/(9+u)
@@ -248,7 +256,12 @@ const zc = @import("zig-curve");
 const G1Point = zc.bn254.G1;
 const G2Point = zc.bn254.G2;
 
-/// ate loop parameter t−1 = 6x² (127 bits), x = 0x44E992B44A6909F1.
+/// Loop parameter, 127 bits, x = 0x44E992B44A6909F1. Comment used to say
+/// "t−1 = 6x², the ate parameter", and 6x² is indeed t−1 — it is also not the
+/// parameter the pairing this tree is pinned to uses: py_ecc and
+/// bn254_tower.zig both run 6x+2 (65 bits). Changing this constant alone does
+/// not fix the value (bilinearity breaks, because the extra terms below were
+/// written for it); see the DEFECT MARKER at the end of this file.
 const LOOP: u128 = 0x6F4D8248EEB859FBF83E9682E87CFD46;
 
 /// Embed an Fp2 value at slot k of Fp12Direct (i.e. multiply by w^k).
@@ -499,16 +512,28 @@ test "bn254_pairing: bilinear small scalars" {
 
 test "bn254_pairing: r-torsion annihilates" {
     const Fr = zc.bn254.Fr;
-    const r_minus_1 = Fr.MODULUS - 1;
-    const g1 = zc.bn254.G1_generator.scalarMul(r_minus_1); // -G1
     const g2 = zc.bn254.G2_generator;
-    const e_neg = pairing(g1, g2);
+    // e(−P,Q)·e(P,Q) = 1, the statement this test was always meant to make.
+    // It used to assert `prod.mul(prod.inv()).eql(ONE)`, which is `x·x⁻¹ == 1`
+    // and holds for every x in the ring: a check that could not fail. The
+    // product itself has to be one, and it is, because the line functions are
+    // odd in P — which is a property of the loop, not of the value.
+    const r_minus_1 = Fr.MODULUS - 1;
+    const e_neg = pairing(zc.bn254.G1_generator.scalarMul(r_minus_1), g2); // e(-P,Q)
     const e_pos = pairing(zc.bn254.G1_generator, g2);
-    // e(−P,Q) = e(P,Q)^{−1}: product must be one
-    const prod = e_neg.mul(e_pos);
-    // powByLimbs over FINAL_EXP of ONE stays ONE; check via inverse identity
-    const prod_inv_check = prod.mul(prod.inv());
-    try std.testing.expect(prod_inv_check.eql(Fp12Direct.ONE));
+    try std.testing.expect(e_neg.mul(e_pos).eql(Fp12Direct.ONE));
+
+    // And the value really is r-torsion: e^r == 1, with r's limbs built at
+    // comptime from the curve order. This is the check that would catch a
+    // value outside μ_r; it passes for this file's wrong value too, which is
+    // exactly why it is a supporting check and not the one that matters.
+    var r_limbs: [4]u64 = undefined;
+    var rv: u512 = Fr.MODULUS;
+    for (&r_limbs) |*l| {
+        l.* = @intCast(rv & 0xFFFFFFFFFFFFFFFF);
+        rv >>= 64;
+    }
+    try std.testing.expect(e_pos.powByLimbs(&r_limbs).eql(Fp12Direct.ONE));
 }
 
 test "fp12_direct: w^12 == xi" {
@@ -523,4 +548,135 @@ test "fp12_direct: w^12 == xi" {
     var xi_embedded = Fp12Direct.ZERO;
     xi_embedded.coeff[0] = Fp12Direct.XI;
     try std.testing.expect(w12.eql(xi_embedded));
+}
+
+// ---------------------------------------------------------------------------
+// Known-answer vector from an independent implementation
+// ---------------------------------------------------------------------------
+
+/// Convert the py_ecc vector into this ring's coordinates. The isomorphism is
+/// `t -> w^2`, because `(w^2)^6 = w^12 = 9+u` and `9+u` is the root of
+/// py_ecc's modulus polynomial `(9+u)^2 - 18(9+u) + 82 = 0` that this ring's
+/// own non-residue selects. Since this ring's basis is `1, w, ..., w^11`, the
+/// isomorphism lands on the even powers, so the image is sparse: slot `2k`
+/// takes `a_k`, and `a_6..a_11` wrap through `w^12 = 9+u` back into the same
+/// six slots scaled by it.
+fn katToDirect(a: *const [12]Fp) Fp12Direct {
+    var out = Fp12Direct.ZERO;
+    for (0..6) |k| {
+        out.coeff[2 * k] = Fp2.fromBase(a[k]).add(Fp2.fromBase(a[k + 6]).mul(Fp12Direct.XI));
+    }
+    return out;
+}
+
+/// Product in py_ecc's basis, Fq[t]/(t^12 - 18 t^6 + 82): schoolbook over 24
+/// coefficients, then reduce from the top down with
+/// t^k ↦ 18 t^(k-6) - 82 t^(k-12).
+fn pyMulDirect(a: *const [12]Fp, b: *const [12]Fp) [12]Fp {
+    var c: [24]Fp = undefined;
+    for (&c) |*x| x.* = Fp.zero();
+    for (0..12) |i| {
+        for (0..12) |j| {
+            c[i + j] = c[i + j].add(a[i].mul(b[j]));
+        }
+    }
+    var k: usize = 23;
+    while (k >= 12) : (k -= 1) {
+        if (!c[k].isZero()) {
+            c[k - 6] = c[k - 6].add(c[k].mul(Fp.fromInt(18)));
+            c[k - 12] = c[k - 12].sub(c[k].mul(Fp.fromInt(82)));
+            c[k] = Fp.zero();
+        }
+    }
+    var r: [12]Fp = undefined;
+    for (0..12) |i| r[i] = c[i];
+    return r;
+}
+
+/// Deterministic pseudo-random Fp (splitmix64), so the test needs no
+/// random() helper and never depends on the platform.
+fn pseudoFpDirect(seed: u64) Fp {
+    var z = seed +% 0x9E3779B97F4A7C15;
+    z = (z ^ (z >> 30)) *% 0xBF58476D1CE4E5B9;
+    z = (z ^ (z >> 27)) *% 0x94D049BB133111EB;
+    z = z ^ (z >> 31);
+    return Fp.fromInt(z);
+}
+
+test "bn254_direct: the py_ecc basis conversion is a ring homomorphism" {
+    // The conversion the KAT rests on must preserve products between py_ecc's
+    // basis and this ring, checked against py_ecc's own reduction computed
+    // here. A wrong isomorphism -- a Frobenius twist, a different root of the
+    // modulus polynomial -- fails on random inputs rather than yielding a
+    // plausible element, which is the failure mode this repository cares
+    // about.
+    var s: u64 = 0xD1EC_7B0A;
+    var t: usize = 0;
+    while (t < 4) : (t += 1) {
+        var a: [12]Fp = undefined;
+        var b: [12]Fp = undefined;
+        for (0..12) |i| {
+            a[i] = pseudoFpDirect(s +% @as(u64, @intCast(i)));
+            b[i] = pseudoFpDirect(s +% @as(u64, @intCast(i)) +% 0x500);
+        }
+        s +%= 0x1000;
+        try std.testing.expect(katToDirect(&a).mul(katToDirect(&b)).eql(katToDirect(&pyMulDirect(&a, &b))));
+    }
+}
+
+/// The py_ecc 8.0.0 known-answer vector for `pairing(G1, G2)`, in the
+/// basis 1, t, ..., t^11 of Fq[t]/(t^12 - 18 t^6 + 82). Both py_ecc
+/// modules (`py_ecc.bn128` and `py_ecc.optimized_bn128`) agree on it
+/// coefficient for coefficient. Wrapped in a branch-quota block because
+/// each fromInt over a Montgomery field is a comptime multiplication.
+const PY_ECC_KAT = blk: {
+    @setEvalBranchQuota(100_000);
+    break :blk [12]Fp{
+        Fp.fromInt(0x28c6e04df059260df7d2d2a1f9b5f77676d1939847852c4ed50d2318744c1d5f), // [0]
+        Fp.fromInt(0x17bb74adab1705c26133af1dac87044a3833ac011018e8158da48382bbd2dcd6), // [1]
+        Fp.fromInt(0xd3bd72f54d742f78ea9e6015c8ea2f2e7fbb728c9c905ec531dcf7de5b246f0), // [2]
+        Fp.fromInt(0x90cb8ee97e091a667af03882b06c3ecb4e437993cbd1b05b98c7f9dfcfe9c40), // [3]
+        Fp.fromInt(0x16b6d855b5cbf76f9829a309db52f5c442f65ae29f996af59d65f85f4afe78a), // [4]
+        Fp.fromInt(0xa0272204db51dadc0342bd318b9302a44faec12ff500bdd4d4b012ffe45f36f), // [5]
+        Fp.fromInt(0x84f330485b09e866bc2f2ea2b897394deaf3f12aa31f28cb0552990967d4704), // [6]
+        Fp.fromInt(0x27ed208e7a0b55ae6e710bbfbd2fd922669c026360e37cc5b2ab862411536104), // [7]
+        Fp.fromInt(0x2067586885c3318eeffa1938c754fe3c60224ee5ae15e66af6b5104c47c8c5d8), // [8]
+        Fp.fromInt(0x279db296f9d479292532c7c493d8e0722b6efae42158387564889c79fc038ee3), // [9]
+        Fp.fromInt(0x2b03614464f04dd772d86df88674c270ffc8747ea13e72da95e3594468f222c4), // [10]
+        Fp.fromInt(0x108c19d15f9446f744d0f110405d3856d6cc3bda6c4d537663729f5257628417), // [11]
+    };
+};
+
+
+test "bn254_direct: DEFECT MARKER -- the value is not py_ecc's, and this inverts when the loop is fixed" {
+    // This module's three pairing tests (non-degenerate, bilinear small
+    // scalars, r-torsion) all pass against this value, because they compare
+    // the implementation with itself: bilinearity holds for any bilinear map,
+    // and the value is in μ_r. This marker asserts the defect on purpose --
+    // the same shape as the one bn254.zig carried -- because a test asserting
+    // the correct value cannot be written while the value is wrong, and a
+    // suite that goes quietly green is worse than one that names what is
+    // broken. When the loop and its extra terms are fixed this test FAILS and
+    // has to be inverted to `expected.eql(actual)`; that inversion is the
+    // signal, and a marker that cannot fail is not a marker.
+    //
+    // Measured 2026-10-09, with the library's own arithmetic: the value is not
+    // the py_ecc value under any of the twelve isomorphisms t -> w^{2·p^j}
+    // (each one checked in this ring), it is not a Frobenius power of it, and
+    // the quotient e/real is not a constant. So it is a different element of
+    // μ_r, not a presentation difference -- the loop parameter below is 6x²
+    // where py_ecc and the verified tower run 6x+2, and setting it to 6x+2
+    // alone breaks bilinearity, so the loop and its extra terms were built
+    // for each other and both are wrong together.
+    const expected = katToDirect(&PY_ECC_KAT);
+    const actual = pairing(zc.bn254.G1_generator, zc.bn254.G2_generator);
+    try std.testing.expect(!expected.eql(actual));
+
+    // Controls, so the assertion above discriminates rather than holds
+    // vacuously: a tampered vector still maps somewhere else, and the
+    // conversion it goes through is a ring homomorphism (the test above).
+    var tampered = PY_ECC_KAT;
+    tampered[3] = tampered[3].add(Fp.one());
+    try std.testing.expect(!katToDirect(&tampered).eql(actual));
+    try std.testing.expect(!katToDirect(&tampered).eql(expected));
 }

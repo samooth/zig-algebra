@@ -330,8 +330,8 @@ security claims.
 ## Build Commands
 
 ```bash
-zig build test        # Run all library tests (607 tests, ~1-2 min Debug)
-zig build test -Doptimize=ReleaseFast   # Same 607 tests, seconds
+zig build test        # Run all library tests (609 tests, ~1-2 min Debug)
+zig build test -Doptimize=ReleaseFast   # Same 609 tests, seconds
 zig build bench       # Run ReleaseFast benchmarks (field/curve/pairing/MSM/NTT)
 zig build example     # BLS12-381 Schnorr signature demo
 zig build stark       # STARK prover demo (Fibonacci over Goldilocks via FRI)
@@ -346,7 +346,7 @@ zig build assert-check             # assert ledger vs the tree (see §0)
 
 Per-library: `cd libs/<name> && zig build test`. Only `field` and `curve` have
 separate `tests/` roots; the root `zig build test` step compiles inline `src/`
-tests (607 total across all 29 test binaries, and the per-library sum is 607: **the root step runs the `tests/` roots too**).
+tests (609 total across all 29 test binaries, and the per-library sum is 609: **the root step runs the `tests/` roots too**).
 
 > **How the count is derived**, because getting it wrong is how the previous
 > figures drifted: since the gate fix, `zig build test` compiles **all 27 test
@@ -450,13 +450,15 @@ caller input can influence.
 - Test naming: descriptive strings like `"mul distributes over add"`.
 - Include negative tests: tampered data must fail verification.
 - Counts (Zig 0.16.0, re-derived 2026-10-09 from the runner's own `--summary all`):
-  root `zig build test` = 607; per-library totals sum to 607, which now **equals** the
+  root `zig build test` = 609; per-library totals sum to 609, which now **equals** the
   root total because the root step runs the `tests/` roots as well. Per library:
   algebra-traits 9, bigint 28, binary-field 98, curve 98, field 89, fri 32, hash 23,
   kzg 8, linalg 13, merkle 26, ntt 16,
-  pairing 65, parallel 7, poly 34, rng 28, serialization 20, transcript 13.
-  `pairing` is 65 and not 62 because `libs/pairing/src/bn254.zig` adds three: the
-  py_ecc known-answer vector, and the two conversion checks it rests on.
+  pairing 67, parallel 7, poly 34, rng 28, serialization 20, transcript 13.
+  `pairing` is 67 and not 62: `libs/pairing/src/bn254.zig` adds three (the py_ecc
+  known-answer vector and the two conversion checks it rests on) and
+  `libs/pairing/src/bn254_direct.zig` adds two (the ring-homomorphism check and
+  the DEFECT MARKER pinning its wrong value).
   `poly` is 34 and not 32 because `libs/poly/tests/horner_parity.zig` adds two, counted
   there for the same reason `field`'s 89 includes its `tests/` roots.
 - Re-derive a count by running the suite and reading the runner's own summary

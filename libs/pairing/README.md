@@ -11,7 +11,7 @@ Bilinear pairings for pairing-friendly elliptic curves: optimal ate pairings for
 | BN254 (direct embedding) | reference | 13 | `src/bn254_direct.zig`; untwisted embedding, used as a cross-check |
 | Generic tower | — | 7 | `src/root.zig` Fp2/Fp6/Fp12 factories and generator on-curve checks |
 
-`zig build test` for this library runs 65 tests in total (measured with
+`zig build test` for this library runs 67 tests in total (measured with
 `zig build test --summary all` on 2026-10-09; a prose figure drifts). BN254 is
 **no longer unimplemented** — the older status table in git history predated
 `bn254_tower.zig`.
@@ -148,7 +148,7 @@ std.debug.assert(Fp12.one().mul(Fp12.one().inv()).isOne());
 # From the monorepo root
 zig build test
 
-# Just this library (65 tests, all inline)
+# Just this library (67 tests, all inline)
 cd libs/pairing && zig build test
 ```
 

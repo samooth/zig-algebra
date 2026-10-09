@@ -60,7 +60,7 @@ ROOT_TOTAL_PATTERNS = [
     # gate reported green while the document disagreed with the measurement it
     # was supposed to agree with. All four numbers move together or the gate
     # starts lying again.
-    ("AGENTS.md", r"pairing 65, parallel 7, poly 34, rng 28, serialization (\d+),"),
+    ("AGENTS.md", r"pairing 67, parallel 7, poly 34, rng 28, serialization (\d+),"),
     # These two were missing from this list and were the worst in the tree:
     # DESIGN.md said the root step executes 391 tests, and docs/architecture.md
     # said 423 in one place and 583 in another, against a measurement of 588. A gate
