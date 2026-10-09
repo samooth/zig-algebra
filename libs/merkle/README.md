@@ -159,7 +159,7 @@ rather than indexing anything it has not validated:
 # From the monorepo root
 zig build test
 
-# Just this library (20 tests, all inline in src/root.zig)
+# Just this library (26 tests: 20 inline in src/root.zig, 6 in tests/bitcoin_merkle_test.zig)
 cd libs/merkle && zig build test
 ```
 
@@ -182,6 +182,27 @@ cd libs/merkle && zig build test
   rather than walked out of bounds.
 - Proof format is compact and serializable:
   `[u32 num_siblings][32*n sibling hashes][n direction flags]`
+
+## Two trees, and they are not interchangeable
+
+`MerkleTree(H)` is a power-of-two tree: it pads a short leaf list with
+`H.hashBytes(&.{})` and hashes each leaf. `BitcoinMerkle(H)` is Bitcoin's: leaves are
+already hashes, an odd level duplicates its last node, and a single leaf *is* the
+root. They give different roots for the same input, so use the one you mean.
+
+```zig
+const zm = @import("zig-merkle");
+
+// Bitcoin: leaves are already txids (hashes), and H is a hash256.
+const Btc = zm.BitcoinMerkle(MyHash256);
+const root = try Btc.root(&txids);
+
+// Everything else: H is a one-shot hash and leaves are raw data.
+var tree = try zm.MerkleTree(MyHash).init(allocator, &leaf_slices);
+```
+
+`libs/field/tests/merkle_parity.zig` measures the disagreement from the other side,
+because every test of either tree alone is a round trip and cannot see it.
 
 ## License
 

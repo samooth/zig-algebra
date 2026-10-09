@@ -360,3 +360,81 @@ test "merkle: a path index at or past the leaf count is rejected" {
     try std.testing.expect(!validPathIndex(1, 0));
     try std.testing.expect(validPathIndex(0, 0));
 }
+
+// ============================================================================
+// Bitcoin's Merkle tree
+// ============================================================================
+
+/// Bitcoin's Merkle shape: leaves are already hashes, and an odd level duplicates
+/// its last node rather than being padded out to a power of two.
+///
+/// This is a separate type rather than a mode on `MerkleTree` because the two
+/// differ in more than a padding rule. `MerkleTree` pads with
+/// `H.hashBytes(&.{})` and hashes each leaf; Bitcoin pads nothing, duplicates,
+/// and treats its leaves as hashes already -- a transaction's txid, itself a
+/// hash256. The odd-level rule changes *which nodes are siblings*, so no padding
+/// constant reconciles them.
+///
+/// The three places an implementation of this goes wrong, each of which the
+/// tests in `libs/merkle/tests/bitcoin_merkle_test.zig` close:
+///
+/// * **A single leaf is the root, not a hash of it.** The genesis block's Merkle
+///   root equals its coinbase txid, which is a published constant and the vector
+///   that settles it. A "build the tree, then read the root" shape hashes one
+///   time too many here.
+/// * **hash256, not SHA-256.** Each concatenation is hashed twice. `H` supplies
+///   that; this type does not know or care, which keeps it usable for the other
+///   double-hash trees in the same family.
+/// * **Sibling order is the byte order given.** Bitcoin concatenates in the
+///   internal little-endian order the txids already carry. Nothing is swapped.
+///
+/// No allocator and no proof machinery: the root is a pure function, which is all
+/// a block header needs.
+pub fn BitcoinMerkle(comptime H: type) type {
+    return struct {
+        /// Digest width. Named `LEN` and not `HASH_LEN`, because the enclosing
+        /// module already has a `HASH_LEN` and a second one in this scope makes
+        /// every reference to it ambiguous.
+        const LEN = 32;
+
+        /// Root over `leaves`, each of which is already a hash.
+        ///
+        /// An empty list is `error.EmptyLeaves` rather than a zeroed root: an
+        /// empty block is not a thing, and a zero root is a value a caller could
+        /// mistake for a real one.
+        pub fn root(leaves: []const [LEN]u8) error{EmptyLeaves}![LEN]u8 {
+            if (leaves.len == 0) return error.EmptyLeaves;
+            if (leaves.len == 1) return leaves[0];
+
+            // Two alternating buffers, each as long as the input, are enough:
+            // every level is at most the length of the one before it.
+            var a: [64][LEN]u8 = undefined;
+            var b: [64][LEN]u8 = undefined;
+            var cur: [][LEN]u8 = &a;
+            var nxt: [][LEN]u8 = &b;
+            @memcpy(cur[0..leaves.len], leaves);
+            var len = leaves.len;
+
+            while (len > 1) {
+                if (len % 2 == 1) {
+                    // The Bitcoin rule. `cur[len]` duplicates the final node, so
+                    // at the next pairing that node is hashed with itself.
+                    cur[len] = cur[len - 1];
+                    len += 1;
+                }
+                var i: usize = 0;
+                while (i < len) : (i += 2) {
+                    var concat: [LEN * 2]u8 = undefined;
+                    @memcpy(concat[0..LEN], &cur[i]);
+                    @memcpy(concat[LEN..], &cur[i + 1]);
+                    nxt[i / 2] = H.hashBytes(&concat);
+                }
+                len /= 2;
+                const tmp = cur;
+                cur = nxt;
+                nxt = tmp;
+            }
+            return cur[0];
+        }
+    };
+}

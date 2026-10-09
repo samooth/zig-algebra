@@ -61,6 +61,31 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Added: `zig-merkle.BitcoinMerkle`, and vectors from outside this tree.** Bitcoin's
+  Merkle shape is not a padding variant of the tree `zig-merkle` already had, it is a
+  different tree, so it is a separate type rather than a flag. Two differences do
+  the work: leaves are already hashes, so **a single leaf is the root and not a hash
+  of it**; and an odd level **duplicates its last node** instead of being padded out
+  to a power of two. The duplication changes which nodes are siblings, so no padding
+  constant reconciles the two -- they give different roots for the same input, which
+  is what `libs/field/tests/merkle_parity.zig` already measured from the other side.
+
+  The vectors were produced by a from-scratch Python computation of the documented
+  rule and then checked against a published constant: the **genesis block's Merkle
+  root equals its coinbase txid**, which is the one case that proves the "one leaf is
+  the root" rule. That makes them external vectors rather than this implementation's
+  own output, which is the distinction `AGENTS.md` §0 draws and the reason `zig-hash`
+  could carry a non-Blake3 for its whole life.
+
+  Writing the vectors found two bugs in this repository's *test*, not its code: one
+  vector had been generated over leaves that were not 32 bytes long (`b"ccc"*11` is
+  33), and the odd-level reconstruction hashed the wrong node with itself. Both were
+  caught because the vector disagreed with the implementation, and in both cases the
+  vector was the thing that was wrong. That is the argument for pinning an
+  independently derived value even when it is more work.
+
+  Test count 599 -> 605, `merkle` 20 -> 26 (20 inline plus the 6 in the new
+  `tests/bitcoin_merkle_test.zig`).
 - **Converged `kzg.evaluate` onto the canonical Horner, and recorded why the other
   two copies cannot be yet.** `evaluate` now calls `algebra-traits.evalPolyHorner`,
   which is one implementation in the base instead of a fourth copy. Four Horner

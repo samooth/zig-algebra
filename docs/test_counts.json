@@ -1,8 +1,8 @@
 {
   "measured": "2026-10-09",
   "command": "cd libs/<name> && zig build test --summary all",
-  "total": 599,
-  "note": "The root `zig build test` runs the same 29 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`. Recent movements: `poly` 32 -> 34 and `field` 89 -> 91 for the two cross-library parity tests, `algebra-traits` 8 -> 9, `hash` 22 -> 23 and `rng` 27 -> 28 for the three closures of `pub` bodies that nothing called -- `VectorSpaceTrait.assert`, `Hash.hash2` and `ChaCha20Rng.initOsRandom`. All are counted under the library the test lives in, which is the convention `field`'s own 89 follows.",
+  "total": 605,
+  "note": "The root `zig build test` runs the same 29 binaries and reports the same total, because the root step compiles the `tests/` roots as well as the inline src/ tests. Re-derive with the command above; a test added without moving this file fails `zig build counts-check`. Recent movements: `merkle` 20 -> 26 for the Bitcoin Merkle vectors, `poly` 32 -> 34 and `field` 89 -> 91 for the two cross-library parity tests, `algebra-traits` 8 -> 9, `hash` 22 -> 23 and `rng` 27 -> 28 for the three closures of `pub` bodies that nothing called.",
   "per_library": {
     "algebra-traits": 9,
     "bigint": 28,
@@ -13,7 +13,7 @@
     "hash": 23,
     "kzg": 8,
     "linalg": 13,
-    "merkle": 20,
+    "merkle": 26,
     "ntt": 16,
     "pairing": 62,
     "parallel": 7,

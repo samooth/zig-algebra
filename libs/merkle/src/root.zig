@@ -18,6 +18,7 @@ pub const mmr = @import("mmr.zig");
 pub const sparse_merkle = @import("sparse_merkle.zig");
 
 pub const MerkleTree = merkle_tree.MerkleTree;
+pub const BitcoinMerkle = merkle_tree.BitcoinMerkle;
 pub const MerkleProof = merkle_tree.MerkleProof;
 pub const MMR = mmr.MMR;
 pub const SparseMerkleTree = sparse_merkle.SparseMerkleTree;
