@@ -382,30 +382,36 @@ is the owner's, and the vectors have not been read into this tree.
   must always be paired with `defer setRandomForTesting(null)`; prefer
   `setRandomForTestingSeed`, whose state lives inside the module.
 
-## Advisory ZA-2026-007 — `zig-pairing`'s BN254 `pairing()` is not bilinear
+## Advisory ZA-2026-007 — `zig-pairing`'s BN254 `pairing()` was not bilinear (fixed 2026-10-09 at `053d9ca`)
 
 **A silent wrong answer. Not a crash, not a refusal, and not an impossible
 value — a plausible one.**
 
-`libs/pairing/src/bn254.zig` declares `pub fn pairing(G1Point, G2Point) Fp12`
-and computes `finalExp(millerLoop(p, q))`. It is **not a pairing**: on the
-canonical generators,
+`libs/pairing/src/bn254.zig` declares `pub fn pairing(G1Point, G2Point) Fp12`.
+Before `053d9ca` it computed `finalExp(millerLoop(p, q))` over a loop of its
+own, and that loop was **not a pairing**: on the canonical generators,
 
 ```
 e(2P, Q) != e(P, Q)^2
 e(P, 2Q) != e(P, Q)^2
 ```
 
-independently on each side. Its output is nevertheless an element of the correct
-r-order subgroup (`e^r == 1`) and it is non-degenerate, so a caller that checks
-either of those properties sees a pass.
+independently on each side. Its output was nevertheless an element of the
+correct r-order subgroup (`e^r == 1`) and it was non-degenerate, so a caller
+that checks either of those properties saw a pass. **This is history, not a
+current defect**: the body now delegates to the implementation in
+`bn254_tower.zig` and is pinned to a py_ecc known-answer vector, and the test
+that used to assert the wrong behaviour has been inverted to assert
+bilinearity. What follows is the record of the defect and its fix, kept
+because the shape of it is the part worth carrying.
 
 **Affected:** every release from `v0.5.1` through `v0.6.0`, all four published
-and signed on the remote. Measured by reading the tagged file, not by following
-a commit. Both figures below are given with the span they were computed over and
-the command that reproduces them, because a checksum without its object is a line
-nobody can check — and someone who recomputes a different span gets a different
-number and concludes the range in this advisory is wrong.
+and signed on the remote, plus the local-only `v0.5.0`. Measured by reading
+the tagged file, not by following a commit. Both figures below are given with
+the span they were computed over and the command that reproduces them, because
+a checksum without its object is a line nobody can check — and someone who
+recomputes a different span gets a different number and concludes the range in
+this advisory is wrong.
 
 *Whole file*, so there is no span to argue about:
 
@@ -413,7 +419,7 @@ number and concludes the range in this advisory is wrong.
 $ for t in v0.5.0 v0.5.1 v0.5.2 v0.5.3 v0.6.0; do
     git show "$t:libs/pairing/src/bn254.zig" | md5sum
   done
-a5d19e3887ac...   (identical at all five; v0.5.0 is local-only)
+a5d19e3887ac...   (identical at all five)
 ```
 
 *Body of `pairing()`*, span declared as *from the line matching `^pub fn pairing`
@@ -425,12 +431,21 @@ $ git show <tag>:libs/pairing/src/bn254.zig \
 9132f52108f3...   (identical at v0.5.1, v0.5.2, v0.5.3, v0.6.0)
 ```
 
-`HEAD` differs from both (`4d4a070323ae`) because it carries the tests and the
-correction to the false TODO; the defect itself is unchanged and asserted.
+Three later figures, each with the moment it describes, because a checksum of
+a file that has since changed is a number with no date:
 
-The defect therefore predates the first published tag, so there is no "an upgrade
-introduced it" reading available: it has been present, and untested, since before
-anyone could fetch this code.
+```
+4d4a070323ae   body at the tag's own run (the tests and the false-TODO
+               correction; the defect unchanged and asserted)
+21c8274ac886d2c48e7700179a3682ab   body at 053d9ca, 2026-10-09, the fix:
+               pub fn pairing(p, q) = fromGamma(bn254_tower.pairing(p, q))
+b9aa26d59cce0934104c778671c3ea31   whole file at 053d9ca, 2026-10-09
+```
+
+The defect therefore predates the first published tag, so there is no "an
+upgrade introduced it" reading available: it was present, and untested, since
+before anyone could fetch this code. The fix is on `main` after `v0.6.0` and
+is not in any tag as of 2026-10-09.
 
 **There were no tests for it, and the reason was written down and false.** The
 file carried a `TODO: Pairing tests` stating that BN254's D-type twist needs
@@ -466,10 +481,20 @@ looked like they covered it.
 `e(P+P, Q)` fails identically to `e(2P, Q)` — so the fault is inside the Miller
 loop, not in the exponentiation or in the point arithmetic feeding it.
 
-**Current state, stated as a sequence.** The defect is asserted, not fixed. A test
-in `bn254.zig` pins the wrong behaviour on purpose and is named `DEFECT MARKER`;
-it fails when the Miller loop is fixed, and must be inverted at that moment.
-`AUDIT.md` row 15 carries the closing criterion.
+**Current state, stated as a sequence.** The defect is **fixed**, at `053d9ca`
+on 2026-10-09, which is after `v0.6.0` and in no tag. The test that pinned the
+wrong behaviour on purpose and was named `DEFECT MARKER` failed the day the fix
+landed, exactly as its own comment said it would, and was inverted to assert
+bilinearity. The fix was convergence rather than repair — `bn254.zig` now
+delegates to `bn254_tower.zig` through the tower isomorphism `v -> v'^-1,
+w -> w'^-1`, whose slot permutation is checked for products on random
+elements, because a permutation wrong by one position yields a plausible
+element and no wrong answer, which is the defect shape. Two things are true at
+once and both belong in the record: the value is now pinned to py_ecc, and
+BN254 no longer has two independent implementations to differential-test
+against each other. `AUDIT.md` row 15 carries the closing criterion, met for
+`bn254.zig` and `bn254_tower.zig`; `bn254_direct.zig` still has no vector of
+its own, so the row is narrowed rather than closed.
 
 **Isolated to one file, by differential against the other two.** This tree has
 three BN254 implementations, and the same property test run against each one gives:
@@ -513,10 +538,10 @@ converted value lies in `mu_r` (`X^r == 1`), equals `pairing(G1, G2)` exactly,
 and `want_twothree == want_g1g2^6` matches `e(2P, 3Q) = e(P, Q)^6`. The vector
 was also seen to reject: tampering one digit of `want_g1g2` turns the test red at
 `bn254_tower.zig:915`, one failure of 62, exit code 1. So `bn254_tower.zig` is
-pinned to an implementation independent of this repository, and `bn254.zig` and
-`bn254_direct.zig` still have no external vector each. For `bn254.zig` the
-acceptance test for the fix already exists in that form, because its tower uses
-`XI = 1/(9+u)` and the same py_ecc vector converts by `t^k -> XI^-2 w^(12-k)`.
+pinned to an implementation independent of this repository. `bn254_direct.zig`
+still has no external vector of its own; its degree-24 ring would need the
+embedding `v -> z^4, w -> z` into `Fp2[z]/(z^12 - xi)` first, which is
+recorded and not yet done.
 
 Two earlier sentences of this advisory are corrected by the paragraph above: this
 one first said neither BN254 implementation has an external known-answer vector,
