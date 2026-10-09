@@ -818,6 +818,60 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   the first time one was found by a test written to check the contract from the
   other side rather than by reading the two next to each other.
 
+- **Security: two BN254 `pairing()` implementations computed wrong values, both
+  fixed and pinned to vectors from outside this tree (ZA-2026-007,
+  ZA-2026-008).** Neither was a crash or a refusal. Both returned an element of
+  the correct r-order subgroup that was not the pairing value, and every test
+  either implementation had passed anyway: non-degeneracy, bilinearity and
+  `e^r == 1` all survive a pairing that computes the wrong value, because they
+  compare the implementation with itself.
+
+  `libs/pairing/src/bn254.zig`'s loop put its line factors in tower slots that
+  correspond to no untwist map for its own tower -- with `v^3 = 1/(9+u)` the
+  sextic untwist puts the slope term in `w^1`, and it multiplied by `w^2` -- and
+  it lacked the two optimal-ate extra terms. Fixed by converging onto the
+  verified tower through the isomorphism `v -> v'^-1, w -> w'^-1`, whose slot
+  permutation is checked for products on random elements. The cost is named in
+  the file: BN254 no longer has two independent implementations to
+  differential-test against each other, and an external vector replaced that.
+
+  `libs/pairing/src/bn254_direct.zig`'s loop ran `6x^2` where py_ecc and the
+  tower run `6x+2`, and carried no optimal-ate extra terms; its line layout and
+  verticals were correct all along. Both replaced, the DEFECT MARKER inverted,
+  the value pinned.
+
+  Both defects were present and untested since before the first published tag:
+  `bn254.zig` is byte-identical at every tag, and `bn254_direct.zig`'s
+  `pairing()` body is byte-identical from `v0.2.0` through `v0.6.0` and at the
+  fix -- the function is a one-line delegation, so the span that changed is the
+  callee's, and both are recorded with their checksums. `AUDIT.md` row 15 is
+  closed with the criterion met for every pairing entry point.
+
+- **Added: `zig build ct-check` and `zig build kat-check`, and `AUDIT.md` rows 13
+  and 16 close.** `ct-check` holds the constant-time judgement ledger to five
+  fields -- count, judgement, provenance, reachability, and the object it is a
+  property of -- and fails on any that is missing or blank. The ledger records
+  one measured function (`montgomery.Montgomery(<modulus>).mul`, one conditional
+  jump and six branchless selects) and keeps its withdrawn wrong figure with its
+  cause rather than deleting it: it came from a parser that matched 71 of 428
+  functions.
+
+  `kat-check` derives every `pub fn` whose name carries a cryptographic verb
+  from `git ls-files` and requires each to be pinned to a vector from outside
+  this tree or to carry a recorded reason. It fails three ways -- an empty
+  entry, an absent name, a blank provenance -- each seen failing before a green
+  run meant anything, and it prints the reasons on every passing run so they are
+  read rather than inferred. The current ledger accounts for 67 entry points:
+  11 pinned (py_ecc 8.0.0 for the three BN254 implementations, EIP-197 for
+  BLS12-381, the py_ecc differential for KZG, the RFC 9380 expansion vector, the
+  Bitcoin Merkle vectors) and 56 with a recorded reason.
+
+  The scope of that gate is itself the finding: the row it implements recorded
+  37 entry points, which is the top-level count. Methods inside structs are 30
+  more, and the set the original rule silently dropped contained `Ipa.verify` --
+  the stub `AGENTS.md` lists as a known gap -- and every sum-check and PCS entry
+  point in `binary-field`. Both shapes are covered now.
+
 ## [v0.6.0] — 2026-09-30
 
 MINOR under 0.x, and it carries two breaking changes: new values in two error

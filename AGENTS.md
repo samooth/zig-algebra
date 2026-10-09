@@ -339,6 +339,11 @@ zig build wasm        # examples/wasm_fp.zig -> wasm32-freestanding
 zig build wasm-pairing  # examples/wasm_pairing.zig -> wasm32-freestanding
 zig build fuzz -Doptimize=ReleaseFast  # randomized property/fuzz runner
 zig build assert-check             # assert ledger vs the tree (see §0)
+zig build counts-check             # every test count written in prose, against the baseline
+zig build ct-check                 # the constant-time judgement ledger vs the tree
+zig build audit-check              # AUDIT.md's rows, counts and `git show` references
+zig build changelog-check          # CHANGELOG header ordering and body
+zig build kat-check                # every cryptographic entry point: external vector or recorded reason
 ```
 
 `zig build` with no step runs the full test suite when
