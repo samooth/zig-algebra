@@ -3,15 +3,13 @@
 //! true Fp12 used by pairings lives in bn254_tower.zig via the standard
 //! 2→6→12 tower.
 //!
-//! The pairing computed here is bilinear and its value is in μ_r, and it is
-//! **not the pairing value**: measured 2026-10-09 against py_ecc, the output
-//! is an element of μ_r that no isomorphism to py_ecc's tower maps onto
-//! e(P,Q), and it is not a Frobenius power of it either. The likely cause is
-//! the loop parameter below, which is 6x² rather than the 6x+2 that py_ecc
-//! and the verified tower use; setting it to 6x+2 breaks bilinearity, so the
-//! loop and its extra terms were built for each other and both are wrong
-//! together. A test named DEFECT MARKER pins this, and the history is in
-//! SECURITY.md advisory ZA-2026-008.
+//! Fixed 2026-10-09. Until then the loop here ran 6x² with no optimal-ate extra
+//! terms: bilinear, r-torsion, and a different element of μ_r than the pairing
+//! -- disclosed as SECURITY.md advisory ZA-2026-008. The value is now pinned to
+//! py_ecc by the known-answer vector at the end of this file, so this module is
+//! again a second implementation on separate arithmetic rather than a wrapper:
+//! the ring, the line layout and the verticals were always right; what was
+//! missing was the correct loop parameter and the two extra terms.
 //!
 //! Cost: ~4× larger multiplies than the tower would need.
 //!
@@ -256,13 +254,13 @@ const zc = @import("zig-curve");
 const G1Point = zc.bn254.G1;
 const G2Point = zc.bn254.G2;
 
-/// Loop parameter, 127 bits, x = 0x44E992B44A6909F1. Comment used to say
-/// "t−1 = 6x², the ate parameter", and 6x² is indeed t−1 — it is also not the
-/// parameter the pairing this tree is pinned to uses: py_ecc and
-/// bn254_tower.zig both run 6x+2 (65 bits). Changing this constant alone does
-/// not fix the value (bilinearity breaks, because the extra terms below were
-/// written for it); see the DEFECT MARKER at the end of this file.
-const LOOP: u128 = 0x6F4D8248EEB859FBF83E9682E87CFD46;
+/// Optimal-ate Miller loop parameter 6x+2 (65 bits), x = 0x44E992B44A6909F1:
+/// the parameter py_ecc and this tree's verified bn254_tower.zig run. It was
+/// 6x² (127 bits, t−1) until 2026-10-09; that loop is bilinear and computes an
+/// element of mu_r that is not the pairing value, and changing the constant
+/// alone breaks bilinearity, because the two optimal-ate extra terms below did
+/// not exist — they do now, added the same day.
+const LOOP: u128 = 0x19D797039BE763BA8;
 
 /// Embed an Fp2 value at slot k of Fp12Direct (i.e. multiply by w^k).
 fn embedSlot(v: Fp2, k: usize) Fp12Direct {
@@ -336,6 +334,34 @@ pub fn millerLoopPair(p: G1Point, q: G2Point) NumDenDirect {
     return millerLoopPairChecked(p, q) catch NumDenDirect.init();
 }
 
+/// p as little-endian u64 limbs, for the Frobenius below.
+const P_LIMBS = [4]u64{ 0x3C208C16D87CFD47, 0x97816A916871CA8D, 0xB85045B68181585D, 0x30644E72E131A029 };
+
+/// q-Frobenius on this ring. For the direct-degree-12 presentation there is no
+/// cheap closed form (π(w)^12 = conj(9+u), so π(w) is w times a 12th root that
+/// is not in Fp2), so it is a square-and-multiply over p's limbs. It is used
+/// only for the two optimal-ate extra terms, two applications each.
+fn frob(x: Fp12Direct) Fp12Direct {
+    return x.powByLimbs(&P_LIMBS);
+}
+
+/// Embedded point on E(Fp12): y^2 = x^3 + 3, via this module's untwist
+/// ψ(x', y') = (x'·w^4, y'·w^6) — (w^4)^3 = (w^6)^2 = w^12 = 9+u = b/b'.
+const EmbPointDirect = struct { X: Fp12Direct, Y: Fp12Direct };
+
+fn embedTwistDirect(x: Fp2, y: Fp2) EmbPointDirect {
+    return .{ .X = embedSlot(x, 4), .Y = embedSlot(y, 6) };
+}
+
+/// Dense affine addition on the embedded curve. One inversion per call — used
+/// only for the two optimal-ate extra terms.
+fn ecAdd12Direct(Ap: EmbPointDirect, Bp: EmbPointDirect) EmbPointDirect {
+    const lam = Bp.Y.sub(Ap.Y).mul(Bp.X.sub(Ap.X).inv());
+    const x3 = lam.sqr().sub(Ap.X.add(Bp.X));
+    const y3 = lam.mul(Ap.X.sub(x3)).sub(Ap.Y);
+    return .{ .X = x3, .Y = y3 };
+}
+
 /// # Errors
 /// `error.PointAtInfinity` when either input is the point at infinity.
 pub fn millerLoopPairChecked(p: G1Point, q: G2Point) error{PointAtInfinity}!NumDenDirect {
@@ -374,6 +400,27 @@ pub fn millerLoopPairChecked(p: G1Point, q: G2Point) error{PointAtInfinity}!NumD
             t = tq;
         }
         if (bit == 0) break;
+    }
+
+    // ---- Two optimal-ate extra terms (dense, on the embedded curve) ----
+    // The loop alone computes f_{6x+2,Q}(P); the pairing is that times the two
+    // lines through T and pi(Q), and through T+pi(Q) and -pi^2(Q), all divided
+    // by their verticals. This is the py_ecc / arkworks formulation and the one
+    // bn254_tower.zig uses; without these two factors the value is an element
+    // of mu_r that is not the pairing (ZA-2026-008).
+    const px12 = embedSlot(Fp2.fromBase(p.x), 0);
+    const py12 = embedSlot(Fp2.fromBase(p.y), 0);
+    const embQ = embedTwistDirect(q.x, q.y);
+    const embT = embedTwistDirect(t.x, t.y);
+    const Q1: EmbPointDirect = .{ .X = frob(embQ.X), .Y = frob(embQ.Y) };
+    const nQ2: EmbPointDirect = .{ .X = frob(Q1.X), .Y = frob(Q1.Y).neg() };
+    var T12 = embT;
+    for ([_]EmbPointDirect{ Q1, nQ2 }) |S| {
+        const lam = S.Y.sub(T12.Y).mul(S.X.sub(T12.X).inv());
+        const val = lam.mul(px12.sub(T12.X)).sub(py12.sub(T12.Y));
+        gnum = gnum.mul(val);
+        T12 = ecAdd12Direct(T12, S);
+        gden = gden.mul(px12.sub(T12.X));
     }
     return .{ .num = gnum, .den = gden };
 }
@@ -647,30 +694,24 @@ const PY_ECC_KAT = blk: {
     };
 };
 
-
-test "bn254_direct: DEFECT MARKER -- the value is not py_ecc's, and this inverts when the loop is fixed" {
-    // This module's three pairing tests (non-degenerate, bilinear small
-    // scalars, r-torsion) all pass against this value, because they compare
-    // the implementation with itself: bilinearity holds for any bilinear map,
-    // and the value is in μ_r. This marker asserts the defect on purpose --
-    // the same shape as the one bn254.zig carried -- because a test asserting
-    // the correct value cannot be written while the value is wrong, and a
-    // suite that goes quietly green is worse than one that names what is
-    // broken. When the loop and its extra terms are fixed this test FAILS and
-    // has to be inverted to `expected.eql(actual)`; that inversion is the
-    // signal, and a marker that cannot fail is not a marker.
+test "bn254_direct: pairing matches py_ecc on the canonical generators" {
+    // This is the closing of the row this module failed: an external vector,
+    // from py_ecc 8.0.0, with the conversion checked as a ring homomorphism
+    // on random elements so it cannot be right by luck.
     //
-    // Measured 2026-10-09, with the library's own arithmetic: the value is not
-    // the py_ecc value under any of the twelve isomorphisms t -> w^{2·p^j}
-    // (each one checked in this ring), it is not a Frobenius power of it, and
-    // the quotient e/real is not a constant. So it is a different element of
-    // μ_r, not a presentation difference -- the loop parameter below is 6x²
-    // where py_ecc and the verified tower run 6x+2, and setting it to 6x+2
-    // alone breaks bilinearity, so the loop and its extra terms were built
-    // for each other and both are wrong together.
+    // History, because the value changed: this test was a DEFECT MARKER until
+    // 2026-10-09, asserting the negation, because the module's three pairing
+    // tests (non-degenerate, bilinear small scalars, r-torsion) all passed
+    // against a value that was wrong -- bilinearity holds for any bilinear map
+    // and the value was in mu_r. Measured then, with the library's own
+    // arithmetic: not the py_ecc value under any of the twelve isomorphisms,
+    // not a Frobenius power of it, quotient not a constant. The loop ran 6x^2
+    // with no optimal-ate extra terms; both were replaced, the marker failed
+    // the day the fix landed as its own comment said it would, and this is the
+    // inversion.
     const expected = katToDirect(&PY_ECC_KAT);
     const actual = pairing(zc.bn254.G1_generator, zc.bn254.G2_generator);
-    try std.testing.expect(!expected.eql(actual));
+    try std.testing.expect(expected.eql(actual));
 
     // Controls, so the assertion above discriminates rather than holds
     // vacuously: a tampered vector still maps somewhere else, and the
