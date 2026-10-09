@@ -310,6 +310,19 @@ pub fn build(b: *std.Build) void {
     // property of, and this step fails on any of those missing or blank. It does
     // not classify anything, and the withdrawn section keeps a retracted figure
     // visible with its cause instead of deleting it.
+    // Every cryptographic entry point either pinned to a vector from outside
+    // this tree, or carrying a recorded reason. The list of entry points is
+    // derived from git ls-files by the script, so a new `pub fn prove...`
+    // fails the gate the day it appears rather than waiting for an audit.
+    const kat_check = b.step("kat-check", "Verify the cryptographic entry-point ledger holds up");
+    {
+        const verify = b.addSystemCommand(&.{"python3"});
+        verify.addFileArg(b.path("scripts/kat_verify.py"));
+        verify.addArgs(&.{ "--root", ".", "--ledger", "docs/kat_ledger.json" });
+        verify.has_side_effects = true;
+        kat_check.dependOn(&verify.step);
+    }
+
     const ct_ledger = b.step("ct-check", "Verify the constant-time judgement ledger holds up");
     {
         const verify = b.addSystemCommand(&.{"python3"});

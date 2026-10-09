@@ -55,6 +55,7 @@ jobs:
         with:
           version: 0.16.0
       - run: zig build ct-check
+      - run: zig build kat-check
 
   audit-ledger:
     # The gate for AUDIT.md. A register of open items fails silently, so this
