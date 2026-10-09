@@ -3,6 +3,14 @@
 //! Provides allocation-free polynomial arithmetic with comptime-known
 //! maximum degree.  All operations use stack storage.
 //!
+//! # Two shapes, because callers hold both
+//! `Polynomial(F, max_degree)` is the comptime-degree form and owns a
+//! `[max_degree + 1]F` array. `evalCoeffs` is the runtime-length form, taking a
+//! `[]const F`. Both exist because the comptime-degree form cannot serve a
+//! caller whose length is not known at compile time -- which is why four sites
+//! in this tree wrote their own Horner over slices. The alias closes the gap
+//! without adding a fifth copy.
+//!
 //! # Quick Start
 //! ```zig
 //! const Poly = Polynomial(F7, 64);
@@ -12,6 +20,7 @@
 //! ```
 
 const std = @import("std");
+const traits = @import("zig-algebra-traits");
 
 pub const poly = @import("poly.zig");
 pub const vector = @import("vector.zig");
@@ -19,6 +28,29 @@ pub const vector = @import("vector.zig");
 pub const Polynomial = poly.Polynomial;
 pub const lagrangeInterpolate = poly.lagrangeInterpolate;
 pub const vanishingPolynomial = poly.vanishingPolynomial;
+
+/// Evaluate a polynomial given by a **runtime-length** coefficient slice, with
+/// `coeffs[i]` the coefficient of x^i and `F` the field.
+///
+/// This is an alias and not an implementation, deliberately. The same function
+/// already exists one layer down at
+/// `zig-algebra-traits/src/traits.zig:1102`, and writing another copy here would
+/// have made five copies of one operation in this tree rather than four -- which
+/// is the very thing `docs/poly-mul-measurement.md` was written to measure. Four
+/// sites route around `Polynomial` because it needs a comptime degree:
+/// `algebra-traits.evalPolyHorner`, `binary-field`'s two private `evalPoly`, and
+/// `kzg.evaluate`.
+///
+/// What the alias adds is reachability. `zig-poly` already depends on
+/// `zig-algebra-traits`, so a caller who came here for polynomial arithmetic and
+/// is holding a slice does not have to work out that the entry point for their
+/// shape lives one layer down, under a name that does not mention polynomials
+/// being evaluated. The signature keeps `F` explicit, as the original does,
+/// because it is generic over the field rather than over a degree.
+///
+/// `libs/poly/tests/horner_parity.zig` holds this against the other copies, so
+/// it cannot drift from them without a test noticing.
+pub const evalCoeffs = traits.evalPolyHorner;
 
 // Re-export vector utilities
 pub const inner = vector.inner;

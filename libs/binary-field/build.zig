@@ -59,4 +59,15 @@ pub fn build(b: *std.Build) void {
     });
     const run_root_tests = b.addRunArtifact(root_test);
     test_step.dependOn(&run_root_tests.step);
+
+    const example = b.addExecutable(.{
+        .name = "binary-field-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    example.root_module.addImport("zig-binary-field", binary_field_mod);
+    b.installArtifact(example);
 }

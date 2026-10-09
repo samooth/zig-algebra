@@ -61,6 +61,31 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 
 ## [Unreleased]
 
+- **Added: five library examples, which is half of the missing ones.** Five of the
+  seventeen libraries had no `src/main.zig` at all: `parallel`, `serialization`,
+  `transcript`, `ntt` and `binary-field`. `field` had a `main.zig` but its
+  `build.zig` never built it, which is the same problem with an extra step: a
+  consumer that exists and is compiled by nothing. Each is wired into its
+  library's `build.zig` now, so `cross-check` compiles it.
+
+  The value of an example here is not documentation, it is reachability. Every one
+  of the three `pub` bodies fixed earlier in this release was unanalysed because
+  nothing called it, and an example is the cheapest way to find out that a public
+  name does not resolve. Two of these already earned their keep while being
+  written: `serialization`'s golden length caught a wrong assumption about the
+  optional-presence byte (the file now derives it from the format rather than
+  asserting 30), and `field`'s boundary check (`a * a^-1 == 1` at `p-1` and
+  `p-2`) is the regime a random sample never reaches.
+
+  Each example checks a property rather than printing a value.
+  `parallel` counts hits per index across 24 shape combinations, because "every
+  index exactly once" is not something a print shows. `ntt` checks the output
+  against `sum_j x[j] w^(jk)` as well as the round trip, because a round trip is
+  consistent with the wrong transform. `transcript` flips one absorbed byte and
+  asserts every challenge after it moves. `binary-field` asserts `a + b == a - b`,
+  which is the identity that makes odd-characteristic code wrong here.
+
+  Remaining without an example: `curve`, `fri`, `kzg`.
 - **Fixed three `pub` bodies that did not compile, each closed by the call that
   was missing.** All three are the same defect: a public declaration nobody
   called, which Zig therefore never analysed, so it could be broken indefinitely
@@ -116,6 +141,10 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   expose `hash(input: []const u8) [32]u8`; the file calls `H.hashBytes` ten times
   and `H.hash` never. Both are the same failure — a document asserting a shape —
   and both were found by trying to use what they described.
+- Docs: `zig-transcript`'s manifest now depends on `zig-field`, because its example
+  absorbs field elements -- the only reason this edge exists is the example, and
+  it is worth naming that rather than leaving a reader to wonder what a
+  Fiat-Shamir transcript wants with a prime field.
 - Docs: `AGENTS.md` gains *"callers route around you" is an API report*, replacing
   the consumer rule that a later commit retracted. Test count 594 -> 596, `field`
   89 -> 91, binaries 28 -> 29.

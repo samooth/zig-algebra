@@ -154,4 +154,19 @@ pub fn build(b: *std.Build) void {
     const fmt_check = b.addFmt(.{ .paths = &.{"."}, .check = true });
     const fmt_step = b.step("fmt", "Check code formatting (zig fmt --check)");
     fmt_step.dependOn(&fmt_check.step);
+
+    // A consumer, so the public surface is exercised rather than declared. The
+    // point of the eight `main.zig` files in this workspace is exactly this, and
+    // it is why `cross-check` compiles them: an example is the cheapest way to
+    // find out that a `pub` name does not resolve.
+    const example = b.addExecutable(.{
+        .name = "field-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    example.root_module.addImport("zig-field", lib);
+    b.installArtifact(example);
 }

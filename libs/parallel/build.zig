@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
     // `zig-binary-field` carried a local fork of the fork-join Pool: the library
     // could not be imported as a dependency at all. A library that cannot be
     // consumed gets copied, and a copy drifts.
-    _ = b.addModule("zig-parallel", .{
+    const parallel_mod = b.addModule("zig-parallel", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -26,4 +26,15 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    const example = b.addExecutable(.{
+        .name = "parallel-example",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    example.root_module.addImport("zig-parallel", parallel_mod);
+    b.installArtifact(example);
 }
