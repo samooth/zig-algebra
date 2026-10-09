@@ -1031,6 +1031,73 @@ carrying forward: **the wiring is not the consumer**, and a PRNG with no
 consumer is a PRNG that no test, review or downstream integration will ever
 look at, however correct it looks in isolation.
 
+## Advisory ZA-2026-008 — `zig-pairing`'s direct-ring BN254 `pairing()` is also not the pairing
+
+**The second wrong answer, in the second file, found the same way.** Writing
+the known-answer vector for `libs/pairing/src/bn254_direct.zig` — which had
+never had one — showed that its `pairing(G1, G2)` returns an element of `mu_r`
+that is **not** `e(P,Q)`. It is in the right subgroup (`e^r == 1`, verified in
+the library's own arithmetic), it is bilinear, and it is non-degenerate; it is
+the wrong value. Every test the module had passed.
+
+What was measured, on 2026-10-09, with the library's own field arithmetic and
+not with a script beside it:
+
+```
+not the py_ecc value under any of the twelve isomorphisms t -> w^(2 p^j)
+not a Frobenius power of the py_ecc value (all twelve checked)
+the quotient e/real is not a constant, so it is not a unit twist either
+e^r == 1: true -- in the right subgroup, which is what makes it silent
+```
+
+So it is a different element of `mu_r`, not a presentation difference. The
+probable cause is the loop parameter: this file runs `6x^2` (127 bits, "t-1")
+where py_ecc and the verified tower in this tree run `6x+2` (65 bits). Setting
+it to `6x+2` alone does not fix the value — bilinearity breaks — because the
+two optimal-ate extra terms were written for the parameter it has, so the loop
+and its extras are wrong together and both have to be replaced.
+
+**Why the tests could not see it.** Non-degeneracy and bilinearity hold for any
+bilinear map, and compare the implementation with itself. The third, named
+`r-torsion annihilates`, asserted `prod.mul(prod.inv()).eql(ONE)` — which is
+`x * x^-1 == 1` and holds for every element of the ring, a check that could not
+fail. It now asserts the product is one and that `e^r == 1` with r's limbs
+built at comptime; both pass, and neither would have caught the wrong value,
+which is the point: membership in `mu_r` is not the pairing.
+
+**Affected, by reading the tagged file.** The body of `pairing()` is
+byte-identical at every tag that has the file and at HEAD, so the defect has
+travelled unchanged:
+
+```
+$ for t in v0.2.0 v0.2.1 v0.2.2 v0.3.0 v0.3.1 v0.3.2 v0.4.0 v0.5.0 v0.5.1 v0.5.2 v0.5.3 v0.6.0; do
+    git show "$t:libs/pairing/src/bn254_direct.zig" \
+      | sed -n '/^pub fn pairing/,/^}/p' | md5sum
+  done
+88931f6c53b0...   (identical at all twelve; v0.5.0 is local-only)
+```
+
+The whole file changes once in that range, at `v0.5.0` (`5a42d4b84c08...`,
+identical from `v0.5.0` through `v0.6.0`), but the `pairing()` span above does
+not, so the change was elsewhere in the file. At HEAD the file is
+`28964aca7a1d...` — it carries the tests, the marker and the corrected
+comments, and the function is unchanged.
+
+**Current state.** Unfixed. A test named `DEFECT MARKER` pins the wrong value
+on purpose and inverts to `expected.eql(actual)` when the loop and its extras
+are replaced; the vector it asserts against is from py_ecc 8.0.0, converted
+through an isomorphism checked as a ring homomorphism on random elements, with
+an in-test negative control. `AUDIT.md` row 15 carries the closing criterion.
+
+**The shape worth carrying.** ZA-2026-007 and this one are the same defect
+class in two files: a bilinear map into the right subgroup with the wrong
+value, invisible to every self-consistent test. What caught both was a vector
+from outside this repository. The third BN254 implementation in this tree,
+`bn254_tower.zig`, has had one since `5bbd59e` and is correct; the two that
+did not have one were both wrong. That is not a coincidence — it is the
+difference between a test written against the implementation and one written
+against the specification.
+
 ## Reporting
 
 Report suspected vulnerabilities privately to the maintainers. Do not disclose
