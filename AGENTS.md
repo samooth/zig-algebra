@@ -323,7 +323,7 @@ A gadget nobody invokes never fails.
 
 ## Overview
 Modular algebra library ecosystem for Zig 0.16.0. 17 libraries (workspace
-version 0.6.0) covering fields, curves, pairings, and STARK building blocks.
+version 0.7.0) covering fields, curves, pairings, and STARK building blocks.
 No independent cryptographic audit exists; see SECURITY.md before making
 security claims.
 
@@ -820,7 +820,7 @@ what happened to `binary-field` and its fork for three releases.
 
 Root `build.zig.zon` carries the workspace version (`0.6.0`); each library has
 its own independent semver in `libs/<name>/build.zig.zon` (currently
-`0.1.3`–`0.5.0`). Bump the library version for API changes, the workspace
+`0.2.0`–`0.6.0`). Bump the library version for API changes, the workspace
 version for ecosystem-level releases, and record both in `CHANGELOG.md`.
 
 ## Known Gaps (do not paper over these in docs)

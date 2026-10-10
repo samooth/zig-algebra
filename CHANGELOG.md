@@ -13,8 +13,13 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
 >   `v0.5.0` on the remote,
 >   and there never was. Both remain signed and un-moved locally, because
 >   deleting them would lose the order; their content is contained in
->   `v0.5.1`. (`v0.5.3` is the section below: prepared on `main`, not a
->   published tag until it is pushed — a local tag is an intention.)
+>   `v0.5.1`. (`v0.5.3` is the section below. **Corrected 2026-10-09:** this
+>   parenthesis used to say v0.5.3 was "prepared on `main`, not a published tag
+>   until it is pushed — a local tag is an intention". It was published;
+>   `git ls-remote --tags origin` carries it at `4ce5fd7`, and this document's
+>   own `v0.5.3` section says the same. The sentence was true when written and
+>   went false the day the tag was pushed, which is the failure mode of a state
+>   asserted about something that has a moment.)
 > - `v0.5.1` was re-pointed locally, more than once, while it was still
 >   unpublished — once to carry the torus work, once to carry the Windows
 >   compile fix — and was then **published on 2026-09-27** at `22df684`.
@@ -871,6 +876,76 @@ versioning follows [SemVer](https://semver.org/) (0.x: MINOR may carry breaking 
   more, and the set the original rule silently dropped contained `Ipa.verify` --
   the stub `AGENTS.md` lists as a known gap -- and every sum-check and PCS entry
   point in `binary-field`. Both shapes are covered now.
+
+- **Security: `zig-merkle`'s `MerkleTree.verify` accepted an inclusion proof at
+  an index it was not generated for (fixed at `0fe2b4f`).** It took `index`,
+  used it for exactly one thing — `validPathIndex`, a range check — and then
+  ignored it. Inside the loop the choice of "sibling on the left or on the
+  right" was read from `proof.is_left_sibling[i]`, a field *of the proof*: the
+  verifier let the party handing it the proof say which side to concatenate
+  on. So with a four-leaf tree, a proof generated for position 2 verified at
+  position 1 and at position 3 — the two positions that differ from 2 in the
+  one bit saying left-or-right at the bottom level, which is the bit that was
+  not being consulted.
+
+  The direction now comes from the index and not from the proof, and the
+  proof's flags are additionally required to *match* it, so a tampered proof
+  is rejected rather than silently repaired. **BREAKING for callers:** a
+  signature that verified before because the proof agreed with itself can now
+  fail — that is the fix. Found by the seventeen examples finally asserting
+  rather than printing, which is the entry below.
+
+- **Added: `zig build examples` runs all seventeen, and they assert — 89
+  assertions across all of them, no example left silent. CI runs the step.**
+  Until `a72f1f0` the examples printed a verdict and exited zero regardless of
+  it: "Verification: true", "Bilinearity holds: true", thirty-odd "yes"/"NO"
+  lines. A check that cannot fail is not a check. Three examples (`field`,
+  `curve`, `serialization`) asserted; the other fourteen printed.
+
+  Every expected value is specification rather than capture: `bigint` checks
+  3^-1 = 4 mod 11, 2^10 = 1024, and that 104729 is prime while 91 is not;
+  `poly` checks p(2) = 3 over F7 and that (x^2-1)/(x-1) leaves no remainder;
+  `algebra-traits` checks fourteen hand-worked values in F7. Writing the first
+  of these caught an arithmetic error in the *check* rather than in the code —
+  an expected value is only as good as where it came from, and that one came
+  from mental arithmetic. It was still external to the implementation, so the
+  assertion had the power to reject, and it did.
+
+- **Fixed: three contracts that could not fail, each now watched by a test
+  (fixed at `1ffd021`).** `limb.sub` panicked on the input it exists for:
+  `out[i] = diff - borrow` was evaluated before `b2`, the statement that shows
+  the subtraction is in range — in *two* libraries carrying byte-identical
+  copies (`libs/bigint/src/limb.zig` and `libs/field/src/bigint.zig`), the same
+  fork as the four Horner copies and the two Merkle trees. In Debug it is an
+  "integer overflow" panic; in ReleaseFast it wraps and the answer is still
+  right, so the two modes disagreed about whether the call had succeeded, and
+  the test cases were chosen to reach the branch rather than to pass.
+
+  `linalg.lu` returned a factorisation it had not computed: on a column with
+  no non-zero pivot it did `continue`, skipping the elimination below that
+  column entirely, then returned L, U and P with no error, so `P * A == L * U`
+  did not hold and nothing said so. `solve` got the right answer only by
+  accident — it reads a zero off U's diagonal later and returns null — which
+  is the rule from the other side: a correct-looking consumer does not make a
+  correct contract. **BREAKING:** `lu` now returns `error.Singular`, and
+  `solve` maps that back onto its documented `null`. A caller holding
+  `catch unreachable` on the old two-error set traps, which is the correct
+  direction to find out in. `determinant` returning zero for a singular
+  matrix is not the same defect and is unchanged: zero is the determinant, not
+  a signal.
+
+### Versioning
+
+Workspace **`0.7.0`** (was `0.6.0`). Library bumps for this release:
+
+| library | was -> now | why |
+|---|---|---|
+| `zig-pairing` | 0.5.0 -> **0.6.0** | `pairing()` returned wrong values on two of the three BN254 paths; both fixed and pinned to py_ecc (ZA-2026-007, ZA-2026-008). The value a caller receives changes |
+| `zig-merkle` | 0.1.3 -> **0.2.0** | **breaking:** `MerkleTree.verify` reads the sibling side from the index instead of from the proof, so signatures that verified before can now fail — that is the fix |
+| `zig-field` | 0.5.0 -> **0.6.0** | **breaking:** the `MerkleTree` wrapper is removed. Its docstring claimed to wrap `zig-merkle` and it did not — the two trees disagree on padding, so the same leaves give different roots and the proofs do not cross-verify |
+| `zig-linalg` | 0.2.0 -> **0.3.0** | **breaking:** `lu` returns `error.Singular` rather than a factorisation it had not computed |
+| `zig-binary-field` | 0.5.0 -> **0.6.0** | new public aliases `eql`, `inverse`, `neg` and `div` — what makes `FieldTrait` usable with the whole family, and what retired the last two Horner copies |
+| `zig-bigint` | 0.4.0 -> **0.4.1** | `limb.sub` no longer panics in Debug on the borrow case it exists for |
 
 ## [v0.6.0] — 2026-09-30
 
